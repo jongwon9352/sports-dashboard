@@ -6,8 +6,6 @@ import openpyxl, json, ssl, urllib.request, sys, math
 from datetime import datetime
 
 ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
 
 SUPABASE_URL = "https://ftockzbsceolvwztojpx.supabase.co"
 ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0b2NremJzY2VvbHZ3enRvanB4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMDY4NDgsImV4cCI6MjA5NzU4Mjg0OH0.o2oFkdg5IbzlhAhys9KLmtFQqI7txYMvNBf1Ep5Ntr4"

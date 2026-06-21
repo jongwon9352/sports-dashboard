@@ -1,7 +1,7 @@
-@import "tailwindcss";
-
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
+
+@import "tailwindcss";
 
 @theme {
   --color-purple: #002D72;

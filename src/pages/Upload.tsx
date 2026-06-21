@@ -1,6 +1,6 @@
 import { useState, useCallback, type DragEvent } from 'react';
 import { parseSessionCsv, parseDailyCsv, extractDateFromFilename } from '../utils/csvParser';
-import { importSessionData, importDailyData } from '../lib/store';
+import { importDailyCsvRows, importSessionCsvRows } from '../lib/api';
 
 type FileType = 'session' | 'daily' | null;
 
@@ -48,11 +48,11 @@ export function Upload() {
       try {
         if (type === 'session') {
           const rows = parseSessionCsv(text);
-          importSessionData(rows, date);
+          await importSessionCsvRows(rows, date);
           newResults.push({ filename: file.name, type, rowCount: rows.length, date, status: 'success' });
         } else if (type === 'daily') {
           const rows = parseDailyCsv(text);
-          importDailyData(rows, date);
+          await importDailyCsvRows(rows, date);
           newResults.push({ filename: file.name, type, rowCount: rows.length, date, status: 'success' });
         } else {
           newResults.push({
@@ -71,7 +71,7 @@ export function Upload() {
           rowCount: 0,
           date,
           status: 'error',
-          message: `파싱 오류: ${e instanceof Error ? e.message : '알 수 없는 오류'}`,
+          message: `업로드 오류: ${e instanceof Error ? e.message : '알 수 없는 오류'}`,
         });
       }
     }

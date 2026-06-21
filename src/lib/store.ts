@@ -3,11 +3,11 @@ import type { Player, TrainingSession, TrainingDaily, AcwrDaily, PlayerWithAcwr,
 import { calculateAcuteEwma, calculateChronicEwma, calculateAcwr, getAcwrZone, calculateMonotony } from '../utils/calculations';
 import type { ParsedSessionRow, ParsedDailyRow } from '../utils/csvParser';
 
-let playersStore: Player[] = [];
-let sessionsStore: TrainingSession[] = [];
-let dailyStore: TrainingDaily[] = [];
+const playersStore: Player[] = [];
+const sessionsStore: TrainingSession[] = [];
+const dailyStore: TrainingDaily[] = [];
 let acwrStore: AcwrDaily[] = [];
-let physicalStore: PhysicalReport[] = [];
+const physicalStore: PhysicalReport[] = [];
 let listeners: (() => void)[] = [];
 
 function notify() {

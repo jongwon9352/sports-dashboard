@@ -3,9 +3,238 @@ import type {
   PlayerWithAcwr, AcwrZone, AcwrDaily, TrainingDaily,
   TeamDailyAggregate, DailyReportRow, SidebarPlayer, MatchData,
 } from '../types';
-import { getAcwrZone, calculateMonotony } from '../utils/calculations';
+import {
+  calculateAcuteEwma,
+  calculateAcwr,
+  calculateChronicEwma,
+  calculateMonotony,
+  getAcwrZone,
+} from '../utils/calculations';
+import type { ParsedDailyRow, ParsedSessionRow } from '../utils/csvParser';
 
+// Supabase client responses are untyped in this project.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type R = Record<string, any>;
+
+const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+function requireSupabase() {
+  if (!supabase) {
+    throw new Error('Supabase 환경 변수가 설정되어 있지 않습니다.');
+  }
+  return supabase;
+}
+
+function normalizeName(name: string) {
+  return name.normalize('NFC').trim();
+}
+
+function defaultPlayer(name: string, jerseyNumber: number) {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    name,
+    jersey_number: jerseyNumber,
+    position: 'MF',
+    grade: 'U15',
+    birth_date: '',
+    maturity_status: 'Mid',
+    maturity_offset: 0,
+    predicted_adult_height: 0,
+    current_height: 0,
+    current_weight: 0,
+    latest_mas: null,
+    latest_mss: null,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+async function getOrCreatePlayers(rows: { player_name: string; jersey_number: number }[]) {
+  const client = requireSupabase();
+  const requested = new Map<string, number>();
+
+  for (const row of rows) {
+    const name = normalizeName(row.player_name);
+    if (name && !requested.has(name)) requested.set(name, row.jersey_number);
+  }
+
+  if (requested.size === 0) return new Map<string, string>();
+
+  const names = [...requested.keys()];
+  const { data: existing, error: fetchError } = await client
+    .from('players')
+    .select('id, name')
+    .in('name', names);
+  if (fetchError) throw fetchError;
+
+  const playerMap = new Map<string, string>();
+  for (const player of (existing as R[]) ?? []) {
+    playerMap.set(normalizeName(player.name), player.id);
+  }
+
+  const missing = names
+    .filter(name => !playerMap.has(name))
+    .map(name => defaultPlayer(name, requested.get(name) ?? 0));
+
+  if (missing.length > 0) {
+    const { data: inserted, error: insertError } = await client
+      .from('players')
+      .insert(missing)
+      .select('id, name');
+    if (insertError) throw insertError;
+
+    for (const player of (inserted as R[]) ?? []) {
+      playerMap.set(normalizeName(player.name), player.id);
+    }
+  }
+
+  return playerMap;
+}
+
+export async function importSessionCsvRows(rows: ParsedSessionRow[], date: string) {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows);
+  const now = new Date().toISOString();
+
+  const sessionRows = validRows.map(row => ({
+    id: crypto.randomUUID(),
+    player_id: playerMap.get(normalizeName(row.player_name)),
+    training_date: date,
+    session_name: row.session_name,
+    duration_min: row.duration_min,
+    total_distance: row.total_distance,
+    m_per_min: row.m_per_min,
+    hsr_distance: row.hsr_distance,
+    hsr_custom: row.hsr_custom,
+    sprint_distance: row.sprint_distance,
+    sprint_custom: row.sprint_custom,
+    sprint_count: row.sprint_count,
+    sprint_count_custom: row.sprint_count_custom,
+    acc_count: row.acc_count,
+    dec_count: row.dec_count,
+    acd_load: row.acd_load,
+    max_speed: row.max_speed,
+    created_at: now,
+  })).filter(row => row.player_id);
+
+  if (sessionRows.length === 0) return;
+
+  const { error } = await client
+    .from('training_sessions')
+    .upsert(sessionRows, { onConflict: 'player_id,training_date,session_name' });
+  if (error) throw error;
+}
+
+export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows);
+  const now = new Date().toISOString();
+  const parsedDate = new Date(date);
+  const dayOfWeek = dayNames[parsedDate.getDay()] ?? '';
+
+  const dailyRows = validRows.map(row => {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    const dailyTrainingLoad = row.rpe !== null ? row.duration_min * row.rpe : null;
+
+    return {
+      id: crypto.randomUUID(),
+      player_id: playerId,
+      training_date: date,
+      day_of_week: dayOfWeek,
+      week_label: '',
+      duration_min: row.duration_min,
+      rpe: row.rpe,
+      total_distance: row.total_distance,
+      m_per_min: row.m_per_min,
+      speed_zone_1: row.speed_zone_1,
+      speed_zone_2: row.speed_zone_2,
+      speed_zone_3: row.speed_zone_3,
+      speed_zone_4: row.speed_zone_4,
+      speed_zone_5: row.speed_zone_5,
+      hsr_distance: row.hsr_distance,
+      hsr_custom: row.hsr_custom,
+      sprint_distance: row.sprint_distance,
+      sprint_custom: row.sprint_custom,
+      sprint_count: row.sprint_count,
+      sprint_count_custom: row.sprint_count_custom,
+      acc_count: row.acc_count,
+      dec_count: row.dec_count,
+      acd_load: row.acd_load,
+      max_speed: row.max_speed,
+      daily_training_load: dailyTrainingLoad,
+      created_at: now,
+    };
+  }).filter(row => row.player_id);
+
+  if (dailyRows.length === 0) return;
+
+  const { error } = await client
+    .from('training_daily')
+    .upsert(dailyRows, { onConflict: 'player_id,training_date' });
+  if (error) throw error;
+
+  await recalculatePlayerAcwr([...new Set(dailyRows.map(row => row.player_id as string))]);
+}
+
+async function recalculatePlayerAcwr(playerIds: string[]) {
+  const client = requireSupabase();
+
+  for (const playerId of playerIds) {
+    const { data, error } = await client
+      .from('training_daily')
+      .select('training_date, daily_training_load')
+      .eq('player_id', playerId)
+      .order('training_date', { ascending: true });
+    if (error) throw error;
+
+    const playerDaily = ((data as R[]) ?? [])
+      .filter(row => row.daily_training_load !== null)
+      .sort((a, b) => String(a.training_date).localeCompare(String(b.training_date)));
+    if (playerDaily.length === 0) continue;
+
+    const loadByDate = new Map(
+      playerDaily.map(row => [String(row.training_date), Number(row.daily_training_load) || 0])
+    );
+    const startDate = new Date(playerDaily[0].training_date);
+    const endDate = new Date(playerDaily[playerDaily.length - 1].training_date);
+    const acwrRows = [];
+    let prevAcute: number | null = null;
+    let prevChronic: number | null = null;
+    let dayCount = 0;
+
+    for (const d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      const load = loadByDate.get(dateStr) ?? 0;
+      const acute = calculateAcuteEwma(load, prevAcute);
+      const chronic = calculateChronicEwma(load, prevChronic);
+      const acwr = calculateAcwr(acute, chronic);
+      dayCount++;
+
+      acwrRows.push({
+        id: crypto.randomUUID(),
+        player_id: playerId,
+        date: dateStr,
+        daily_load: load,
+        acute_ewma: acute,
+        chronic_ewma: chronic,
+        acwr,
+        data_sufficient: dayCount >= 21,
+        created_at: new Date().toISOString(),
+      });
+
+      prevAcute = acute;
+      prevChronic = chronic;
+    }
+
+    const { error: upsertError } = await client
+      .from('acwr_daily')
+      .upsert(acwrRows, { onConflict: 'player_id,date' });
+    if (upsertError) throw upsertError;
+  }
+}
 
 export async function fetchPlayersWithAcwr(): Promise<PlayerWithAcwr[]> {
   if (!supabase) return [];

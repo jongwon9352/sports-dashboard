@@ -23,22 +23,28 @@ export function PlayerProfile() {
 
   useEffect(() => {
     if (!id) return;
-    setLoading(true);
+    let active = true;
+
     Promise.all([
       fetchPlayersWithAcwr(),
       fetchPlayerAcwrHistory(id),
       fetchPlayerDailyData(id),
       fetchPlayerMatchHistory(id),
     ]).then(([players, history, daily, matchData]) => {
+      if (!active) return;
       setPlayer(players.find(p => p.id === id) ?? null);
       setAcwrHistory(history);
       setDailyData(daily);
       setMatches(matchData);
       setLoading(false);
     });
+
+    return () => { active = false; };
   }, [id]);
 
-  if (loading) {
+  const isLoading = loading || (!!id && player?.id !== id);
+
+  if (isLoading) {
     return <div className="p-8 text-text-secondary text-center">Loading...</div>;
   }
 
