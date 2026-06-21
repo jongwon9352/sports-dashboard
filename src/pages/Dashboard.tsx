@@ -7,6 +7,7 @@ import {
 import { fetchPlayersWithAcwr, fetchTeamDailyAggregates } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
+import { chartColors, colors } from '../styles/colors';
 import type { PlayerWithAcwr, TeamDailyAggregate } from '../types';
 
 const ZONE_PRIORITY = { danger: 0, caution: 1, insufficient: 2, safe: 3 } as const;
@@ -56,24 +57,24 @@ export function Dashboard() {
       <div className="sec-title">팀 대시보드</div>
 
       <div className="grid grid-cols-4 gap-3 mb-5 stat-grid-4">
-        <StatCard label="총 선수" value={players.length} sub="등록 선수" accent="#6B3FA0" />
-        <StatCard label="안전 구간" value={safeCount} sub="ACWR 0.8–1.3" accent="#43A047" valueColor="#43A047" />
-        <StatCard label="주의" value={cautionCount} sub="ACWR 주의 범위" accent="#FB8C00" valueColor="#FB8C00" />
-        <StatCard label="위험" value={dangerCount} sub="ACWR > 상한" accent="#E53935" valueColor="#E53935" />
+        <StatCard label="총 선수" value={players.length} sub="등록 선수" accent={colors.navy} />
+        <StatCard label="안전 구간" value={safeCount} sub="ACWR 0.8–1.3" accent={colors.safe} valueColor={colors.safe} />
+        <StatCard label="주의" value={cautionCount} sub="ACWR 주의 범위" accent={colors.warning} valueColor={colors.warning} />
+        <StatCard label="위험" value={dangerCount} sub="ACWR > 상한" accent={colors.danger} valueColor={colors.danger} />
       </div>
 
       <div className="chart-card mb-4">
         <div className="chart-title">팀 일별 평균 TD (Total Distance)</div>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={chartDaily}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
             <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
             <Tooltip
               formatter={(v) => [`${Number(v).toLocaleString()} m`, '평균 TD']}
               contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }}
             />
-            <Bar dataKey="td" fill="rgba(107, 63, 160, 0.3)" radius={[3, 3, 0, 0]} stroke="rgba(107, 63, 160, 0.7)" strokeWidth={1} />
+            <Bar dataKey="td" fill="rgba(21, 62, 111, 0.26)" radius={[3, 3, 0, 0]} stroke={chartColors.primary} strokeWidth={1} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -83,11 +84,11 @@ export function Dashboard() {
           <div className="chart-title">평균 RPE 추이</div>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={chartDaily}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis domain={[0, 10]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Area type="monotone" dataKey="rpe" stroke="#FB8C00" fill="rgba(251, 140, 0, 0.08)" strokeWidth={2} name="평균 RPE" />
+              <Area type="monotone" dataKey="rpe" stroke={chartColors.warning} fill="rgba(255, 217, 0, 0.18)" strokeWidth={2} name="평균 RPE" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -95,12 +96,12 @@ export function Dashboard() {
           <div className="chart-title">HSR / Sprint 추이</div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartDaily}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Line type="monotone" dataKey="hsr" stroke="#00A651" strokeWidth={2} dot={false} name="HSR(m)" />
-              <Line type="monotone" dataKey="sprint" stroke="#FB8C00" strokeWidth={2} dot={false} name="Sprint(m)" />
+              <Line type="monotone" dataKey="hsr" stroke={chartColors.secondary} strokeWidth={2} dot={false} name="HSR(m)" />
+              <Line type="monotone" dataKey="sprint" stroke={chartColors.tertiary} strokeWidth={2} dot={false} name="Sprint(m)" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -153,7 +154,7 @@ export function Dashboard() {
                       {getZoneLabel(player.acwr_zone)}
                     </span>
                   </td>
-                  <td className="num" style={{ color: player.monotony && player.monotony > 2 ? '#E53935' : undefined }}>
+                  <td className="num" style={{ color: player.monotony && player.monotony > 2 ? colors.danger : undefined }}>
                     {player.monotony ? player.monotony.toFixed(2) : '—'}
                   </td>
                   <td className="num">
@@ -177,9 +178,9 @@ export function Dashboard() {
 
 function MaturityPill({ status }: { status: string }) {
   const cfg: Record<string, { label: string; bg: string; text: string }> = {
-    Pre: { label: 'Pre', bg: '#E3F2FD', text: '#1565C0' },
-    Mid: { label: 'Mid', bg: '#FFF3E0', text: '#E65100' },
-    Post: { label: 'Post', bg: '#E8F5E9', text: '#2E7D32' },
+    Pre: { label: 'Pre', bg: '#E8EEF5', text: colors.navy },
+    Mid: { label: 'Mid', bg: '#FFF6CC', text: '#8A6B00' },
+    Post: { label: 'Post', bg: '#E0F3F0', text: '#006D62' },
   };
   const c = cfg[status] ?? cfg.Mid;
   return (

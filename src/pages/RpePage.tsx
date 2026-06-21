@@ -5,13 +5,14 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 import { fetchRpeData } from '../lib/api';
+import { chartColors, colors } from '../styles/colors';
 import type { TeamDailyAggregate } from '../types';
 
 function rpeColor(v: number): string {
-  if (v <= 4) return '#43A047';
-  if (v <= 6) return '#FB8C00';
-  if (v <= 8) return '#FF8C42';
-  return '#E53935';
+  if (v <= 4) return colors.safe;
+  if (v <= 6) return colors.warning;
+  if (v <= 8) return colors.navy;
+  return colors.danger;
 }
 
 export function RpePage() {
@@ -42,7 +43,7 @@ export function RpePage() {
   const distChart = distribution.map((count, i) => ({
     label: String(i + 1),
     count,
-    color: `hsla(${120 - i * 12}, 70%, 50%, 0.5)`,
+    color: i < 4 ? 'rgba(0, 140, 126, 0.42)' : i < 6 ? 'rgba(255, 217, 0, 0.50)' : i < 8 ? 'rgba(21, 62, 111, 0.34)' : 'rgba(164, 40, 67, 0.34)',
   }));
 
   const playerChart = playerAvgs.filter(p => p.avg_rpe > 0).slice(0, 25);
@@ -56,11 +57,11 @@ export function RpePage() {
           <div className="chart-title">팀 평균 RPE 추이</div>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={trendChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis domain={[0, 10]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Area type="monotone" dataKey="rpe" stroke="#FB8C00" fill="rgba(251, 140, 0, 0.08)" strokeWidth={2} name="평균 RPE" />
+              <Area type="monotone" dataKey="rpe" stroke={chartColors.warning} fill="rgba(255, 217, 0, 0.18)" strokeWidth={2} name="평균 RPE" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -68,7 +69,7 @@ export function RpePage() {
           <div className="chart-title">RPE 분포 (전체 기간)</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={distChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip
@@ -89,7 +90,7 @@ export function RpePage() {
         <div className="chart-title">선수별 평균 RPE</div>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={playerChart}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis
               dataKey="name"
               tick={{ fontSize: 9 }}

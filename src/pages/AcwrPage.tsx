@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { fetchPlayersWithAcwr } from '../lib/api';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
+import { chartColors, colors } from '../styles/colors';
 import type { PlayerWithAcwr } from '../types';
 
 export function AcwrPage() {
@@ -34,10 +35,10 @@ export function AcwrPage() {
     }));
 
   const zones = [
-    { label: '과소훈련', range: '< 0.8', color: '#6B3FA0', desc: '체력 유지 부족' },
-    { label: '안전구간', range: '0.8–1.3', color: '#43A047', desc: '최적 훈련 범위' },
-    { label: '주의', range: '1.3–1.5', color: '#FB8C00', desc: '부하 모니터링 필요' },
-    { label: '위험', range: '> 1.5', color: '#E53935', desc: '부상 위험 높음' },
+    { label: '과소훈련', range: '< 0.8', color: colors.navy, desc: '체력 유지 부족' },
+    { label: '안전구간', range: '0.8–1.3', color: colors.safe, desc: '최적 훈련 범위' },
+    { label: '주의', range: '1.3–1.5', color: colors.warning, desc: '부하 모니터링 필요' },
+    { label: '위험', range: '> 1.5', color: colors.danger, desc: '부상 위험 높음' },
   ];
 
   return (
@@ -47,16 +48,16 @@ export function AcwrPage() {
       <div className="chart-card mb-4">
         <div className="chart-title">ACWR 안전 구간 기준</div>
         <div className="acwr-zone-bar">
-          <div style={{ flex: '0 0 26%', background: 'rgba(107, 63, 160, 0.25)' }} />
-          <div style={{ flex: '0 0 20%', background: 'rgba(67, 160, 71, 0.25)' }} />
-          <div style={{ flex: '0 0 8%', background: 'rgba(251, 140, 0, 0.25)' }} />
-          <div style={{ flex: 1, background: 'rgba(229, 57, 53, 0.25)' }} />
+          <div style={{ flex: '0 0 26%', background: 'rgba(21, 62, 111, 0.25)' }} />
+          <div style={{ flex: '0 0 20%', background: 'rgba(0, 140, 126, 0.25)' }} />
+          <div style={{ flex: '0 0 8%', background: 'rgba(255, 217, 0, 0.45)' }} />
+          <div style={{ flex: 1, background: 'rgba(164, 40, 67, 0.24)' }} />
         </div>
         <div className="flex text-[9px] mb-4" style={{ fontFamily: 'var(--font-data)' }}>
-          <span style={{ width: '26%', color: '#6B3FA0' }}>과소훈련 {'<'}0.8</span>
-          <span style={{ width: '20%', color: '#43A047' }}>안전 0.8–1.3</span>
-          <span style={{ width: '8%', color: '#FB8C00' }}>주의</span>
-          <span style={{ flex: 1, color: '#E53935' }}>위험 {'>'}1.5</span>
+          <span style={{ width: '26%', color: colors.navy }}>과소훈련 {'<'}0.8</span>
+          <span style={{ width: '20%', color: colors.safe }}>안전 0.8–1.3</span>
+          <span style={{ width: '8%', color: colors.warning }}>주의</span>
+          <span style={{ flex: 1, color: colors.danger }}>위험 {'>'}1.5</span>
         </div>
         <div className="grid grid-cols-4 gap-3 stat-grid-4">
           {zones.map(z => (
@@ -78,7 +79,7 @@ export function AcwrPage() {
         <div className="chart-title">전체 선수 ACWR</div>
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis
               dataKey="name"
               tick={{ fontSize: 9 }}
@@ -89,9 +90,9 @@ export function AcwrPage() {
             />
             <YAxis domain={[0, 2.5]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
             <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-            <ReferenceLine y={0.8} stroke="#6B3FA0" strokeDasharray="4 4" strokeWidth={1} label={{ value: '0.8', position: 'right', fontSize: 9 }} />
-            <ReferenceLine y={1.3} stroke="#43A047" strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.3', position: 'right', fontSize: 9 }} />
-            <ReferenceLine y={1.5} stroke="#E53935" strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.5', position: 'right', fontSize: 9 }} />
+            <ReferenceLine y={0.8} stroke={colors.navy} strokeDasharray="4 4" strokeWidth={1} label={{ value: '0.8', position: 'right', fontSize: 9 }} />
+            <ReferenceLine y={1.3} stroke={colors.safe} strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.3', position: 'right', fontSize: 9 }} />
+            <ReferenceLine y={1.5} stroke={colors.danger} strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.5', position: 'right', fontSize: 9 }} />
             <Bar dataKey="acwr" radius={[3, 3, 0, 0]} name="ACWR">
               {chartData.map((entry, i) => (
                 <Cell key={i} fill={`${getZoneColor(entry.zone)}60`} />
@@ -135,7 +136,7 @@ export function AcwrPage() {
                         {getZoneLabel(p.acwr_zone)}
                       </span>
                     </td>
-                    <td className="num" style={{ color: p.monotony && p.monotony > 2 ? '#E53935' : undefined }}>
+                    <td className="num" style={{ color: p.monotony && p.monotony > 2 ? colors.danger : undefined }}>
                       {p.monotony ? p.monotony.toFixed(2) : '—'}
                     </td>
                     <td className="num">{Number(p.acwr_data!.acute_ewma).toFixed(0)}</td>

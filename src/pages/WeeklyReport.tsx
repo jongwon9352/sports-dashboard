@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { fetchTeamDailyAggregates } from '../lib/api';
 import { StatCard } from '../components/StatCard';
+import { chartColors, colors } from '../styles/colors';
 import type { TeamDailyAggregate } from '../types';
 
 function getWeekStart(dateStr: string): string {
@@ -76,22 +77,22 @@ export function WeeklyReport() {
       </div>
 
       <div className="grid grid-cols-4 gap-3 mb-5 stat-grid-4">
-        <StatCard label="훈련일수" value={weekDays.length} sub="일" accent="#6B3FA0" />
-        <StatCard label="총 평균 TD" value={Math.round(totalTd).toLocaleString()} sub="m (합계)" accent="#43A047" />
-        <StatCard label="총 평균 HSR" value={Math.round(totalHsr).toLocaleString()} sub="m (합계)" accent="#00A651" />
-        <StatCard label="주간 평균 RPE" value={avgRpe ? avgRpe.toFixed(1) : '—'} sub="/ 10" accent="#FB8C00" />
+        <StatCard label="훈련일수" value={weekDays.length} sub="일" accent={colors.navy} />
+        <StatCard label="총 평균 TD" value={Math.round(totalTd).toLocaleString()} sub="m (합계)" accent={colors.green} />
+        <StatCard label="총 평균 HSR" value={Math.round(totalHsr).toLocaleString()} sub="m (합계)" accent={colors.wine} />
+        <StatCard label="주간 평균 RPE" value={avgRpe ? avgRpe.toFixed(1) : '—'} sub="/ 10" accent={colors.warning} />
       </div>
 
       <div className="chart-card mb-4">
         <div className="chart-title">요일별 평균 TD / HSR</div>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
             <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
             <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-            <Bar dataKey="td" fill="rgba(107, 63, 160, 0.3)" radius={[3, 3, 0, 0]} name="평균 TD(m)" />
-            <Bar dataKey="hsr" fill="rgba(0, 166, 81, 0.3)" radius={[3, 3, 0, 0]} name="평균 HSR(m)" />
+            <Bar dataKey="td" fill="rgba(21, 62, 111, 0.26)" radius={[3, 3, 0, 0]} name="평균 TD(m)" />
+            <Bar dataKey="hsr" fill="rgba(0, 140, 126, 0.30)" radius={[3, 3, 0, 0]} name="평균 HSR(m)" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -101,12 +102,12 @@ export function WeeklyReport() {
           <div className="chart-title">요일별 참여 선수 / RPE</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Bar dataKey="players" fill="rgba(107, 63, 160, 0.2)" radius={[3, 3, 0, 0]} name="참여 선수" />
-              <Bar dataKey="rpe" fill="rgba(251, 140, 0, 0.4)" radius={[3, 3, 0, 0]} name="평균 RPE" />
+              <Bar dataKey="players" fill="rgba(21, 62, 111, 0.20)" radius={[3, 3, 0, 0]} name="참여 선수" />
+              <Bar dataKey="rpe" fill="rgba(255, 217, 0, 0.45)" radius={[3, 3, 0, 0]} name="평균 RPE" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -114,11 +115,11 @@ export function WeeklyReport() {
           <div className="chart-title">요일별 Sprint 추이</div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Bar dataKey="sprint" fill="rgba(251, 140, 0, 0.35)" radius={[3, 3, 0, 0]} name="Sprint(m)" />
+              <Bar dataKey="sprint" fill="rgba(164, 40, 67, 0.28)" radius={[3, 3, 0, 0]} name="Sprint(m)" />
             </BarChart>
           </ResponsiveContainer>
         </div>

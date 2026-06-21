@@ -57,10 +57,10 @@ export function getAcwrZone(
 
 export function getZoneColor(zone: AcwrZone): string {
   switch (zone) {
-    case 'safe': return '#00865A';
-    case 'caution': return '#D4A800';
-    case 'danger': return '#9B2335';
-    case 'insufficient': return '#607D8B';
+    case 'safe': return '#008C7E';
+    case 'caution': return '#B08A00';
+    case 'danger': return '#A42843';
+    case 'insufficient': return '#66717A';
   }
 }
 

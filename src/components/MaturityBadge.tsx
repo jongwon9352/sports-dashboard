@@ -1,9 +1,9 @@
 import type { MaturityStatus } from '../types';
 
 const config: Record<MaturityStatus, { label: string; bg: string; text: string }> = {
-  Pre: { label: 'Pre-PHV', bg: '#E3F2FD', text: '#1565C0' },
-  Mid: { label: 'Mid-PHV', bg: '#FFF3E0', text: '#E65100' },
-  Post: { label: 'Post-PHV', bg: '#E8F5E9', text: '#2E7D32' },
+  Pre: { label: 'Pre-PHV', bg: '#E8EEF5', text: '#153E6F' },
+  Mid: { label: 'Mid-PHV', bg: '#FFF6CC', text: '#8A6B00' },
+  Post: { label: 'Post-PHV', bg: '#E0F3F0', text: '#006D62' },
 };
 
 export function MaturityBadge({ status }: { status: MaturityStatus }) {

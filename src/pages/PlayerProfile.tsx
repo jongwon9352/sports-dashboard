@@ -11,6 +11,7 @@ import {
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
+import { chartColors, colors } from '../styles/colors';
 import type { PlayerWithAcwr, AcwrDaily, TrainingDaily, MatchData } from '../types';
 
 export function PlayerProfile() {
@@ -88,7 +89,7 @@ export function PlayerProfile() {
       <div className="chart-card flex items-center gap-5 mb-5">
         <div
           className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0"
-          style={{ background: `linear-gradient(135deg, ${getZoneColor(player.acwr_zone)}, #6B3FA0)` }}
+          style={{ background: `linear-gradient(135deg, ${getZoneColor(player.acwr_zone)}, ${colors.navy})` }}
         >
           {player.jersey_number ?? '–'}
         </div>
@@ -118,14 +119,14 @@ export function PlayerProfile() {
           accent={getZoneColor(player.acwr_zone)}
           valueColor={getZoneColor(player.acwr_zone)}
         />
-        <StatCard label="Acute Load" value={player.acwr_data?.acute_ewma ? Number(player.acwr_data.acute_ewma).toFixed(0) : '—'} accent="#E53935" />
-        <StatCard label="Chronic Load" value={player.acwr_data?.chronic_ewma ? Number(player.acwr_data.chronic_ewma).toFixed(0) : '—'} accent="#1E88E5" />
-        <StatCard label="오늘 부하" value={player.acwr_data?.daily_load ? Number(player.acwr_data.daily_load).toFixed(0) : '—'} accent="#6B3FA0" />
+        <StatCard label="Acute Load" value={player.acwr_data?.acute_ewma ? Number(player.acwr_data.acute_ewma).toFixed(0) : '—'} accent={colors.danger} />
+        <StatCard label="Chronic Load" value={player.acwr_data?.chronic_ewma ? Number(player.acwr_data.chronic_ewma).toFixed(0) : '—'} accent={colors.navy} />
+        <StatCard label="오늘 부하" value={player.acwr_data?.daily_load ? Number(player.acwr_data.daily_load).toFixed(0) : '—'} accent={colors.green} />
         <StatCard
           label="Monotony"
           value={player.monotony?.toFixed(2) ?? '—'}
-          accent={player.monotony && player.monotony > 2 ? '#E53935' : '#607D8B'}
-          valueColor={player.monotony && player.monotony > 2 ? '#E53935' : undefined}
+          accent={player.monotony && player.monotony > 2 ? colors.danger : colors.muted}
+          valueColor={player.monotony && player.monotony > 2 ? colors.danger : undefined}
         />
       </div>
 
@@ -134,14 +135,14 @@ export function PlayerProfile() {
           <div className="chart-title">ACWR 추이 (최근 30일)</div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartAcwr}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis domain={[0, 2.5]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <ReferenceLine y={0.8} stroke="#FB8C00" strokeDasharray="4 4" label={{ value: '하한', fontSize: 9 }} />
-              <ReferenceLine y={thresholds.green} stroke="#43A047" strokeDasharray="4 4" label={{ value: '안전상한', fontSize: 9 }} />
-              <ReferenceLine y={thresholds.red} stroke="#E53935" strokeDasharray="4 4" label={{ value: '위험', fontSize: 9 }} />
-              <Line type="monotone" dataKey="acwr" stroke="#6B3FA0" strokeWidth={2.5} dot={false} name="ACWR" />
+              <ReferenceLine y={0.8} stroke={colors.warning} strokeDasharray="4 4" label={{ value: '하한', fontSize: 9 }} />
+              <ReferenceLine y={thresholds.green} stroke={colors.safe} strokeDasharray="4 4" label={{ value: '안전상한', fontSize: 9 }} />
+              <ReferenceLine y={thresholds.red} stroke={colors.danger} strokeDasharray="4 4" label={{ value: '위험', fontSize: 9 }} />
+              <Line type="monotone" dataKey="acwr" stroke={colors.navy} strokeWidth={2.5} dot={false} name="ACWR" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -152,13 +153,13 @@ export function PlayerProfile() {
           <div className="chart-title">Acute / Chronic Load 추이</div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={chartAcwr}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Line type="monotone" dataKey="acute" stroke="#E53935" strokeWidth={2} dot={false} name="Acute" />
-              <Line type="monotone" dataKey="chronic" stroke="#1E88E5" strokeWidth={2} dot={false} name="Chronic" />
-              <Line type="monotone" dataKey="load" stroke="#9AA0A6" strokeWidth={1} dot={false} name="Daily Load" strokeDasharray="3 3" />
+              <Line type="monotone" dataKey="acute" stroke={colors.danger} strokeWidth={2} dot={false} name="Acute" />
+              <Line type="monotone" dataKey="chronic" stroke={colors.navy} strokeWidth={2} dot={false} name="Chronic" />
+              <Line type="monotone" dataKey="load" stroke={colors.muted} strokeWidth={1} dot={false} name="Daily Load" strokeDasharray="3 3" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -169,13 +170,13 @@ export function PlayerProfile() {
           <div className="chart-title">최근 훈련 TD / HSR / Sprint</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={dailyChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Bar dataKey="td" fill="rgba(107, 63, 160, 0.3)" radius={[3, 3, 0, 0]} name="TD(m)" />
-              <Bar dataKey="hsr" fill="rgba(0, 166, 81, 0.3)" radius={[3, 3, 0, 0]} name="HSR(m)" />
-              <Bar dataKey="sprint" fill="rgba(251, 140, 0, 0.3)" radius={[3, 3, 0, 0]} name="Sprint(m)" />
+              <Bar dataKey="td" fill="rgba(21, 62, 111, 0.26)" radius={[3, 3, 0, 0]} name="TD(m)" />
+              <Bar dataKey="hsr" fill="rgba(0, 140, 126, 0.30)" radius={[3, 3, 0, 0]} name="HSR(m)" />
+              <Bar dataKey="sprint" fill="rgba(164, 40, 67, 0.28)" radius={[3, 3, 0, 0]} name="Sprint(m)" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -250,9 +251,9 @@ export function PlayerProfile() {
 
 function MaturityPill({ status }: { status: string }) {
   const cfg: Record<string, { label: string; bg: string; text: string }> = {
-    Pre: { label: 'Pre-PHV', bg: '#E3F2FD', text: '#1565C0' },
-    Mid: { label: 'Mid-PHV', bg: '#FFF3E0', text: '#E65100' },
-    Post: { label: 'Post-PHV', bg: '#E8F5E9', text: '#2E7D32' },
+    Pre: { label: 'Pre-PHV', bg: '#E8EEF5', text: colors.navy },
+    Mid: { label: 'Mid-PHV', bg: '#FFF6CC', text: '#8A6B00' },
+    Post: { label: 'Post-PHV', bg: '#E0F3F0', text: '#006D62' },
   };
   const c = cfg[status] ?? cfg.Mid;
   return (

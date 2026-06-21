@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchAvailableDates, fetchDailyReportData } from '../lib/api';
 import { StatCard } from '../components/StatCard';
+import { chartColors, colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
 
 export function DailyReport() {
@@ -77,10 +78,10 @@ export function DailyReport() {
       ) : (
         <>
           <div className="grid grid-cols-4 gap-3 mb-5 stat-grid-4">
-            <StatCard label="참여 선수" value={data.length} sub="명" accent="#6B3FA0" />
-            <StatCard label="팀 평균 TD" value={Math.round(avgTd).toLocaleString()} sub="m" accent="#43A047" />
-            <StatCard label="팀 평균 HSR" value={Math.round(avgHsr).toLocaleString()} sub="m" accent="#00A651" />
-            <StatCard label="평균 RPE" value={avgRpe ? avgRpe.toFixed(1) : '—'} sub="/ 10" accent="#FB8C00" />
+            <StatCard label="참여 선수" value={data.length} sub="명" accent={colors.navy} />
+            <StatCard label="팀 평균 TD" value={Math.round(avgTd).toLocaleString()} sub="m" accent={colors.green} />
+            <StatCard label="팀 평균 HSR" value={Math.round(avgHsr).toLocaleString()} sub="m" accent={colors.wine} />
+            <StatCard label="평균 RPE" value={avgRpe ? avgRpe.toFixed(1) : '—'} sub="/ 10" accent={colors.warning} />
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-5 chart-grid-2">
@@ -88,14 +89,14 @@ export function DailyReport() {
               <div className="chart-title">선수별 TD</div>
               <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 22)}>
                 <BarChart data={chartData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                   <XAxis type="number" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
                   <YAxis dataKey="name" type="category" width={55} tick={{ fontSize: 10 }} />
                   <Tooltip
                     formatter={(v) => [`${Number(v).toLocaleString()} m`, 'TD']}
                     contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }}
                   />
-                  <Bar dataKey="td" fill="rgba(107, 63, 160, 0.35)" radius={[0, 3, 3, 0]} stroke="rgba(107, 63, 160, 0.7)" strokeWidth={1} />
+                  <Bar dataKey="td" fill="rgba(21, 62, 111, 0.26)" radius={[0, 3, 3, 0]} stroke={chartColors.primary} strokeWidth={1} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -103,12 +104,12 @@ export function DailyReport() {
               <div className="chart-title">선수별 HSR / Sprint</div>
               <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 22)}>
                 <BarChart data={chartData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                   <XAxis type="number" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
                   <YAxis dataKey="name" type="category" width={55} tick={{ fontSize: 10 }} />
                   <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-                  <Bar dataKey="hsr" fill="rgba(0, 166, 81, 0.35)" radius={[0, 3, 3, 0]} name="HSR(m)" />
-                  <Bar dataKey="sprint" fill="rgba(251, 140, 0, 0.35)" radius={[0, 3, 3, 0]} name="Sprint(m)" />
+                  <Bar dataKey="hsr" fill="rgba(0, 140, 126, 0.30)" radius={[0, 3, 3, 0]} name="HSR(m)" />
+                  <Bar dataKey="sprint" fill="rgba(164, 40, 67, 0.28)" radius={[0, 3, 3, 0]} name="Sprint(m)" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

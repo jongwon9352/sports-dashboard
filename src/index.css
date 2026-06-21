@@ -4,22 +4,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-purple: #002D72;
-  --color-purple-dark: #001D4F;
-  --color-purple-light: #E0E8F5;
-  --color-green: #00865A;
-  --color-green-light: #E0F2EB;
-  --color-load-high: #9B2335;
-  --color-load-moderate: #D4A800;
-  --color-load-optimal: #00865A;
-  --color-recovery: #002D72;
-  --color-neutral: #607D8B;
-  --color-bg: #F7F8FA;
+  --color-purple: #A42843;
+  --color-purple-dark: #7F1F35;
+  --color-purple-light: #F4E4E8;
+  --color-green: #008C7E;
+  --color-green-light: #E0F3F0;
+  --color-load-high: #A42843;
+  --color-load-moderate: #B08A00;
+  --color-load-optimal: #008C7E;
+  --color-recovery: #153E6F;
+  --color-neutral: #66717A;
+  --color-bg: #F6F8F7;
   --color-surface: #FFFFFF;
-  --color-surface-secondary: #F3F5F7;
+  --color-surface-secondary: #EEF3F1;
   --color-text-primary: #101820;
-  --color-text-secondary: #5F6368;
-  --color-text-disabled: #9AA0A6;
+  --color-text-secondary: #4F5B63;
+  --color-text-disabled: #7D8990;
   --shadow-1: 0 1px 3px rgba(0,0,0,0.08);
   --shadow-2: 0 4px 12px rgba(0,0,0,0.12);
   --shadow-3: 0 8px 24px rgba(0,0,0,0.16);
@@ -116,7 +116,7 @@ body {
   transition: background 0.1s;
 }
 .data-table tbody tr:hover td {
-  background: rgba(0, 45, 114, 0.03);
+  background: rgba(0, 140, 126, 0.06);
   color: var(--color-text-primary);
 }
 .data-table td.num {
@@ -204,8 +204,8 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+::-webkit-scrollbar-thumb { background: #C8D2D0; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #99A6A3; }
 
 /* Responsive */
 @media (max-width: 1100px) {

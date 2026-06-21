@@ -70,7 +70,7 @@ export function Sidebar() {
               ) : (
                 <span
                   className="text-[10px] px-1.5 py-0.5 rounded text-text-disabled flex-shrink-0"
-                  style={{ fontFamily: 'var(--font-data)', background: '#f3f5f7' }}
+                  style={{ fontFamily: 'var(--font-data)', background: 'var(--color-surface-secondary)' }}
                 >
                   —
                 </span>

@@ -1,3 +1,5 @@
+import { colors } from '../styles/colors';
+
 interface Props {
   label: string;
   value: string | number;
@@ -6,7 +8,7 @@ interface Props {
   valueColor?: string;
 }
 
-export function StatCard({ label, value, sub, accent = '#6B3FA0', valueColor }: Props) {
+export function StatCard({ label, value, sub, accent = colors.navy, valueColor }: Props) {
   return (
     <div className="stat-card">
       <div
