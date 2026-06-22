@@ -121,28 +121,40 @@ export function DailyReport() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>선수</th>
-                    <th className="right">TD(m)</th>
-                    <th className="right">HSR(m)</th>
-                    <th className="right">Sprint(m)</th>
-                    <th className="right">m/min</th>
-                    <th className="right">RPE</th>
-                    <th className="right">Acc</th>
-                    <th className="right">Dec</th>
-                    <th className="right">Max Speed</th>
+                    <th>이름</th>
+                    <th className="right">시간</th>
+                    <th className="right">뛴 거리</th>
+                    <th className="right">분당 뛴 거리</th>
+                    <th className="right">HSR 거리</th>
+                    <th className="right">HSR 거리(custom)</th>
+                    <th className="right">스프린트</th>
+                    <th className="right">스프린트(custom)</th>
+                    <th className="right">스프린트 횟수</th>
+                    <th className="right">스프린트 횟수(custom)</th>
+                    <th className="right">가속 횟수</th>
+                    <th className="right">감속 횟수</th>
+                    <th className="right">액션 횟수</th>
+                    <th className="right">ACD Load</th>
+                    <th className="right">최고 속도</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.map((row, i) => (
                     <tr key={i} onClick={() => row.player_id && navigate(`/player/${row.player_id}`)}>
                       <td className="name">{row.player_name}</td>
+                      <td className="num">{row.duration_min ? Number(row.duration_min).toFixed(0) : '—'}</td>
                       <td className="num">{Math.round(row.total_distance).toLocaleString()}</td>
-                      <td className="num">{Math.round(row.hsr_distance).toLocaleString()}</td>
-                      <td className="num">{Math.round(row.sprint_distance).toLocaleString()}</td>
                       <td className="num">{row.m_per_min ? Number(row.m_per_min).toFixed(1) : '—'}</td>
-                      <td className="num">{row.rpe ?? '—'}</td>
+                      <td className="num">{Math.round(row.hsr_distance).toLocaleString()}</td>
+                      <td className="num">{Math.round(row.hsr_custom).toLocaleString()}</td>
+                      <td className="num">{Math.round(row.sprint_distance).toLocaleString()}</td>
+                      <td className="num">{Math.round(row.sprint_custom).toLocaleString()}</td>
+                      <td className="num">{row.sprint_count || '—'}</td>
+                      <td className="num">{row.sprint_count_custom || '—'}</td>
                       <td className="num">{row.acc_count || '—'}</td>
                       <td className="num">{row.dec_count || '—'}</td>
+                      <td className="num">{(row.acc_count + row.dec_count) || '—'}</td>
+                      <td className="num">{row.acd_load ? Number(row.acd_load).toFixed(1) : '—'}</td>
                       <td className="num">{row.max_speed ? Number(row.max_speed).toFixed(1) : '—'}</td>
                     </tr>
                   ))}

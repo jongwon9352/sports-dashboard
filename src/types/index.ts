@@ -1,6 +1,6 @@
 export type MaturityStatus = 'Pre' | 'Mid' | 'Post';
-export type Position = 'GK' | 'CB' | 'FB' | 'MF' | 'WF' | 'CF';
-export type Grade = 'U15' | 'U14' | 'U13';
+export type Position = 'GK' | 'CB' | 'FB' | 'MF' | 'WF' | 'CF' | 'CAM' | 'CDM' | 'CM' | 'FW' | 'DF' | 'ST' | 'RW' | 'LW' | 'RB' | 'LB';
+export type Grade = 'U15' | 'U14' | 'U13' | '3학년' | '2학년' | '1학년';
 
 export interface Player {
   id: string;
@@ -16,6 +16,8 @@ export interface Player {
   current_weight: number;
   latest_mas: number | null;
   latest_mss: number | null;
+  preferred_foot: string;
+  photo_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -155,14 +157,20 @@ export interface DailyReportRow {
   jersey_number: number | null;
   position: string | null;
   player_id: string;
+  duration_min: number;
   total_distance: number;
-  hsr_distance: number;
-  sprint_distance: number;
-  rpe: number | null;
   m_per_min: number;
+  hsr_distance: number;
+  hsr_custom: number;
+  sprint_distance: number;
+  sprint_custom: number;
+  sprint_count: number;
+  sprint_count_custom: number;
   acc_count: number;
   dec_count: number;
+  acd_load: number;
   max_speed: number;
+  rpe: number | null;
   daily_training_load: number | null;
 }
 

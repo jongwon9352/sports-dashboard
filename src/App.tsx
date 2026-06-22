@@ -8,6 +8,8 @@ import { AcwrPage } from './pages/AcwrPage';
 import { RpePage } from './pages/RpePage';
 import { Upload } from './pages/Upload';
 import { PlayerProfile } from './pages/PlayerProfile';
+import { Settings } from './pages/Settings';
+import { WeeklyPeriodization } from './pages/WeeklyPeriodization';
 
 function App() {
   return (
@@ -23,8 +25,10 @@ function App() {
               <Route path="/weekly" element={<WeeklyReport />} />
               <Route path="/acwr" element={<AcwrPage />} />
               <Route path="/rpe" element={<RpePage />} />
+              <Route path="/periodization" element={<WeeklyPeriodization />} />
               <Route path="/upload" element={<Upload />} />
               <Route path="/player/:id" element={<PlayerProfile />} />
+              <Route path="/settings/players" element={<Settings />} />
             </Routes>
           </main>
         </div>

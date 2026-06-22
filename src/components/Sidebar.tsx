@@ -1,15 +1,11 @@
-import { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
-import { fetchPlayersForSidebar } from '../lib/api';
-import { getZoneColor } from '../utils/calculations';
-import type { SidebarPlayer } from '../types';
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 
 export function Sidebar() {
-  const [players, setPlayers] = useState<SidebarPlayer[]>([]);
-
-  useEffect(() => {
-    fetchPlayersForSidebar().then(setPlayers);
-  }, []);
+  const location = useLocation();
+  const isDashboardGroup = ['/', '/daily', '/weekly'].includes(location.pathname);
+  const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <aside className="w-[230px] min-h-[calc(100vh-72px)] border-r border-surface-secondary bg-surface sticky top-[72px] overflow-y-auto max-h-[calc(100vh-72px)] flex-shrink-0 hide-mobile">
@@ -21,63 +17,69 @@ export function Sidebar() {
           메뉴
         </p>
         <nav className="px-2 flex flex-col gap-0.5">
-          <NavLink to="/" end className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-            <span className="w-[18px] text-center text-[13px]">📊</span>팀 대시보드
+          {/* 팀 대시보드 그룹 */}
+          <NavLink
+            to="/"
+            end
+            onClick={() => setDashboardOpen(true)}
+            className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
+          >
+            <span className="w-[18px] text-center text-[13px]">📊</span>
+            팀 대시보드
+            <span
+              onClick={e => { e.preventDefault(); e.stopPropagation(); setDashboardOpen(!dashboardOpen); }}
+              className={`ml-auto text-[10px] text-text-disabled transition-transform cursor-pointer ${dashboardOpen ? 'rotate-180' : ''}`}
+            >
+              ▼
+            </span>
           </NavLink>
-          <NavLink to="/daily" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-            <span className="w-[18px] text-center text-[13px]">📅</span>일별 리포트
-          </NavLink>
-          <NavLink to="/weekly" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-            <span className="w-[18px] text-center text-[13px]">📆</span>주별 리포트
-          </NavLink>
+          {dashboardOpen && (
+            <div className="pl-5 flex flex-col gap-0.5">
+              <NavLink to="/daily" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">📅</span>데일리 리포트
+              </NavLink>
+              <NavLink to="/weekly" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">📆</span>위클리 리포트
+              </NavLink>
+            </div>
+          )}
+
           <NavLink to="/acwr" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
             <span className="w-[18px] text-center text-[13px]">⚡</span>ACWR 현황
           </NavLink>
           <NavLink to="/rpe" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
             <span className="w-[18px] text-center text-[13px]">💪</span>RPE 모니터링
           </NavLink>
+          <NavLink to="/periodization" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            <span className="w-[18px] text-center text-[13px]">🗓️</span>주간 주기화
+          </NavLink>
           <NavLink to="/upload" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-            <span className="w-[18px] text-center text-[13px]">⚙️</span>데이터 관리
+            <span className="w-[18px] text-center text-[13px]">📁</span>데이터 관리
           </NavLink>
         </nav>
       </div>
       <div className="py-3">
-        <p
-          className="px-4 mb-2 text-[10px] text-text-disabled tracking-[2px] uppercase"
-          style={{ fontFamily: 'var(--font-data)' }}
+        <button
+          onClick={() => setSettingsOpen(!settingsOpen)}
+          className="w-full px-4 mb-2 flex items-center justify-between"
         >
-          선수 ({players.length}명)
-        </p>
-        <div className="px-2 max-h-[calc(100vh-380px)] overflow-y-auto">
-          {players.map(p => (
-            <NavLink
-              key={p.id}
-              to={`/player/${p.id}`}
-              className={({ isActive }) => `player-list-item ${isActive ? 'active' : ''}`}
-            >
-              <span className="truncate">{p.name}</span>
-              {p.acwr != null ? (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                  style={{
-                    fontFamily: 'var(--font-data)',
-                    color: getZoneColor(p.zone),
-                    background: `${getZoneColor(p.zone)}15`,
-                  }}
-                >
-                  {p.acwr.toFixed(2)}
-                </span>
-              ) : (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded text-text-disabled flex-shrink-0"
-                  style={{ fontFamily: 'var(--font-data)', background: 'var(--color-surface-secondary)' }}
-                >
-                  —
-                </span>
-              )}
+          <p
+            className="text-[10px] text-text-disabled tracking-[2px] uppercase"
+            style={{ fontFamily: 'var(--font-data)' }}
+          >
+            설정
+          </p>
+          <span className={`text-[10px] text-text-disabled transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>
+            ▼
+          </span>
+        </button>
+        {settingsOpen && (
+          <nav className="px-2 flex flex-col gap-0.5">
+            <NavLink to="/settings/players" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <span className="w-[18px] text-center text-[13px]">👥</span>선수 관리
             </NavLink>
-          ))}
-        </div>
+          </nav>
+        )}
       </div>
     </aside>
   );

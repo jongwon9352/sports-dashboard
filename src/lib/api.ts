@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  PlayerWithAcwr, AcwrZone, AcwrDaily, TrainingDaily,
+  Player, PlayerWithAcwr, AcwrZone, AcwrDaily, TrainingDaily,
   TeamDailyAggregate, DailyReportRow, SidebarPlayer, MatchData,
 } from '../types';
 import {
@@ -339,6 +339,9 @@ export async function fetchPlayersForSidebar(): Promise<SidebarPlayer[]> {
 export async function fetchTeamDailyAggregates(days = 90): Promise<TeamDailyAggregate[]> {
   if (!supabase) return [];
 
+  const playerIds = await fetchPlayerIds();
+  if (playerIds.length === 0) return [];
+
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
@@ -350,6 +353,7 @@ export async function fetchTeamDailyAggregates(days = 90): Promise<TeamDailyAggr
     const { data: chunk } = await supabase
       .from('training_daily')
       .select('training_date, total_distance, hsr_distance, sprint_distance, rpe')
+      .in('player_id', playerIds)
       .gte('training_date', cutoffStr)
       .order('training_date')
       .range(offset, offset + PAGE - 1);
@@ -389,6 +393,9 @@ export async function fetchTeamDailyAggregates(days = 90): Promise<TeamDailyAggr
 export async function fetchAvailableDates(): Promise<string[]> {
   if (!supabase) return [];
 
+  const playerIds = await fetchPlayerIds();
+  if (playerIds.length === 0) return [];
+
   const dates = new Set<string>();
   let offset = 0;
   const PAGE = 1000;
@@ -396,6 +403,7 @@ export async function fetchAvailableDates(): Promise<string[]> {
     const { data: chunk } = await supabase
       .from('training_daily')
       .select('training_date')
+      .in('player_id', playerIds)
       .order('training_date', { ascending: false })
       .range(offset, offset + PAGE - 1);
     if (!chunk || chunk.length === 0) break;
@@ -409,10 +417,14 @@ export async function fetchAvailableDates(): Promise<string[]> {
 export async function fetchDailyReportData(date: string): Promise<DailyReportRow[]> {
   if (!supabase) return [];
 
+  const playerIds = await fetchPlayerIds();
+  if (playerIds.length === 0) return [];
+
   const { data } = await supabase
     .from('training_daily')
-    .select('player_id, total_distance, hsr_distance, sprint_distance, rpe, m_per_min, acc_count, dec_count, max_speed, daily_training_load, players(name, jersey_number, position)')
+    .select('player_id, duration_min, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, rpe, daily_training_load, players(name, jersey_number, position)')
     .eq('training_date', date)
+    .in('player_id', playerIds)
     .order('total_distance', { ascending: false });
 
   if (!data) return [];
@@ -422,14 +434,20 @@ export async function fetchDailyReportData(date: string): Promise<DailyReportRow
     player_name: row.players?.name ?? '',
     jersey_number: row.players?.jersey_number,
     position: row.players?.position,
+    duration_min: Number(row.duration_min) || 0,
     total_distance: Number(row.total_distance) || 0,
-    hsr_distance: Number(row.hsr_distance) || 0,
-    sprint_distance: Number(row.sprint_distance) || 0,
-    rpe: row.rpe != null ? Number(row.rpe) : null,
     m_per_min: Number(row.m_per_min) || 0,
+    hsr_distance: Number(row.hsr_distance) || 0,
+    hsr_custom: Number(row.hsr_custom) || 0,
+    sprint_distance: Number(row.sprint_distance) || 0,
+    sprint_custom: Number(row.sprint_custom) || 0,
+    sprint_count: Number(row.sprint_count) || 0,
+    sprint_count_custom: Number(row.sprint_count_custom) || 0,
     acc_count: Number(row.acc_count) || 0,
     dec_count: Number(row.dec_count) || 0,
+    acd_load: Number(row.acd_load) || 0,
     max_speed: Number(row.max_speed) || 0,
+    rpe: row.rpe != null ? Number(row.rpe) : null,
     daily_training_load: row.daily_training_load != null ? Number(row.daily_training_load) : null,
   }));
 }
@@ -472,6 +490,9 @@ export async function fetchRpeData(): Promise<{
 }> {
   if (!supabase) return { teamTrend: [], playerAvgs: [], distribution: [] };
 
+  const playerIds = await fetchPlayerIds();
+  if (playerIds.length === 0) return { teamTrend: [], playerAvgs: [], distribution: [] };
+
   const rows: R[] = [];
   let offset = 0;
   const PAGE = 1000;
@@ -479,6 +500,7 @@ export async function fetchRpeData(): Promise<{
     const { data: chunk } = await supabase
       .from('training_daily')
       .select('training_date, rpe, player_id, players(name)')
+      .in('player_id', playerIds)
       .not('rpe', 'is', null)
       .gt('rpe', 0)
       .order('training_date')
@@ -527,4 +549,190 @@ export async function fetchRpeData(): Promise<{
     .sort((a, b) => b.avg_rpe - a.avg_rpe);
 
   return { teamTrend, playerAvgs, distribution: bins };
+}
+
+export interface CsvUploadRecord {
+  id: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  row_count: number;
+  training_date: string | null;
+  csv_content: string;
+  created_at: string;
+}
+
+export async function saveCsvUploadRecord(
+  record: Omit<CsvUploadRecord, 'id' | 'created_at'>,
+) {
+  const client = requireSupabase();
+  const { error } = await client.from('csv_uploads').insert(record);
+  if (error) throw error;
+}
+
+export async function fetchCsvUploads(): Promise<CsvUploadRecord[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('csv_uploads')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as CsvUploadRecord[];
+}
+
+export async function deleteCsvUpload(id: string) {
+  const client = requireSupabase();
+  const { error } = await client.from('csv_uploads').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchDataSummary() {
+  const client = requireSupabase();
+  const { data: daily } = await client
+    .from('training_daily')
+    .select('training_date, player_id')
+    .order('training_date', { ascending: true });
+  const rows = (daily ?? []) as R[];
+  const dates = rows.map(r => r.training_date as string).filter(Boolean);
+  const playerIds = new Set(rows.map(r => r.player_id as string));
+  return {
+    dateRange: dates.length ? `${dates[0]} ~ ${dates[dates.length - 1]}` : '-',
+    playerCount: playerIds.size,
+    sessionCount: rows.length,
+  };
+}
+
+export async function fetchAllPlayers(): Promise<Player[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('players')
+    .select('*')
+    .order('jersey_number', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Player[];
+}
+
+export async function addPlayer(player: {
+  name: string;
+  jersey_number: number;
+  position: string;
+  grade: string;
+}) {
+  const client = requireSupabase();
+  const now = new Date().toISOString();
+  const { error } = await client.from('players').insert({
+    id: crypto.randomUUID(),
+    name: player.name,
+    jersey_number: player.jersey_number,
+    position: player.position,
+    grade: player.grade,
+    created_at: now,
+    updated_at: now,
+  });
+  if (error) throw error;
+}
+
+export async function uploadPlayerPhoto(playerId: string, file: File): Promise<string> {
+  const client = requireSupabase();
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `${playerId}.${ext}`;
+  const { error } = await client.storage
+    .from('player-photos')
+    .upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = client.storage.from('player-photos').getPublicUrl(path);
+  const url = `${data.publicUrl}?t=${Date.now()}`;
+  await client.from('players').update({ photo_url: url }).eq('id', playerId);
+  return url;
+}
+
+export async function updatePlayer(id: string, fields: {
+  position?: string; grade?: string; jersey_number?: number;
+  name?: string; birth_date?: string; current_height?: number;
+  current_weight?: number; preferred_foot?: string; photo_url?: string;
+}) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('players')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deletePlayer(id: string) {
+  const client = requireSupabase();
+  const { error } = await client.from('players').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function deletePlayers(ids: string[]) {
+  const client = requireSupabase();
+  const { error } = await client.from('players').delete().in('id', ids);
+  if (error) throw error;
+}
+
+export async function fetchPlayerIds(): Promise<string[]> {
+  const client = requireSupabase();
+  const { data, error } = await client.from('players').select('id');
+  if (error) throw error;
+  return (data ?? []).map((r: R) => r.id as string);
+}
+
+export interface WeeklyPeriodization {
+  id: string;
+  week_start: string;
+  weekly_topic: string;
+  days: DayPlan[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DayPlan {
+  periodization: string;
+  perio_code: string;
+  physical_goal: string;
+  time: string;
+  intensity: string;
+  training_load: string;
+  total_distance: string;
+  hsr_distance: string;
+  sprint_distance: string;
+  acc_dec: string;
+  pitch_rect: { x: number; y: number; w: number; h: number };
+  prep: string;
+  warmup: string;
+}
+
+export function emptyDayPlan(): DayPlan {
+  return {
+    periodization: '', perio_code: '', physical_goal: '',
+    time: '', intensity: '', training_load: '',
+    total_distance: '', hsr_distance: '', sprint_distance: '',
+    acc_dec: '', pitch_rect: { x: 10, y: 10, w: 80, h: 80 },
+    prep: '', warmup: '',
+  };
+}
+
+export async function fetchWeeklyPeriodization(weekStart: string): Promise<WeeklyPeriodization | null> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('weekly_periodization')
+    .select('*')
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (error) throw error;
+  return data as WeeklyPeriodization | null;
+}
+
+export async function upsertWeeklyPeriodization(weekStart: string, weeklyTopic: string, days: DayPlan[]) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('weekly_periodization')
+    .upsert({
+      week_start: weekStart,
+      weekly_topic: weeklyTopic,
+      days: JSON.stringify(days),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'week_start' });
+  if (error) throw error;
 }

@@ -1,83 +1,150 @@
-import { useState, useCallback, type DragEvent } from 'react';
+import { useState, useCallback, useEffect, type DragEvent } from 'react';
 import { parseSessionCsv, parseDailyCsv, extractDateFromFilename } from '../utils/csvParser';
-import { importDailyCsvRows, importSessionCsvRows } from '../lib/api';
+import {
+  importDailyCsvRows,
+  importSessionCsvRows,
+  saveCsvUploadRecord,
+  fetchCsvUploads,
+  deleteCsvUpload,
+  fetchDataSummary,
+  type CsvUploadRecord,
+} from '../lib/api';
 
 type FileType = 'session' | 'daily' | null;
 
 function detectFileType(filename: string): FileType {
   const normalized = filename.normalize('NFC').toLowerCase();
   if (normalized.includes('리포트') || normalized.includes('report') || normalized.includes('테이블')) return 'session';
-  if (normalized.includes('운동부하') || normalized.includes('모니터링') || normalized.includes('workload')) return 'daily';
+  if (normalized.includes('운동부하') || normalized.includes('모니터링') || normalized.includes('workload') || normalized.includes('trend')) return 'daily';
   return null;
 }
 
-interface UploadResult {
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+interface UploadStatus {
   filename: string;
-  type: FileType;
-  rowCount: number;
-  date: string;
-  status: 'success' | 'error';
+  status: 'uploading' | 'success' | 'error';
   message?: string;
 }
 
 export function Upload() {
   const [dragging, setDragging] = useState(false);
-  const [results, setResults] = useState<UploadResult[]>([]);
-  const [dateOverride, setDateOverride] = useState('');
+  const [uploads, setUploads] = useState<CsvUploadRecord[]>([]);
+  const [summary, setSummary] = useState({ dateRange: '-', playerCount: 0, sessionCount: 0 });
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<UploadStatus[]>([]);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [files, sum] = await Promise.all([fetchCsvUploads(), fetchDataSummary()]);
+      setUploads(files);
+      setSummary(sum);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   const handleFiles = useCallback(async (files: FileList) => {
-    const newResults: UploadResult[] = [];
+    const newStatuses: UploadStatus[] = [];
 
     for (const file of Array.from(files)) {
       if (!file.name.endsWith('.csv')) {
-        newResults.push({
-          filename: file.name,
-          type: null,
-          rowCount: 0,
-          date: '',
-          status: 'error',
-          message: 'CSV 파일만 업로드 가능합니다.',
-        });
+        newStatuses.push({ filename: file.name, status: 'error', message: 'CSV 파일만 업로드 가능합니다.' });
         continue;
       }
 
       const type = detectFileType(file.name);
-      const date = dateOverride || extractDateFromFilename(file.name);
+      if (!type) {
+        newStatuses.push({ filename: file.name, status: 'error', message: '파일명에 "운동부하/모니터링/Trend" 또는 "리포트/테이블"이 포함되어야 합니다.' });
+        continue;
+      }
+
+      newStatuses.push({ filename: file.name, status: 'uploading' });
+      setStatuses([...newStatuses]);
+
       const text = await file.text();
+      const date = extractDateFromFilename(file.name);
 
       try {
+        let rowCount = 0;
         if (type === 'session') {
           const rows = parseSessionCsv(text);
+          if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           await importSessionCsvRows(rows, date);
-          newResults.push({ filename: file.name, type, rowCount: rows.length, date, status: 'success' });
-        } else if (type === 'daily') {
-          const rows = parseDailyCsv(text);
-          await importDailyCsvRows(rows, date);
-          newResults.push({ filename: file.name, type, rowCount: rows.length, date, status: 'success' });
+          rowCount = rows.length;
         } else {
-          newResults.push({
-            filename: file.name,
-            type: null,
-            rowCount: 0,
-            date,
-            status: 'error',
-            message: '파일 유형을 인식할 수 없습니다. 파일명에 "리포트" 또는 "운동부하"가 포함되어야 합니다.',
-          });
+          const rows = parseDailyCsv(text);
+          if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
+          await importDailyCsvRows(rows, date);
+          rowCount = rows.length;
         }
-      } catch (e) {
-        newResults.push({
+
+        await saveCsvUploadRecord({
           filename: file.name,
-          type,
-          rowCount: 0,
-          date,
-          status: 'error',
-          message: `업로드 오류: ${e instanceof Error ? e.message : '알 수 없는 오류'}`,
+          file_type: type,
+          file_size: file.size,
+          row_count: rowCount,
+          training_date: date,
+          csv_content: text,
         });
+
+        newStatuses[newStatuses.length - 1] = {
+          filename: file.name,
+          status: 'success',
+          message: `${type === 'session' ? '세션' : '일일'} 데이터 ${rowCount}행 · 날짜: ${date}`,
+        };
+      } catch (e) {
+        newStatuses[newStatuses.length - 1] = {
+          filename: file.name,
+          status: 'error',
+          message: e instanceof Error ? e.message : '알 수 없는 오류',
+        };
       }
+      setStatuses([...newStatuses]);
     }
 
-    setResults(prev => [...newResults, ...prev]);
-  }, [dateOverride]);
+    await loadData();
+  }, [loadData]);
+
+  const handleDownload = (record: CsvUploadRecord) => {
+    const blob = new Blob([record.csv_content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = record.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('이 파일을 삭제하시겠습니까?')) return;
+    setDeleting(id);
+    try {
+      await deleteCsvUpload(id);
+      await loadData();
+    } catch {
+      // silently fail
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   const onDragOver = (e: DragEvent) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
@@ -87,76 +154,133 @@ export function Upload() {
     if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
   };
 
-  return (
-    <div className="p-8 max-w-[900px] mx-auto">
-      <h1 className="text-[28px] font-semibold mb-6">데이터 업로드</h1>
+  const lastUpload = uploads.length > 0 ? formatDate(uploads[0].created_at) : '-';
 
-      <div className="bg-surface rounded-[var(--radius-card)] p-6 shadow-[var(--shadow-1)] mb-6">
-        <label className="block text-sm font-medium mb-2">훈련 날짜</label>
-        <div className="flex items-center gap-3">
-          <input
-            type="date"
-            value={dateOverride}
-            onChange={e => setDateOverride(e.target.value)}
-            className="px-3 py-2 border border-surface-secondary rounded-[var(--radius-sm)] text-sm"
-          />
-          <span className="text-sm text-text-secondary">
-            비워두면 파일명에서 자동 추출됩니다
-          </span>
+  return (
+    <div className="p-8 max-w-[1200px] mx-auto">
+      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+        <span className="w-1 h-6 bg-cyan-400 rounded-sm inline-block" />
+        데이터 관리
+      </h1>
+
+      {/* CSV 파일 업로드 */}
+      <div className="bg-surface rounded-xl p-6 shadow-[var(--shadow-1)] mb-6">
+        <p className="text-sm text-text-secondary mb-4 flex items-center gap-2">
+          📁 CSV 파일 업로드
+        </p>
+        <div
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          className={`rounded-lg p-16 border-2 border-dashed transition-colors text-center cursor-pointer ${
+            dragging ? 'border-cyan-400 bg-cyan-400/10' : 'border-surface-secondary'
+          }`}
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.csv';
+            input.multiple = true;
+            input.onchange = (e) => {
+              const f = (e.target as HTMLInputElement).files;
+              if (f) handleFiles(f);
+            };
+            input.click();
+          }}
+        >
+          <div className="text-5xl mb-4 opacity-40">📄</div>
+          <p className="text-base font-medium mb-2">클릭하거나 파일을 여기에 드래그하세요</p>
+          <p className="text-sm text-text-secondary">CSV 파일 · 여러 파일 동시 업로드 가능</p>
         </div>
       </div>
 
-      <div
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`bg-surface rounded-[var(--radius-card)] p-12 shadow-[var(--shadow-1)] border-2 border-dashed transition-colors text-center cursor-pointer ${
-          dragging ? 'border-purple bg-purple-light/30' : 'border-surface-secondary'
-        }`}
-        onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.csv';
-          input.multiple = true;
-          input.onchange = (e) => {
-            const files = (e.target as HTMLInputElement).files;
-            if (files) handleFiles(files);
-          };
-          input.click();
-        }}
-      >
-        <div className="text-5xl mb-4">📁</div>
-        <p className="text-lg font-medium mb-2">CSV 파일을 드래그하거나 클릭하세요</p>
-        <p className="text-sm text-text-secondary">
-          "리포트용 테이블" CSV와 "운동부하 모니터링" CSV를 함께 업로드할 수 있습니다
-        </p>
-      </div>
-
-      {results.length > 0 && (
-        <div className="mt-6 space-y-3">
-          <h2 className="text-lg font-semibold">업로드 결과</h2>
-          {results.map((r, i) => (
-            <div
-              key={i}
-              className={`flex items-center gap-4 p-4 rounded-[var(--radius-sm)] ${
-                r.status === 'success' ? 'bg-green-light' : 'bg-red-50'
-              }`}
-            >
-              <span className="text-xl">{r.status === 'success' ? '✅' : '❌'}</span>
-              <div className="flex-1">
-                <p className="font-medium text-sm">{r.filename}</p>
-                {r.status === 'success' ? (
-                  <p className="text-xs text-text-secondary">
-                    {r.type === 'session' ? '세션 데이터' : '일일 데이터'} · {r.rowCount}행 · {r.date}
-                  </p>
-                ) : (
-                  <p className="text-xs text-load-high">{r.message}</p>
-                )}
+      {/* 업로드 결과 */}
+      {statuses.length > 0 && (
+        <div className="bg-surface rounded-xl p-6 shadow-[var(--shadow-1)] mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-text-secondary">업로드 결과</p>
+            <button onClick={() => setStatuses([])}
+              className="text-xs text-text-disabled hover:text-text-secondary">닫기</button>
+          </div>
+          <div className="space-y-2">
+            {statuses.map((s, i) => (
+              <div key={i} className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm ${
+                s.status === 'success' ? 'bg-green-500/10' : s.status === 'error' ? 'bg-red-500/10' : 'bg-cyan-400/10'
+              }`}>
+                <span>{s.status === 'success' ? '✅' : s.status === 'error' ? '❌' : '⏳'}</span>
+                <span className="font-medium truncate">{s.filename}</span>
+                {s.message && <span className="text-xs text-text-secondary ml-auto whitespace-nowrap">{s.message}</span>}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
+
+      {/* 현재 데이터 현황 */}
+      <div className="bg-surface rounded-xl p-6 shadow-[var(--shadow-1)] mb-6">
+        <p className="text-sm text-text-secondary mb-4">현재 데이터 현황</p>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-[var(--bg)] rounded-lg p-4">
+            <p className="text-cyan-400 font-bold text-sm mb-1">데이터 기간</p>
+            <p className="text-sm">{summary.dateRange}</p>
+          </div>
+          <div className="bg-[var(--bg)] rounded-lg p-4">
+            <p className="text-cyan-400 font-bold text-sm mb-1">선수 / 세션</p>
+            <p className="text-sm">{summary.playerCount}명 / {summary.sessionCount}세션</p>
+          </div>
+          <div className="bg-[var(--bg)] rounded-lg p-4">
+            <p className="text-cyan-400 font-bold text-sm mb-1">마지막 업데이트</p>
+            <p className="text-sm">{lastUpload}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 업로드된 파일 목록 */}
+      <div className="bg-surface rounded-xl p-6 shadow-[var(--shadow-1)]">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-text-secondary">업로드된 파일 목록</p>
+          <button
+            onClick={loadData}
+            className="px-3 py-1.5 text-xs rounded-md border border-surface-secondary hover:bg-surface-secondary transition-colors"
+          >
+            🔄 새로고침
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-text-secondary text-center py-8">로딩 중...</p>
+        ) : uploads.length === 0 ? (
+          <p className="text-sm text-text-secondary text-center py-8">업로드된 파일이 없습니다.</p>
+        ) : (
+          <div className="space-y-2">
+            {uploads.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-[var(--bg)] transition-colors"
+              >
+                <span className="text-lg opacity-60">📄</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate">{file.filename}</p>
+                </div>
+                <span className="text-xs text-text-secondary whitespace-nowrap">{formatFileSize(file.file_size)}</span>
+                <span className="text-xs text-text-secondary whitespace-nowrap">{formatDate(file.created_at)}</span>
+                <button
+                  onClick={() => handleDownload(file)}
+                  className="px-3 py-1 text-xs rounded border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors whitespace-nowrap"
+                >
+                  ⬇ 다운로드
+                </button>
+                <button
+                  onClick={() => handleDelete(file.id)}
+                  disabled={deleting === file.id}
+                  className="px-3 py-1 text-xs rounded border border-red-400 text-red-400 hover:bg-red-400/10 transition-colors whitespace-nowrap disabled:opacity-50"
+                >
+                  ✕ 삭제
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -56,11 +56,13 @@ function findOrCreatePlayer(name: string, jerseyNumber: number): Player {
     current_weight: 0,
     latest_mas: null,
     latest_mss: null,
+    preferred_foot: '오른발',
+    photo_url: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-  playersStore.push(player);
-  return player;
+  playersStore.push(player as Player);
+  return player as Player;
 }
 
 export function importSessionData(rows: ParsedSessionRow[], date: string) {
