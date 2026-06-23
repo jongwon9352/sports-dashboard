@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import {
   fetchWeeklyPeriodization,
   upsertWeeklyPeriodization,
+  fetchSavedWeeks,
   emptyDayPlan,
   type DayPlan,
 } from '../lib/api';
@@ -19,18 +20,12 @@ function AutoCell({
     if (el) { el.style.height = '0'; el.style.height = el.scrollHeight + 'px'; }
   }, [value]);
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      onBlur={onBlur}
-      rows={1}
-      className={className}
-    />
+    <textarea ref={ref} value={value} onChange={e => onChange(e.target.value)}
+      onBlur={onBlur} rows={1} className={className} />
   );
 }
 
-const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 const ROW_LABELS = [
   'Periodization', 'Physical Goal',
   'Time', 'Intensity', 'Training Load',
@@ -47,14 +42,15 @@ const NUMERIC_ROWS = ['time', 'training_load', 'total_distance', 'hsr_distance',
 
 function getMonday(d: Date): Date {
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   const mon = new Date(d);
-  mon.setDate(diff);
+  mon.setDate(d.getDate() - ((day + 6) % 7));
   mon.setHours(0, 0, 0, 0);
   return mon;
 }
 
-function fmt(d: Date): string { return d.toISOString().split('T')[0]; }
+function fmt(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function addDays(d: Date, n: number): Date {
   const r = new Date(d); r.setDate(r.getDate() + n); return r;
@@ -76,8 +72,7 @@ const MIN_SIZE = 4;
 const PW = 68, PH = 105;
 
 function PitchDiagram({
-  rect,
-  onChange,
+  rect, onChange,
 }: {
   rect: { x: number; y: number; w: number; h: number };
   onChange: (r: { x: number; y: number; w: number; h: number }) => void;
@@ -106,17 +101,14 @@ function PitchDiagram({
       const dx = p.x - startRef.current.mx, dy = p.y - startRef.current.my;
       const s = startRef.current;
       let { x, y, w, h } = { x: s.rx, y: s.ry, w: s.rw, h: s.rh };
-
       if (dragging === 'move') {
         x = Math.max(0, Math.min(PW - w, s.rx + dx));
         y = Math.max(0, Math.min(PH - h, s.ry + dy));
       } else {
-        const hasN = dragging.includes('n'), hasS = dragging.includes('s');
-        const hasW = dragging.includes('w'), hasE = dragging.includes('e');
-        if (hasN) { y = Math.max(0, s.ry + dy); h = Math.max(MIN_SIZE, s.rh - (y - s.ry)); }
-        if (hasS) { h = Math.max(MIN_SIZE, Math.min(PH - y, s.rh + dy)); }
-        if (hasW) { x = Math.max(0, s.rx + dx); w = Math.max(MIN_SIZE, s.rw - (x - s.rx)); }
-        if (hasE) { w = Math.max(MIN_SIZE, Math.min(PW - x, s.rw + dx)); }
+        if (dragging.includes('n')) { y = Math.max(0, s.ry + dy); h = Math.max(MIN_SIZE, s.rh - (y - s.ry)); }
+        if (dragging.includes('s')) { h = Math.max(MIN_SIZE, Math.min(PH - y, s.rh + dy)); }
+        if (dragging.includes('w')) { x = Math.max(0, s.rx + dx); w = Math.max(MIN_SIZE, s.rw - (x - s.rx)); }
+        if (dragging.includes('e')) { w = Math.max(MIN_SIZE, Math.min(PW - x, s.rw + dx)); }
       }
       onChange({ x, y, w, h });
     };
@@ -126,9 +118,7 @@ function PitchDiagram({
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [dragging, onChange, rect]);
 
-  const eb = 2;
-  const cs = 3;
-
+  const eb = 2, cs = 3;
   return (
     <svg ref={svgRef} viewBox="0 0 68 105" className="w-full h-full cursor-default select-none">
       <rect x="0" y="0" width="68" height="105" fill="#4a8c3f" rx="1" />
@@ -140,13 +130,9 @@ function PitchDiagram({
       <rect x="14" y="87" width="40" height="16" fill="none" stroke="white" strokeWidth="0.3" />
       <rect x="22" y="2" width="24" height="7" fill="none" stroke="white" strokeWidth="0.3" />
       <rect x="22" y="96" width="24" height="7" fill="none" stroke="white" strokeWidth="0.3" />
-
-      {/* Red box fill */}
       <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h}
         fill="rgba(255,0,0,0.18)" stroke="red" strokeWidth="0.6"
         className="cursor-move" onMouseDown={e => onDown(e, 'move')} />
-
-      {/* Edge drag zones - invisible thick hit areas */}
       <rect x={rect.x + cs} y={rect.y - eb} width={rect.w - cs * 2} height={eb * 2}
         fill="transparent" className="cursor-n-resize" onMouseDown={e => onDown(e, 'n')} />
       <rect x={rect.x + cs} y={rect.y + rect.h - eb} width={rect.w - cs * 2} height={eb * 2}
@@ -155,8 +141,6 @@ function PitchDiagram({
         fill="transparent" className="cursor-w-resize" onMouseDown={e => onDown(e, 'w')} />
       <rect x={rect.x + rect.w - eb} y={rect.y + cs} width={eb * 2} height={rect.h - cs * 2}
         fill="transparent" className="cursor-e-resize" onMouseDown={e => onDown(e, 'e')} />
-
-      {/* Corner drag zones - centered on each corner, on top of everything */}
       {([
         { edge: 'nw' as DragEdge, cx: rect.x, cy: rect.y },
         { edge: 'ne' as DragEdge, cx: rect.x + rect.w, cy: rect.y },
@@ -177,29 +161,38 @@ function PitchDiagram({
 export function WeeklyPeriodization() {
   const [weekStart, setWeekStart] = useState(() => fmt(getMonday(new Date())));
   const [topic, setTopic] = useState('');
+  const [weekLabel, setWeekLabel] = useState('');
   const [days, setDays] = useState<DayPlan[]>(() => Array.from({ length: 7 }, emptyDayPlan));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedWeeks, setSavedWeeks] = useState<{ week_start: string; week_label: string }[]>([]);
   const tableRef = useRef<HTMLDivElement>(null);
+
+  const loadSavedWeeks = useCallback(async () => {
+    try { setSavedWeeks(await fetchSavedWeeks()); } catch { /* */ }
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const data = await fetchWeeklyPeriodization(weekStart);
       if (data) {
-        const parsed = typeof data.days === 'string' ? JSON.parse(data.days) : data.days;
+        let parsed: unknown = data.days;
+        while (typeof parsed === 'string') parsed = JSON.parse(parsed);
         const arr = Array.isArray(parsed) ? parsed : [];
         while (arr.length < 7) arr.push(emptyDayPlan());
         arr.forEach((d: DayPlan) => { if (!d.prep) d.prep = ''; });
         setDays(arr);
         setTopic(data.weekly_topic || '');
+        setWeekLabel(data.week_label || '');
       } else {
         setDays(Array.from({ length: 7 }, emptyDayPlan));
         setTopic('');
+        setWeekLabel('');
       }
     } catch { /* */ }
   }, [weekStart]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadSavedWeeks(); }, [load, loadSavedWeeks]);
 
   const updateDay = (idx: number, key: keyof DayPlan, value: string) => {
     setDays(prev => { const next = [...prev]; next[idx] = { ...next[idx], [key]: value }; return next; });
@@ -212,7 +205,11 @@ export function WeeklyPeriodization() {
 
   const handleSave = async () => {
     setSaving(true);
-    try { await upsertWeeklyPeriodization(weekStart, topic, days); setSaved(true); } catch { /* */ }
+    try {
+      await upsertWeeklyPeriodization(weekStart, topic, weekLabel, days);
+      setSaved(true);
+      await loadSavedWeeks();
+    } catch { /* */ }
     setSaving(false);
   };
 
@@ -224,16 +221,21 @@ export function WeeklyPeriodization() {
     const pdfW = 297, pdfH = pdfW / ratio;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
     pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
-    pdf.save(`주간주기화_${weekStart}.pdf`);
+    pdf.save(`주간주기화_${weekLabel || weekStart}.pdf`);
   };
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(new Date(weekStart), i);
-    return { label: `${d.getMonth() + 1}월 ${d.getDate()}일`, dayLabel: DAY_LABELS[d.getDay()] };
+    return { label: `${d.getMonth() + 1}월 ${d.getDate()}일`, dayLabel: DAY_LABELS[i] };
   });
 
   const prevWeek = () => setWeekStart(fmt(addDays(new Date(weekStart), -7)));
   const nextWeek = () => setWeekStart(fmt(addDays(new Date(weekStart), 7)));
+
+  const handleWeekSelect = (ws: string) => {
+    setWeekStart(ws);
+    setSaved(false);
+  };
 
   const totals: Record<string, string> = {};
   for (const key of NUMERIC_ROWS) {
@@ -252,15 +254,48 @@ export function WeeklyPeriodization() {
         주간 주기화
       </h1>
 
-      <div className="flex items-center gap-4 mb-4">
-        <button onClick={prevWeek} className="px-3 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary">◀</button>
+      {/* 주차 + 날짜 네비게이션 */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {/* 저장된 주차 바로가기 */}
+        {savedWeeks.length > 0 && (
+          <select value={weekStart}
+            onChange={e => handleWeekSelect(e.target.value)}
+            className="px-2 py-1.5 text-sm rounded border border-cyan-400 bg-surface outline-none text-cyan-400 font-medium">
+            {!savedWeeks.find(w => w.week_start === weekStart) && (
+              <option value={weekStart}>새 주차</option>
+            )}
+            {savedWeeks.map(w => {
+              const mon = new Date(w.week_start);
+              const sun = addDays(mon, 6);
+              const range = `${mon.getMonth()+1}/${mon.getDate()} ~ ${sun.getMonth()+1}/${sun.getDate()}`;
+              return (
+                <option key={w.week_start} value={w.week_start}>
+                  {w.week_label ? `${w.week_label} (${range})` : range}
+                </option>
+              );
+            })}
+          </select>
+        )}
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-text-secondary">주차명:</span>
+          <input type="text" value={weekLabel} onChange={e => { setWeekLabel(e.target.value); setSaved(false); }}
+            placeholder="예: W1"
+            className="px-2 py-1.5 text-sm rounded border border-surface-secondary bg-surface w-24 outline-none" />
+        </div>
+
         <div className="flex items-center gap-2">
+          <button onClick={prevWeek} className="px-3 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary">◀</button>
           <input type="date" value={weekStart}
-            onChange={e => setWeekStart(fmt(getMonday(new Date(e.target.value))))}
+            onChange={e => {
+              const d = new Date(e.target.value);
+              setWeekStart(fmt(getMonday(d)));
+            }}
             className="px-3 py-1.5 text-sm rounded border border-surface-secondary bg-surface" />
           <span className="text-sm text-text-secondary">{weekDates[0].label} ~ {weekDates[6].label}</span>
+          <button onClick={nextWeek} className="px-3 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary">▶</button>
         </div>
-        <button onClick={nextWeek} className="px-3 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary">▶</button>
+
         <div className="flex-1" />
         <button onClick={handlePDF}
           className="px-4 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary transition-colors flex items-center gap-1.5">
@@ -274,6 +309,7 @@ export function WeeklyPeriodization() {
         </button>
       </div>
 
+      {/* 테이블 */}
       <div ref={tableRef} className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-x-auto">
         <table className="w-full border-collapse min-w-[1100px]">
           <thead>
@@ -289,17 +325,14 @@ export function WeeklyPeriodization() {
             </tr>
           </thead>
           <tbody>
-            {/* Weekly Topic */}
             <tr>
               <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>Weekly Topic</td>
               <td colSpan={7} className={C}>
-                <AutoCell value={topic} onChange={v => { setTopic(v); setSaved(false); }}
-                  className={`${I} text-left`} />
+                <AutoCell value={topic} onChange={v => { setTopic(v); setSaved(false); }} className={`${I} text-left`} />
               </td>
               <td className={C}></td>
             </tr>
 
-            {/* Main rows */}
             {ROW_LABELS.map((label, ri) => {
               const key = ROW_KEYS[ri];
               const isNum = NUMERIC_ROWS.includes(key);
@@ -323,7 +356,6 @@ export function WeeklyPeriodization() {
               );
             })}
 
-            {/* Pitch */}
             <tr>
               <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>피치 사이즈</td>
               {days.map((day, di) => (
@@ -341,7 +373,6 @@ export function WeeklyPeriodization() {
               <td className={C}></td>
             </tr>
 
-            {/* Prep */}
             <tr>
               <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>Prep</td>
               {days.map((day, di) => (
@@ -352,7 +383,6 @@ export function WeeklyPeriodization() {
               <td className={C}></td>
             </tr>
 
-            {/* Warm up */}
             <tr>
               <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>Warm up</td>
               {days.map((day, di) => (

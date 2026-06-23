@@ -682,6 +682,7 @@ export interface WeeklyPeriodization {
   id: string;
   week_start: string;
   weekly_topic: string;
+  week_label: string;
   days: DayPlan[];
   created_at: string;
   updated_at: string;
@@ -724,15 +725,62 @@ export async function fetchWeeklyPeriodization(weekStart: string): Promise<Weekl
   return data as WeeklyPeriodization | null;
 }
 
-export async function upsertWeeklyPeriodization(weekStart: string, weeklyTopic: string, days: DayPlan[]) {
+export async function upsertWeeklyPeriodization(weekStart: string, weeklyTopic: string, weekLabel: string, days: DayPlan[]) {
   const client = requireSupabase();
   const { error } = await client
     .from('weekly_periodization')
     .upsert({
       week_start: weekStart,
       weekly_topic: weeklyTopic,
-      days: JSON.stringify(days),
+      week_label: weekLabel,
+      days: days as unknown,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'week_start' });
   if (error) throw error;
+}
+
+export async function fetchSavedWeeks(): Promise<{ week_start: string; week_label: string }[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('weekly_periodization')
+    .select('week_start, week_label')
+    .order('week_start', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as { week_start: string; week_label: string }[];
+}
+
+export async function fetchDayTarget(date: string): Promise<{ td: number; hsr: number; sprint: number } | null> {
+  const parts = date.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  const day = d.getDay();
+  const mondayDate = new Date(d);
+  mondayDate.setDate(d.getDate() - ((day + 6) % 7));
+  const weekStart = `${mondayDate.getFullYear()}-${String(mondayDate.getMonth() + 1).padStart(2, '0')}-${String(mondayDate.getDate()).padStart(2, '0')}`;
+
+  const wp = await fetchWeeklyPeriodization(weekStart);
+  if (!wp) return null;
+
+  let parsed = wp.days;
+  while (typeof parsed === 'string') parsed = JSON.parse(parsed);
+  if (!Array.isArray(parsed)) return null;
+
+  const dayIdx = (day + 6) % 7;
+  const plan = parsed[dayIdx];
+  if (!plan) return null;
+
+  const parseVal = (v: string): number => {
+    if (!v) return 0;
+    const cleaned = v.replace(/[^0-9.~\-±,]/g, '');
+    if (cleaned.includes('~')) {
+      const pts = cleaned.split('~').map(Number).filter(n => !isNaN(n));
+      return pts.length === 2 ? (pts[0] + pts[1]) / 2 : pts[0] || 0;
+    }
+    return parseFloat(cleaned.replace(/,/g, '')) || 0;
+  };
+
+  return {
+    td: parseVal(plan.total_distance),
+    hsr: parseVal(plan.hsr_distance),
+    sprint: parseVal(plan.sprint_distance),
+  };
 }
