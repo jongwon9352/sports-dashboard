@@ -215,3 +215,99 @@ body {
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
 }
+
+/* PDF export mode */
+.pdf-mode,
+.pdf-mode div,
+.pdf-mode span,
+.pdf-mode td,
+.pdf-mode tr,
+.pdf-mode table,
+.pdf-mode thead,
+.pdf-mode tbody {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #222222 !important;
+  border-color: #d0d0d0 !important;
+}
+.pdf-mode th {
+  padding: 5px 8px !important;
+  font-size: 10px !important;
+  background: #4a4a60 !important;
+  background-color: #4a4a60 !important;
+  color: #ffffff !important;
+  white-space: nowrap !important;
+}
+.pdf-mode td {
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+}
+.pdf-mode .chart-card {
+  background: #ffffff !important;
+  box-shadow: none !important;
+  border: 1px solid #ccc !important;
+  padding: 12px !important;
+  margin-bottom: 12px !important;
+}
+.pdf-mode .chart-title {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: #222 !important;
+  margin-bottom: 8px !important;
+  text-align: center !important;
+  display: block !important;
+  width: 100% !important;
+}
+.pdf-mode select {
+  font-size: 10px !important;
+  min-width: 50px !important;
+  padding: 1px 4px !important;
+  color: #222 !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border: 1px solid #bbb !important;
+}
+.pdf-mode input {
+  color: #222222 !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  font-size: 12px !important;
+  min-width: 120px !important;
+  padding: 2px 6px !important;
+  border: 1px solid #bbb !important;
+}
+.pdf-mode .recharts-cartesian-axis-tick text,
+.pdf-mode .recharts-label {
+  fill: #333333 !important;
+  font-size: 11px !important;
+}
+.pdf-mode svg text {
+  fill: #333333 !important;
+}
+.pdf-mode .recharts-legend-item-text {
+  font-size: 11px !important;
+  color: #333 !important;
+}
+.pdf-mode .recharts-cartesian-grid line {
+  stroke: #e0e0e0 !important;
+}
+.pdf-mode .recharts-surface {
+  background: #ffffff !important;
+}
+.pdf-mode .sticky {
+  position: static !important;
+}
+.pdf-mode [class*="bg-surface"] {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+}
+.pdf-mode .pdf-location-text {
+  display: inline !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #222 !important;
+}
+.pdf-mode input[type="text"][placeholder="장소 입력"] {
+  display: none !important;
+}

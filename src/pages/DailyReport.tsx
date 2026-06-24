@@ -79,8 +79,8 @@ function DualBarShape(color: string) {
         )}
         <rect x={x + 2} y={y} width={width - 4} height={height}
           fill={color} rx={2} />
-        <text x={x + width / 2} y={y - 6} textAnchor="middle"
-          fontSize={9} fontFamily="DM Mono" fill="var(--color-text-secondary)">
+        <text x={x + width / 2} y={y - 8} textAnchor="middle"
+          fontSize={12} fontFamily="DM Mono" fill="var(--color-text-secondary)">
           {Math.round(value).toLocaleString()}
         </text>
       </g>
@@ -107,17 +107,17 @@ function OverlayChart({ title, data, color, unit = '', targetLabel }: OverlayCha
           </span>
         )}
       </div>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={sorted} margin={{ top: 25, right: 10, bottom: 50, left: 10 }} barCategoryGap="25%">
+      <ResponsiveContainer width="100%" height={350}>
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 60, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" height={55} />
-          <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} domain={yDomain} />
+          <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} domain={yDomain} width={60} />
           <Tooltip
             formatter={(v) => [`${Number(v).toLocaleString()}${unit}`, 'Real']}
-            contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }}
+            contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }}
           />
           {hasTarget && (
-            <ReferenceLine y={sorted[0]?.target} stroke="#cc0000" strokeDasharray="5 3" strokeWidth={1} />
+            <ReferenceLine y={sorted[0]?.target} stroke="#cc0000" strokeDasharray="5 3" strokeWidth={1.5} />
           )}
           <Bar dataKey="value" shape={DualBarShape(color)} />
         </BarChart>
@@ -139,16 +139,16 @@ function CompareChart({
   return (
     <div className="chart-card">
       <div className="chart-title text-center">{title}</div>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={sorted} margin={{ top: 10, right: 10, bottom: 50, left: 10 }} barCategoryGap="30%">
+      <ResponsiveContainer width="100%" height={350}>
+        <BarChart data={sorted} margin={{ top: 15, right: 15, bottom: 60, left: 15 }} barCategoryGap="25%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" height={55} />
-          <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
+          <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} />
           <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`]}
-            contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
-          <Bar dataKey="basic" name={label1} fill={color1} barSize={16} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="custom" name={label2} fill={color2} barSize={16} radius={[2, 2, 0, 0]} />
+            contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Bar dataKey="basic" name={label1} fill={color1} barSize={18} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="custom" name={label2} fill={color2} barSize={18} radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -249,18 +249,40 @@ export function DailyReport() {
   const pdfChart3Ref = useRef<HTMLDivElement>(null);
 
   const handlePDF = useCallback(async () => {
-    const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
-    const pdfW = 2784 * 0.264583;
-    const pdfH = 1608 * 0.264583;
+    const CAPTURE_W = 1600;
+    const PDF_RATIO = 2784 / 1608;
+    const pdfW = 420;
+    const pdfH = pdfW / PDF_RATIO;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
+
+    const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
 
     for (let i = 0; i < refs.length; i++) {
       const el = refs[i].current;
       if (!el) continue;
       if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#1a1a2e', useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+
+      const orig = el.style.cssText;
+      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
+      el.classList.add('pdf-mode');
+
+      await new Promise(r => setTimeout(r, 200));
+
+      const canvas = await html2canvas(el, {
+        scale: 1,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        windowWidth: CAPTURE_W,
+      });
+
+      el.style.cssText = orig;
+      el.classList.remove('pdf-mode');
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const imgAspect = canvas.width / canvas.height;
+      let dW = pdfW, dH = pdfW / imgAspect;
+      if (dH > pdfH) { dH = pdfH; dW = pdfH * imgAspect; }
+      pdf.addImage(imgData, 'JPEG', (pdfW - dW) / 2, (pdfH - dH) / 2, dW, dH);
     }
 
     pdf.save(`데일리리포트_${selectedDate}.pdf`);
@@ -293,18 +315,18 @@ export function DailyReport() {
         <div className="text-text-secondary text-center py-16">Loading...</div>
       ) : (
         <>
-          {/* Page 1: 테이블 */}
+          {/* 테이블 */}
           {sortedData.length > 0 && (
             <div ref={pdfTableRef} className="chart-card mb-5">
               <div className="text-center mb-3">
                 <div className="chart-title mb-1">- 선수별 데이터 -</div>
                 <div className="flex items-center justify-center gap-6 flex-wrap">
                   <span className="text-xs text-text-secondary">일시: {formatKoreanDate(selectedDate)}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-text-secondary">장소:</span>
-                    <input type="text" value={location} onChange={e => setLocation(e.target.value)}
+                  <span className="text-xs text-text-secondary">
+                    장소: <input type="text" value={location} onChange={e => setLocation(e.target.value)}
                       placeholder="장소 입력" className="px-2 py-0.5 text-xs rounded border border-surface-secondary bg-transparent w-36 outline-none" />
-                  </div>
+                    <span className="pdf-location-text" style={{ display: 'none' }}>{location || '-'}</span>
+                  </span>
                   <span className="text-xs text-text-secondary">인원: {sortedData.filter(r => hasType(r.player_id)).length}명</span>
                 </div>
               </div>
@@ -398,18 +420,19 @@ export function DailyReport() {
                 )}
               </div>
 
-              {/* Page 2: TD, ACD LOAD, Action */}
-              <div ref={pdfChart1Ref} className="grid grid-cols-3 gap-4 mb-5">
+              {/* Page 2: TD, Total Action, ACD LOAD (세로 3단) */}
+              <div ref={pdfChart1Ref} className="space-y-4 mb-5">
                 <OverlayChart title="TD(Plan vs Real)" data={mkChart(r => r.total_distance, tdTarget)}
-                  color="rgba(21, 62, 111, 0.6)" unit=" m" targetLabel={tdTarget ? `${fmtN(tdTarget)}m` : undefined} />
+                  color="rgba(139, 195, 74, 0.7)" unit=" m" targetLabel={tdTarget ? `${fmtN(tdTarget)}m` : undefined} />
+                <CompareChart title="Total Action(ACC+DEC)"
+                  data={grade3Rows.map(d => ({ name: d.player_name, basic: Math.round(d.acc_count), custom: Math.round(d.dec_count) }))}
+                  label1="ACC" label2="DEC" color1="rgba(33, 150, 243, 0.7)" color2="rgba(255, 152, 0, 0.7)" unit="회" />
                 <OverlayChart title="ACD LOAD" data={mkChart(r => r.acd_load, 0)}
-                  color="rgba(75, 0, 130, 0.5)" />
-                <OverlayChart title="Total Action(ACC+DEC)" data={mkChart(r => r.acc_count + r.dec_count, 0)}
-                  color="rgba(100, 100, 220, 0.6)" unit="회" />
+                  color="rgba(140, 20, 20, 0.7)" />
               </div>
 
-              {/* Page 3: HSR */}
-              <div ref={pdfChart2Ref} className="grid grid-cols-2 gap-4 mb-5">
+              {/* Page 3: HSR (세로 2단) */}
+              <div ref={pdfChart2Ref} className="space-y-4 mb-5">
                 <OverlayChart title="HSR(Plan vs Real)" data={mkChart(r => r.hsr_distance, hsrTarget)}
                   color="rgba(0, 140, 126, 0.6)" unit=" m" targetLabel={hsrTarget ? `${fmtN(hsrTarget)}m` : undefined} />
                 <CompareChart title="HSR(Basic vs Custom)"
@@ -417,8 +440,8 @@ export function DailyReport() {
                   label1="Basic" label2="Custom" color1="rgba(0, 140, 126, 0.7)" color2="rgba(0, 200, 180, 0.4)" unit=" m" />
               </div>
 
-              {/* Page 4: Sprint */}
-              <div ref={pdfChart3Ref} className="grid grid-cols-2 gap-4 mb-5">
+              {/* Page 4: Sprint (세로 2단) */}
+              <div ref={pdfChart3Ref} className="space-y-4 mb-5">
                 <OverlayChart title="Sprint(Plan vs Real)" data={mkChart(r => r.sprint_distance, sprintTarget)}
                   color="rgba(164, 40, 67, 0.6)" unit=" m" targetLabel={sprintTarget ? `${fmtN(sprintTarget)}m` : undefined} />
                 <CompareChart title="Sprint(Basic vs Custom)"
