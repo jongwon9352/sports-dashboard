@@ -12,6 +12,41 @@ import {
 } from '../utils/calculations';
 import type { ParsedDailyRow, ParsedSessionRow } from '../utils/csvParser';
 
+const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
+
+export interface GoogleSheetRpe {
+  date: string;
+  name: string;
+  rpe: number;
+}
+
+function parseGoogleTimestamp(ts: string): string {
+  const m = ts.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+  if (!m) return '';
+  return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+}
+
+export async function fetchGoogleSheetRpe(): Promise<GoogleSheetRpe[]> {
+  const res = await fetch(GOOGLE_SHEET_PUB_URL);
+  if (!res.ok) throw new Error('구글 시트를 불러올 수 없습니다.');
+  const text = await res.text();
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  const results: GoogleSheetRpe[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    if (cols.length < 3) continue;
+    const date = parseGoogleTimestamp(cols[0]);
+    const rpe = parseFloat(cols[1]);
+    const name = cols[2].normalize('NFC').trim();
+    if (date && name && !isNaN(rpe)) {
+      results.push({ date, name, rpe });
+    }
+  }
+  return results;
+}
+
 // Supabase client responses are untyped in this project.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type R = Record<string, any>;
@@ -668,6 +703,123 @@ export async function deletePlayer(id: string) {
 export async function deletePlayers(ids: string[]) {
   const client = requireSupabase();
   const { error } = await client.from('players').delete().in('id', ids);
+  if (error) throw error;
+}
+
+export interface RawDataRow {
+  id: string;
+  player_id: string;
+  training_date: string;
+  player_name: string;
+  jersey_number: number | null;
+  rpe: number | null;
+  duration_min: number;
+  total_distance: number;
+  m_per_min: number;
+  hsr_distance: number;
+  hsr_custom: number;
+  sprint_distance: number;
+  sprint_custom: number;
+  sprint_count: number;
+  sprint_count_custom: number;
+  acc_count: number;
+  dec_count: number;
+  acd_load: number;
+  max_speed: number;
+  speed_zone_1: number;
+  speed_zone_2: number;
+  speed_zone_3: number;
+  speed_zone_4: number;
+  speed_zone_5: number;
+}
+
+export async function fetchAllTrainingDates(): Promise<string[]> {
+  const client = requireSupabase();
+  const dates = new Set<string>();
+  let offset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: chunk, error } = await client
+      .from('training_daily')
+      .select('training_date')
+      .order('training_date', { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    if (!chunk || chunk.length === 0) break;
+    for (const row of chunk as R[]) dates.add(row.training_date as string);
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  return [...dates].sort().reverse();
+}
+
+export async function fetchRawDataByDates(dates: string[]): Promise<RawDataRow[]> {
+  if (dates.length === 0) return [];
+  const client = requireSupabase();
+  const allRows: R[] = [];
+  let offset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: chunk, error } = await client
+      .from('training_daily')
+      .select('id, player_id, training_date, duration_min, rpe, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, players(name, jersey_number)')
+      .in('training_date', dates)
+      .order('training_date', { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    if (!chunk || chunk.length === 0) break;
+    allRows.push(...(chunk as R[]));
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows.map(row => ({
+    id: row.id,
+    player_id: row.player_id,
+    training_date: row.training_date,
+    player_name: row.players?.name ?? '',
+    jersey_number: row.players?.jersey_number ?? null,
+    rpe: row.rpe != null ? Number(row.rpe) : null,
+    duration_min: Number(row.duration_min) || 0,
+    total_distance: Number(row.total_distance) || 0,
+    m_per_min: Number(row.m_per_min) || 0,
+    hsr_distance: Number(row.hsr_distance) || 0,
+    hsr_custom: Number(row.hsr_custom) || 0,
+    sprint_distance: Number(row.sprint_distance) || 0,
+    sprint_custom: Number(row.sprint_custom) || 0,
+    sprint_count: Number(row.sprint_count) || 0,
+    sprint_count_custom: Number(row.sprint_count_custom) || 0,
+    acc_count: Number(row.acc_count) || 0,
+    dec_count: Number(row.dec_count) || 0,
+    acd_load: Number(row.acd_load) || 0,
+    max_speed: Number(row.max_speed) || 0,
+    speed_zone_1: Number(row.speed_zone_1) || 0,
+    speed_zone_2: Number(row.speed_zone_2) || 0,
+    speed_zone_3: Number(row.speed_zone_3) || 0,
+    speed_zone_4: Number(row.speed_zone_4) || 0,
+    speed_zone_5: Number(row.speed_zone_5) || 0,
+  }));
+}
+
+export async function updateRpe(id: string, rpe: number) {
+  const client = requireSupabase();
+  const { data: row, error: fetchErr } = await client
+    .from('training_daily')
+    .select('duration_min')
+    .eq('id', id)
+    .single();
+  if (fetchErr) throw fetchErr;
+  const duration = Number((row as R)?.duration_min) || 0;
+  const dailyLoad = +(rpe * duration).toFixed(1);
+  const { error } = await client
+    .from('training_daily')
+    .update({ rpe, daily_training_load: dailyLoad })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteRawDataRows(ids: string[]) {
+  const client = requireSupabase();
+  const { error } = await client.from('training_daily').delete().in('id', ids);
   if (error) throw error;
 }
 

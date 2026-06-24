@@ -46,7 +46,6 @@ export function Upload() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<UploadStatus[]>([]);
-
   const loadData = useCallback(async () => {
     try {
       const [files, sum] = await Promise.all([fetchCsvUploads(), fetchDataSummary()]);
@@ -70,11 +69,7 @@ export function Upload() {
         continue;
       }
 
-      const type = detectFileType(file.name);
-      if (!type) {
-        newStatuses.push({ filename: file.name, status: 'error', message: '파일명에 "운동부하/모니터링/Trend" 또는 "리포트/테이블"이 포함되어야 합니다.' });
-        continue;
-      }
+      const type = detectFileType(file.name) ?? 'daily';
 
       newStatuses.push({ filename: file.name, status: 'uploading' });
       setStatuses([...newStatuses]);

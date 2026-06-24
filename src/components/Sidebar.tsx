@@ -4,7 +4,9 @@ import { NavLink, useLocation } from 'react-router-dom';
 export function Sidebar() {
   const location = useLocation();
   const isDashboardGroup = ['/', '/daily', '/weekly'].includes(location.pathname);
+  const isDataGroup = ['/upload', '/raw-data'].includes(location.pathname);
   const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
+  const [dataOpen, setDataOpen] = useState(isDataGroup);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -53,9 +55,27 @@ export function Sidebar() {
           <NavLink to="/periodization" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
             <span className="w-[18px] text-center text-[13px]">🗓️</span>주간 주기화
           </NavLink>
-          <NavLink to="/upload" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-            <span className="w-[18px] text-center text-[13px]">📁</span>데이터 관리
+          <NavLink
+            to="/upload"
+            onClick={() => setDataOpen(true)}
+            className={({ isActive }) => `sidebar-nav-item ${isActive || location.pathname === '/raw-data' ? 'active' : ''}`}
+          >
+            <span className="w-[18px] text-center text-[13px]">📁</span>
+            데이터 관리
+            <span
+              onClick={e => { e.preventDefault(); e.stopPropagation(); setDataOpen(!dataOpen); }}
+              className={`ml-auto text-[10px] text-text-disabled transition-transform cursor-pointer ${dataOpen ? 'rotate-180' : ''}`}
+            >
+              ▼
+            </span>
           </NavLink>
+          {dataOpen && (
+            <div className="pl-5 flex flex-col gap-0.5">
+              <NavLink to="/raw-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">📋</span>로우 데이터
+              </NavLink>
+            </div>
+          )}
         </nav>
       </div>
       <div className="py-3">

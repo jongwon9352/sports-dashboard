@@ -10,6 +10,7 @@ import { Upload } from './pages/Upload';
 import { PlayerProfile } from './pages/PlayerProfile';
 import { Settings } from './pages/Settings';
 import { WeeklyPeriodization } from './pages/WeeklyPeriodization';
+import { RawDataPage } from './pages/RawDataPage';
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
               <Route path="/rpe" element={<RpePage />} />
               <Route path="/periodization" element={<WeeklyPeriodization />} />
               <Route path="/upload" element={<Upload />} />
+              <Route path="/raw-data" element={<RawDataPage />} />
               <Route path="/player/:id" element={<PlayerProfile />} />
               <Route path="/settings/players" element={<Settings />} />
             </Routes>
