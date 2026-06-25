@@ -371,10 +371,13 @@ export function DailyReport() {
                           <td className={`${tdNameC} text-center`}>
                             <select value={playerTypes[row.player_id] || ''}
                               onChange={e => setType(row.player_id, e.target.value as TrainingType)}
-                              className="text-[10px] px-1 py-0.5 rounded border border-surface-secondary bg-transparent outline-none w-16 text-center">
+                              className="pdf-hide text-[10px] px-1 py-0.5 rounded border border-surface-secondary bg-transparent outline-none w-16 text-center">
                               <option value="">-</option>
                               {TRAINING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
+                            <span className="pdf-show" style={{ display: 'none' }}>
+                              {playerTypes[row.player_id] || '-'}
+                            </span>
                           </td>
                           {typed ? (<>
                             <td className={tdC}>{fmtD(row.duration_min, 1)}</td>
