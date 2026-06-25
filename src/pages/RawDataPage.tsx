@@ -104,7 +104,7 @@ export function RawDataPage() {
       if (search && !row.player_name.toLowerCase().includes(search.toLowerCase())) return false;
       if (selectedPlayer && row.player_name !== selectedPlayer) return false;
       return true;
-    }).sort((a, b) => a.player_name.localeCompare(b.player_name));
+    }).sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
   }, [mergedData, search, selectedPlayer]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
