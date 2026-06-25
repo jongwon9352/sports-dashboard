@@ -253,14 +253,14 @@ export function DailyReport() {
     const PDF_RATIO = 2784 / 1608;
     const pdfW = 420;
     const pdfH = pdfW / PDF_RATIO;
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfH, pdfW] });
 
     const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
 
     for (let i = 0; i < refs.length; i++) {
       const el = refs[i].current;
       if (!el) continue;
-      if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
+      if (i > 0) pdf.addPage([pdfH, pdfW], 'landscape');
 
       const orig = el.style.cssText;
       el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
