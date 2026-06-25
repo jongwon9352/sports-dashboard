@@ -248,6 +248,52 @@ export function DailyReport() {
   const pdfChart2Ref = useRef<HTMLDivElement>(null);
   const pdfChart3Ref = useRef<HTMLDivElement>(null);
 
+  const applyPdfStyles = (el: HTMLElement) => {
+    const saved: { el: HTMLElement; css: string }[] = [];
+    const save = (target: HTMLElement) => { saved.push({ el: target, css: target.style.cssText }); };
+
+    el.querySelectorAll<HTMLElement>('.overflow-x-auto, [class*="overflow"]').forEach(oe => {
+      save(oe); oe.style.overflow = 'visible';
+    });
+    el.querySelectorAll<HTMLElement>('.sticky').forEach(s => {
+      save(s); s.style.position = 'static';
+    });
+    el.querySelectorAll<HTMLElement>('th').forEach(th => {
+      save(th);
+      th.style.cssText += ';background:#4a4a60 !important;color:#fff !important;padding:5px 8px;font-size:10px;white-space:nowrap;';
+    });
+    el.querySelectorAll<HTMLElement>('td').forEach(td => {
+      save(td);
+      td.style.cssText += ';background:#fff;color:#222;padding:4px 8px;font-size:11px;white-space:nowrap;border-color:#d0d0d0;';
+    });
+    el.querySelectorAll<HTMLElement>('tr').forEach(tr => {
+      save(tr); tr.style.color = '#222';
+    });
+    el.querySelectorAll<HTMLElement>('.pdf-hide-row').forEach(row => {
+      save(row); row.style.display = 'none';
+    });
+    el.querySelectorAll<HTMLElement>('.pdf-hide').forEach(h => {
+      save(h); h.style.display = 'none';
+    });
+    el.querySelectorAll<HTMLElement>('.pdf-show').forEach(s => {
+      save(s); s.style.cssText += ';display:inline !important;font-size:10px;font-weight:600;color:#222;';
+    });
+    el.querySelectorAll<HTMLElement>('.pdf-location-text').forEach(s => {
+      save(s); s.style.cssText += ';display:inline !important;font-size:12px;font-weight:600;color:#222;';
+    });
+    el.querySelectorAll<HTMLElement>('input[placeholder="장소 입력"]').forEach(inp => {
+      save(inp); inp.style.display = 'none';
+    });
+    el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
+      save(c); c.style.cssText += ';background:#fff;box-shadow:none;border:1px solid #ccc;';
+    });
+    el.querySelectorAll<HTMLElement>('svg text').forEach(t => {
+      t.setAttribute('fill', '#333');
+    });
+
+    return () => { saved.forEach(s => { s.el.style.cssText = s.css; }); };
+  };
+
   const handlePDF = useCallback(async () => {
     const CAPTURE_W = 1800;
     const pdfW = 420;
@@ -261,13 +307,10 @@ export function DailyReport() {
       if (!el) continue;
       if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
 
-      const orig = el.style.cssText;
-      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible !important;background:#fff;color:#222;padding:16px;`;
-      el.classList.add('pdf-mode');
+      const origCss = el.style.cssText;
+      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
 
-      const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto, [class*="overflow"]');
-      const origOverflows: string[] = [];
-      overflowEls.forEach(oe => { origOverflows.push(oe.style.overflow); oe.style.overflow = 'visible'; });
+      const restore = applyPdfStyles(el);
 
       await new Promise(r => setTimeout(r, 300));
 
@@ -280,9 +323,8 @@ export function DailyReport() {
         scrollY: 0,
       });
 
-      el.style.cssText = orig;
-      el.classList.remove('pdf-mode');
-      overflowEls.forEach((oe, idx) => { oe.style.overflow = origOverflows[idx]; });
+      restore();
+      el.style.cssText = origCss;
 
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
       const imgAspect = canvas.width / canvas.height;
