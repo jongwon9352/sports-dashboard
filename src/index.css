@@ -221,20 +221,14 @@ body {
 .pdf-mode div,
 .pdf-mode span,
 .pdf-mode td,
+.pdf-mode tr,
 .pdf-mode table,
+.pdf-mode thead,
 .pdf-mode tbody {
   background-color: #ffffff !important;
   background: #ffffff !important;
   color: #222222 !important;
   border-color: #d0d0d0 !important;
-}
-.pdf-mode tr {
-  color: #222222 !important;
-  border-color: #d0d0d0 !important;
-}
-.pdf-mode thead {
-  background: #4a4a60 !important;
-  background-color: #4a4a60 !important;
 }
 .pdf-mode th {
   padding: 5px 8px !important;
@@ -268,18 +262,14 @@ body {
   display: block !important;
   width: 100% !important;
 }
-.pdf-mode select,
-.pdf-mode .pdf-hide {
-  display: none !important;
-}
-.pdf-mode .pdf-show {
-  display: inline !important;
+.pdf-mode select {
   font-size: 10px !important;
-  font-weight: 600 !important;
+  min-width: 50px !important;
+  padding: 1px 4px !important;
   color: #222 !important;
-}
-.pdf-mode .overflow-x-auto {
-  overflow: visible !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border: 1px solid #bbb !important;
 }
 .pdf-mode input {
   color: #222222 !important;
@@ -311,9 +301,7 @@ body {
 .pdf-mode .sticky {
   position: static !important;
 }
-.pdf-mode td[class*="bg-surface"],
-.pdf-mode div[class*="bg-surface"],
-.pdf-mode tr[class*="bg-surface"] {
+.pdf-mode [class*="bg-surface"] {
   background-color: #ffffff !important;
   background: #ffffff !important;
 }
