@@ -249,10 +249,9 @@ export function DailyReport() {
   const pdfChart3Ref = useRef<HTMLDivElement>(null);
 
   const handlePDF = useCallback(async () => {
-    const CAPTURE_W = 1600;
-    const PDF_RATIO = 2784 / 1608;
+    const CAPTURE_W = 1800;
     const pdfW = 420;
-    const pdfH = pdfW / PDF_RATIO;
+    const pdfH = 297;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
 
     const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
@@ -263,25 +262,32 @@ export function DailyReport() {
       if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
 
       const orig = el.style.cssText;
-      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
+      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible !important;background:#fff;color:#222;padding:16px;`;
       el.classList.add('pdf-mode');
 
-      await new Promise(r => setTimeout(r, 200));
+      const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto, [class*="overflow"]');
+      const origOverflows: string[] = [];
+      overflowEls.forEach(oe => { origOverflows.push(oe.style.overflow); oe.style.overflow = 'visible'; });
+
+      await new Promise(r => setTimeout(r, 300));
 
       const canvas = await html2canvas(el, {
-        scale: 1,
+        scale: 2,
         backgroundColor: '#ffffff',
         useCORS: true,
         windowWidth: CAPTURE_W,
+        scrollX: 0,
+        scrollY: 0,
       });
 
       el.style.cssText = orig;
       el.classList.remove('pdf-mode');
+      overflowEls.forEach((oe, idx) => { oe.style.overflow = origOverflows[idx]; });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
       const imgAspect = canvas.width / canvas.height;
-      let dW = pdfW, dH = pdfW / imgAspect;
-      if (dH > pdfH) { dH = pdfH; dW = pdfH * imgAspect; }
+      let dW = pdfW - 10, dH = (pdfW - 10) / imgAspect;
+      if (dH > pdfH - 10) { dH = pdfH - 10; dW = (pdfH - 10) * imgAspect; }
       pdf.addImage(imgData, 'JPEG', (pdfW - dW) / 2, (pdfH - dH) / 2, dW, dH);
     }
 

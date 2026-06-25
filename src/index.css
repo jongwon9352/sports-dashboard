@@ -267,6 +267,11 @@ body {
   background: #ffffff !important;
   background-color: #ffffff !important;
   border: 1px solid #bbb !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+.pdf-mode .overflow-x-auto {
+  overflow: visible !important;
 }
 .pdf-mode input {
   color: #222222 !important;
