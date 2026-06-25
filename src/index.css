@@ -221,15 +221,16 @@ body {
 .pdf-mode div,
 .pdf-mode span,
 .pdf-mode td,
-.pdf-mode tr,
 .pdf-mode table,
-.pdf-mode thead,
-.pdf-mode tbody {
+.pdf-mode tbody,
+.pdf-mode tbody tr {
   background-color: #ffffff !important;
   background: #ffffff !important;
   color: #222222 !important;
   border-color: #d0d0d0 !important;
 }
+.pdf-mode thead,
+.pdf-mode thead tr,
 .pdf-mode th {
   padding: 5px 8px !important;
   font-size: 10px !important;
