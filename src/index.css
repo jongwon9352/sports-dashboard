@@ -221,14 +221,20 @@ body {
 .pdf-mode div,
 .pdf-mode span,
 .pdf-mode td,
-.pdf-mode tr,
 .pdf-mode table,
-.pdf-mode thead,
 .pdf-mode tbody {
   background-color: #ffffff !important;
   background: #ffffff !important;
   color: #222222 !important;
   border-color: #d0d0d0 !important;
+}
+.pdf-mode tr {
+  color: #222222 !important;
+  border-color: #d0d0d0 !important;
+}
+.pdf-mode thead {
+  background: #4a4a60 !important;
+  background-color: #4a4a60 !important;
 }
 .pdf-mode th {
   padding: 5px 8px !important;
@@ -237,6 +243,9 @@ body {
   background-color: #4a4a60 !important;
   color: #ffffff !important;
   white-space: nowrap !important;
+}
+.pdf-mode tr.pdf-hide-row {
+  display: none !important;
 }
 .pdf-mode td {
   padding: 4px 8px !important;

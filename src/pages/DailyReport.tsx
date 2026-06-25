@@ -363,7 +363,7 @@ export function DailyReport() {
                     {sortedData.map((row, i) => {
                       const typed = hasType(row.player_id);
                       return (
-                        <tr key={i} className="hover:bg-surface-secondary/20 transition-colors">
+                        <tr key={i} className={`hover:bg-surface-secondary/20 transition-colors ${!typed ? 'pdf-hide-row' : ''}`}>
                           <td className={`${tdNameC} sticky left-0 bg-surface z-10 cursor-pointer`}
                             onClick={() => row.player_id && navigate(`/player/${row.player_id}`)}>
                             {row.player_name}
