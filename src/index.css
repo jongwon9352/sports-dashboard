@@ -298,7 +298,9 @@ body {
 .pdf-mode .sticky {
   position: static !important;
 }
-.pdf-mode [class*="bg-surface"] {
+.pdf-mode td[class*="bg-surface"],
+.pdf-mode tr[class*="bg-surface"],
+.pdf-mode div[class*="bg-surface"] {
   background-color: #ffffff !important;
   background: #ffffff !important;
 }
