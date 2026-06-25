@@ -253,14 +253,14 @@ export function DailyReport() {
     const PDF_RATIO = 2784 / 1608;
     const pdfW = 420;
     const pdfH = pdfW / PDF_RATIO;
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfH, pdfW] });
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
 
     const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
 
     for (let i = 0; i < refs.length; i++) {
       const el = refs[i].current;
       if (!el) continue;
-      if (i > 0) pdf.addPage([pdfH, pdfW], 'landscape');
+      if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
 
       const orig = el.style.cssText;
       el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
@@ -357,7 +357,7 @@ export function DailyReport() {
                     {sortedData.map((row, i) => {
                       const typed = hasType(row.player_id);
                       return (
-                        <tr key={i} className={`hover:bg-surface-secondary/20 transition-colors ${!typed ? 'pdf-hide-row' : ''}`}>
+                        <tr key={i} className="hover:bg-surface-secondary/20 transition-colors">
                           <td className={`${tdNameC} sticky left-0 bg-surface z-10 cursor-pointer`}
                             onClick={() => row.player_id && navigate(`/player/${row.player_id}`)}>
                             {row.player_name}
