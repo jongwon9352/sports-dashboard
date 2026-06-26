@@ -356,8 +356,14 @@ export function DailyReport() {
     el.querySelectorAll<HTMLElement>('.sticky').forEach(s => {
       setStyle(s, { position: 'static' });
     });
-    el.querySelectorAll<HTMLElement>('select').forEach(s => {
-      setStyle(s, { 'font-size': '9px', color: '#222', background: '#fff', border: '1px solid #bbb', '-webkit-appearance': 'none', width: 'auto', 'min-width': '40px', padding: '1px 2px' });
+    el.querySelectorAll<HTMLSelectElement>('select').forEach(s => {
+      const val = s.value || '-';
+      const span = document.createElement('span');
+      span.textContent = val;
+      span.style.cssText = 'font-size:10px;color:#222;font-weight:500;';
+      s.parentNode?.insertBefore(span, s);
+      setStyle(s, { display: 'none' });
+      rollback.push(() => { span.remove(); });
     });
     el.querySelectorAll<HTMLElement>('.pdf-location-text').forEach(s => {
       setStyle(s, { display: 'inline', 'font-size': '13px', 'font-weight': '600', color: '#222' });
