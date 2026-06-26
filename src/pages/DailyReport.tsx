@@ -179,13 +179,15 @@ function StackedActionChart({ title, data }: {
   const maxVal = Math.max(...withTotal.map(d => d.total), 1);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderTotalLabel = (props: any) => {
-    const { x, y, width, value } = props;
-    if (!value) return null;
+  const StackedTopLabel = (props: any) => {
+    const { x, y, width, index } = props;
+    if (index == null) return null;
+    const row = withTotal[index];
+    if (!row || !row.total) return null;
     return (
       <text x={x + width / 2} y={y - 6} textAnchor="middle"
         fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
-        {value}
+        {row.total}
       </text>
     );
   };
@@ -198,13 +200,12 @@ function StackedActionChart({ title, data }: {
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
           <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.25)]} />
-          <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}회`]}
+          <Tooltip formatter={(v, name) => [name === '합계' ? null : `${Number(v).toLocaleString()}회`, name]}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
           <Legend wrapperStyle={{ fontSize: 13 }} />
           <Bar dataKey="acc" name="ACC" fill="rgba(33, 150, 243, 0.7)" stackId="action" barSize={28} />
           <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action" barSize={28}
-            radius={[2, 2, 0, 0]} />
-          <Bar dataKey="total" name="합계" fill="transparent" barSize={28} label={renderTotalLabel} legendType="none" />
+            radius={[2, 2, 0, 0]} label={StackedTopLabel} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -320,6 +321,10 @@ export function DailyReport() {
     });
     el.querySelectorAll<HTMLElement>('tbody tr').forEach(tr => {
       setStyle(tr, { background: '#ffffff', color: '#222222' });
+      const select = tr.querySelector('select');
+      if (select && !(select as HTMLSelectElement).value) {
+        setStyle(tr, { display: 'none' });
+      }
     });
     el.querySelectorAll<HTMLElement>('td').forEach(td => {
       setStyle(td, { background: '#ffffff', color: '#222222', padding: '4px 8px', 'font-size': '11px', 'white-space': 'nowrap', 'border-color': '#d0d0d0' });
