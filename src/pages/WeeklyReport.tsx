@@ -339,6 +339,13 @@ export function WeeklyReport() {
                   <td className={tdC}>{weekTotals.realHSR.toLocaleString()}</td>
                   <td className={tdC}>{weekTotals.realSprint.toLocaleString()}</td>
                 </tr>
+                <tr>
+                  <td className={`${tdC} font-semibold`}>달성률</td>
+                  <td className={tdC}>{weekTotals.planTL ? `${Math.round(weekTotals.realTL / weekTotals.planTL * 100)}%` : '—'}</td>
+                  <td className={tdC}>{weekTotals.planTD ? `${Math.round(weekTotals.realTD / weekTotals.planTD * 100)}%` : '—'}</td>
+                  <td className={tdC}>{weekTotals.planHSR ? `${Math.round(weekTotals.realHSR / weekTotals.planHSR * 100)}%` : '—'}</td>
+                  <td className={tdC}>{weekTotals.planSprint ? `${Math.round(weekTotals.realSprint / weekTotals.planSprint * 100)}%` : '—'}</td>
+                </tr>
               </tbody>
             </table>
           </div>
