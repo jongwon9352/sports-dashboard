@@ -10,7 +10,7 @@ import { StatCard } from '../components/StatCard';
 import { colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
 
-const TRAINING_TYPES = ['TR', 'GAME', 'RE', 'OFF', '1학년', '2학년', '3학년'] as const;
+const TRAINING_TYPES = ['TR', 'GAME', 'RE', 'OFF', 'GK', '1학년', '2학년', '3학년'] as const;
 type TrainingType = typeof TRAINING_TYPES[number];
 
 function fmtN(v: number): string { return v ? Math.round(v).toLocaleString() : '0'; }
@@ -314,7 +314,7 @@ export function DailyReport() {
   const avgNameC = 'px-2 py-2 text-[11px] font-bold whitespace-nowrap border-t-2 border-surface-secondary';
 
   const typeLabels: Record<TrainingType, string> = {
-    TR: '훈련조', GAME: '경기조', RE: '회복조', OFF: 'OFF',
+    TR: '훈련조', GAME: '경기조', RE: '회복조', OFF: 'OFF', GK: 'GK',
     '1학년': '1학년', '2학년': '2학년', '3학년': '3학년',
   };
 
@@ -357,13 +357,19 @@ export function DailyReport() {
       setStyle(s, { position: 'static' });
     });
     el.querySelectorAll<HTMLElement>('select').forEach(s => {
-      setStyle(s, { 'font-size': '10px', color: '#222', background: '#fff', border: '1px solid #bbb', '-webkit-appearance': 'none' });
+      setStyle(s, { 'font-size': '9px', color: '#222', background: '#fff', border: '1px solid #bbb', '-webkit-appearance': 'none', width: 'auto', 'min-width': '40px', padding: '1px 2px' });
     });
     el.querySelectorAll<HTMLElement>('.pdf-location-text').forEach(s => {
-      setStyle(s, { display: 'inline', 'font-size': '12px', 'font-weight': '600', color: '#222' });
+      setStyle(s, { display: 'inline', 'font-size': '13px', 'font-weight': '600', color: '#222' });
     });
     el.querySelectorAll<HTMLElement>('input[placeholder="장소 입력"]').forEach(inp => {
       setStyle(inp, { display: 'none' });
+    });
+    el.querySelectorAll<HTMLElement>('.chart-title').forEach(t => {
+      setStyle(t, { color: '#222', 'font-size': '16px', 'font-weight': '700', 'text-align': 'center', 'margin-bottom': '4px' });
+    });
+    el.querySelectorAll<HTMLElement>('.pdf-header-info').forEach(h => {
+      setStyle(h, { 'font-size': '13px', color: '#222', 'text-align': 'center', 'margin-bottom': '8px' });
     });
     el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
       setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: 'none', padding: '0', 'margin-bottom': '4px' });
@@ -458,12 +464,12 @@ export function DailyReport() {
             <div ref={pdfTableRef} className="chart-card mb-5">
               <div className="text-center mb-3">
                 <div className="chart-title mb-1">- 선수별 데이터 -</div>
-                <div className="flex items-center justify-center gap-6 flex-wrap" style={{ fontSize: 12 }}>
+                <div className="pdf-header-info flex items-center justify-center gap-8 flex-wrap" style={{ fontSize: 13 }}>
                   <span>일시: {formatKoreanDate(selectedDate)}</span>
                   <span>
                     장소: <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                      placeholder="장소 입력" className="px-2 py-0.5 rounded border border-surface-secondary bg-transparent w-36 outline-none" style={{ fontSize: 12 }} />
-                    <span className="pdf-location-text" style={{ display: 'none', fontSize: 12 }}>{location || '-'}</span>
+                      placeholder="장소 입력" className="px-2 py-0.5 rounded border border-surface-secondary bg-transparent w-36 outline-none" style={{ fontSize: 13 }} />
+                    <span className="pdf-location-text" style={{ display: 'none' }}>{location || '-'}</span>
                   </span>
                   <span>인원: {sortedData.filter(r => hasType(r.player_id)).length}명</span>
                 </div>
