@@ -458,14 +458,14 @@ export function DailyReport() {
             <div ref={pdfTableRef} className="chart-card mb-5">
               <div className="text-center mb-3">
                 <div className="chart-title mb-1">- 선수별 데이터 -</div>
-                <div className="flex items-center justify-center gap-6 flex-wrap">
-                  <span className="text-xs text-text-secondary">일시: {formatKoreanDate(selectedDate)}</span>
-                  <span className="text-xs text-text-secondary">
+                <div className="flex items-center justify-center gap-6 flex-wrap" style={{ fontSize: 12 }}>
+                  <span>일시: {formatKoreanDate(selectedDate)}</span>
+                  <span>
                     장소: <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                      placeholder="장소 입력" className="px-2 py-0.5 text-xs rounded border border-surface-secondary bg-transparent w-36 outline-none" />
-                    <span className="pdf-location-text" style={{ display: 'none' }}>{location || '-'}</span>
+                      placeholder="장소 입력" className="px-2 py-0.5 rounded border border-surface-secondary bg-transparent w-36 outline-none" style={{ fontSize: 12 }} />
+                    <span className="pdf-location-text" style={{ display: 'none', fontSize: 12 }}>{location || '-'}</span>
                   </span>
-                  <span className="text-xs text-text-secondary">인원: {sortedData.filter(r => hasType(r.player_id)).length}명</span>
+                  <span>인원: {sortedData.filter(r => hasType(r.player_id)).length}명</span>
                 </div>
               </div>
 
