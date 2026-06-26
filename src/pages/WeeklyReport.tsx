@@ -329,12 +329,12 @@ export function WeeklyReport() {
             <div className="text-center mb-2">
               <span className="text-sm font-bold">DAEJEON HANA CITIZEN U15 Weekly DATA</span>
             </div>
-            <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 10 }}>
+            <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 10, tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th className={thC} style={{ minWidth: 80 }}>항목</th>
+                  <th className={thC} style={{ width: '12.5%' }}>항목</th>
                   {headerData.map((d, i) => (
-                    <th key={i} className={thC}>{d.date}<br />{d.day}</th>
+                    <th key={i} className={thC} style={{ width: '12.5%' }}>{d.date}<br />{d.day}</th>
                   ))}
                 </tr>
               </thead>
@@ -389,14 +389,14 @@ export function WeeklyReport() {
           {/* Plan/Real 주간 합계 */}
           <div className="chart-card mb-4">
             <div className="chart-title text-center">주간 팀 평균 (Plan / Real)</div>
-            <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 11 }}>
+            <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 11, tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th className={thC}>항목</th>
-                  <th className={thC}>TL</th>
-                  <th className={thC}>TD (m)</th>
-                  <th className={thC}>HSR (m)</th>
-                  <th className={thC}>Sprint (m)</th>
+                  <th className={thC} style={{ width: '20%' }}>항목</th>
+                  <th className={thC} style={{ width: '20%' }}>TL</th>
+                  <th className={thC} style={{ width: '20%' }}>TD (m)</th>
+                  <th className={thC} style={{ width: '20%' }}>HSR (m)</th>
+                  <th className={thC} style={{ width: '20%' }}>Sprint (m)</th>
                 </tr>
               </thead>
               <tbody>
