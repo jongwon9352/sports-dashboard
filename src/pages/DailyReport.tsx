@@ -343,6 +343,9 @@ export function DailyReport() {
     el.querySelectorAll<HTMLElement>('.overflow-x-auto').forEach(o => {
       setStyle(o, { overflow: 'visible' });
     });
+    el.querySelectorAll<HTMLElement>('table').forEach(t => {
+      setStyle(t, { width: '100%', 'table-layout': 'fixed' });
+    });
     el.querySelectorAll<HTMLElement>('.sticky').forEach(s => {
       setStyle(s, { position: 'static' });
     });
