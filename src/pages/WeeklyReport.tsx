@@ -98,7 +98,7 @@ function WeeklyChart({ title, data, planColor, realColor, unit = '' }: {
       <ResponsiveContainer width="100%" height={180}>
         <BarChart data={data} margin={{ top: 25, right: 15, bottom: 5, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+          <XAxis dataKey="day" tick={{ fontSize: 11 }} interval={0} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} width={55} domain={[0, Math.ceil(maxVal * 1.15)]} />
           <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`, 'Real']}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
@@ -218,8 +218,8 @@ export function WeeklyReport() {
     return { planTL, realTL, planTD, realTD, planHSR, realHSR, planSprint, realSprint };
   }, [headerData]);
 
-  const thC = 'px-2 py-2 text-[10px] font-semibold whitespace-nowrap border border-surface-secondary text-center';
-  const tdC = 'px-2 py-1.5 text-[10px] whitespace-nowrap border border-surface-secondary text-center';
+  const thC = 'px-3 py-2 text-[11px] font-semibold whitespace-nowrap border border-surface-secondary text-center';
+  const tdC = 'px-3 py-2 text-[11px] whitespace-nowrap border border-surface-secondary text-center';
 
   const accDecMax = Math.max(...accDecChartData.map(d => d.acc + d.dec), 1);
 
@@ -237,10 +237,10 @@ export function WeeklyReport() {
       for (const [k, v] of Object.entries(props)) target.style.setProperty(k, v, 'important');
     };
     el.querySelectorAll<HTMLElement>('th').forEach(th => {
-      setStyle(th, { background: '#4a4a60', color: '#fff', padding: '4px 6px', 'font-size': '9px' });
+      setStyle(th, { background: '#4a4a60', color: '#fff', padding: '6px 8px', 'font-size': '10px' });
     });
     el.querySelectorAll<HTMLElement>('td').forEach(td => {
-      setStyle(td, { background: '#fff', color: '#222', padding: '3px 6px', 'font-size': '9px', 'border-color': '#d0d0d0' });
+      setStyle(td, { background: '#fff', color: '#222', padding: '5px 8px', 'font-size': '10px', 'border-color': '#d0d0d0' });
     });
     el.querySelectorAll<HTMLElement>('tbody tr').forEach(tr => {
       setStyle(tr, { background: '#fff', color: '#222' });
@@ -370,7 +370,7 @@ export function WeeklyReport() {
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={accDecChartData} margin={{ top: 25, right: 15, bottom: 5, left: 15 }} barCategoryGap="25%">
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="day" tick={{ fontSize: 11 }} interval={0} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} width={55} domain={[0, Math.ceil(accDecMax * 1.25)]} />
                 <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}회`]}
                   contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
