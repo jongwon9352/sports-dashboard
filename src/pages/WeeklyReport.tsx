@@ -16,26 +16,32 @@ function parseVal(v: string): number {
   return parseFloat(cleaned.replace(/,/g, '')) || 0;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function PlanRealBarShape(planColor: string, realColor: string) {
+function OverlayBarShape(planColor: string, realColor: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (props: any) => {
-    const { x, y, width, height, payload, dataKey } = props;
+    const { x, y, width, height, payload } = props;
     if (!width) return null;
-    const isPlan = dataKey === 'plan';
-    const value = payload?.[dataKey] ?? 0;
-    if (!value && !isPlan) return null;
-    const fill = isPlan ? planColor : realColor;
+    const plan = payload?.plan ?? 0;
+    const real = payload?.real ?? 0;
+    if (!real && !plan) return null;
+
+    const maxH = Math.max(height, 1);
+    const scale = real > 0 ? maxH / real : 0;
+    const planH = plan > 0 ? plan * scale : 0;
+    const baseY = y + maxH;
+
     return (
       <g>
-        <rect x={x} y={y} width={width} height={height || 0}
-          fill={isPlan ? 'transparent' : fill}
-          stroke={isPlan ? planColor : 'none'}
-          strokeWidth={isPlan ? 2 : 0}
-          rx={2} />
-        {!isPlan && value > 0 && (
+        {plan > 0 && (
+          <rect x={x} y={baseY - planH} width={width} height={planH}
+            fill="transparent" stroke={planColor} strokeWidth={2} rx={2} />
+        )}
+        <rect x={x + 2} y={y} width={width - 4} height={maxH}
+          fill={realColor} rx={2} />
+        {real > 0 && (
           <text x={x + width / 2} y={y - 6} textAnchor="middle"
             fontSize={11} fontFamily="DM Mono" fill="#666">
-            {typeof value === 'number' ? (Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1)) : value}
+            {Number.isInteger(real) ? real.toLocaleString() : real.toFixed(1)}
           </text>
         )}
       </g>
@@ -62,30 +68,40 @@ function StackedDecShape(props: any) {
   );
 }
 
-function WeeklyChart({ title, data, planKey, realKey, planColor, realColor, unit = '' }: {
+function WeeklyChart({ title, data, planColor, realColor, unit = '' }: {
   title: string;
   data: { day: string; plan: number; real: number }[];
-  planKey?: string; realKey?: string;
   planColor: string; realColor: string;
   unit?: string;
 }) {
-  void planKey; void realKey;
   const maxVal = Math.max(...data.map(d => Math.max(d.plan, d.real)), 1);
+  const hasTarget = data.some(d => d.plan > 0);
+  const targetVal = data.find(d => d.plan > 0)?.plan ?? 0;
   return (
     <div className="chart-card mb-4">
-      <div className="chart-title text-center">{title}</div>
+      <div className="chart-title text-center">
+        {title}
+        {hasTarget && <span style={{ fontSize: 10, marginLeft: 8, color: '#999' }}>Goal ({targetVal.toLocaleString()}{unit})</span>}
+      </div>
+      <div className="flex items-center justify-center gap-4 mb-1">
+        <span className="flex items-center gap-1 text-[10px]">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: realColor }} /> Real
+        </span>
+        {hasTarget && (
+          <span className="flex items-center gap-1 text-[10px]">
+            <span className="inline-block w-3 h-3 border-2 rounded-sm bg-transparent" style={{ borderColor: planColor }} /> Plan
+          </span>
+        )}
+      </div>
       <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={data} margin={{ top: 25, right: 15, bottom: 5, left: 15 }} barCategoryGap="25%">
+        <BarChart data={data} margin={{ top: 25, right: 15, bottom: 5, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="day" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} width={55} domain={[0, Math.ceil(maxVal * 1.15)]} />
-          <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`]}
+          <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`, 'Real']}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="plan" name="Plan" fill={planColor} barSize={30}
-            shape={PlanRealBarShape(planColor, realColor)} />
-          <Bar dataKey="real" name="Real" fill={realColor} barSize={30}
-            shape={PlanRealBarShape(planColor, realColor)} />
+          <Bar dataKey="real" name="Real" fill={realColor} barSize={36}
+            shape={OverlayBarShape(planColor, realColor)} />
         </BarChart>
       </ResponsiveContainer>
     </div>
