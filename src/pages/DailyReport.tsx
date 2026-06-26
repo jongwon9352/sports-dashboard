@@ -126,16 +126,23 @@ function OverlayChart({ title, data, color, unit = '', targetLabel }: OverlayCha
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CompareBarLabel(props: any) {
-  const { x, y, width, value } = props;
-  if (!value) return null;
-  return (
-    <text x={x + width / 2} y={y - 6} textAnchor="middle"
-      fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
-      {Math.round(value).toLocaleString()}
-    </text>
-  );
+function LabeledBarShape(color: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (props: any) => {
+    const { x, y, width, height, value } = props;
+    if (!width) return null;
+    return (
+      <g>
+        <rect x={x} y={y} width={width} height={height || 0} fill={color} rx={2} ry={2} />
+        {value > 0 && (
+          <text x={x + width / 2} y={y - 6} textAnchor="middle"
+            fontSize={11} fontFamily="DM Mono" fill="#666">
+            {Math.round(value).toLocaleString()}
+          </text>
+        )}
+      </g>
+    );
+  };
 }
 
 function CompareChart({
@@ -160,10 +167,10 @@ function CompareChart({
           <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`]}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
           <Legend wrapperStyle={{ fontSize: 13 }} />
-          <Bar dataKey="basic" name={label1} fill={color1} barSize={18} radius={[2, 2, 0, 0]}
-            label={<CompareBarLabel />} />
-          <Bar dataKey="custom" name={label2} fill={color2} barSize={18} radius={[2, 2, 0, 0]}
-            label={<CompareBarLabel />} />
+          <Bar dataKey="basic" name={label1} fill={color1} barSize={18}
+            shape={LabeledBarShape(color1)} />
+          <Bar dataKey="custom" name={label2} fill={color2} barSize={18}
+            shape={LabeledBarShape(color2)} />
         </BarChart>
       </ResponsiveContainer>
     </div>
