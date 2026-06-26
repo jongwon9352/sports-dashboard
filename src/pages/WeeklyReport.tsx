@@ -331,6 +331,9 @@ export function WeeklyReport() {
           <div className="chart-card mb-5 overflow-x-auto">
             <div className="text-center mb-2">
               <span className="text-sm font-bold">DAEJEON HANA CITIZEN U15 Weekly DATA</span>
+              {periodization?.topic && (
+                <span className="text-sm font-semibold text-text-secondary ml-3">| {periodization.topic}</span>
+              )}
             </div>
             <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 10, tableLayout: 'fixed' }}>
               <thead>
