@@ -823,6 +823,91 @@ export async function deleteRawDataRows(ids: string[]) {
   if (error) throw error;
 }
 
+export async function fetchWeeklyGradeAvg(weekStart: string, grades: string[]): Promise<{
+  date: string; day: string;
+  td: number; hsr: number; sprint: number; acc: number; dec: number; acd_load: number; max_speed: number;
+  training_load: number;
+}[]> {
+  const client = requireSupabase();
+  const endDate = new Date(weekStart);
+  endDate.setDate(endDate.getDate() + 6);
+  const endStr = endDate.toISOString().split('T')[0];
+
+  const { data: players } = await client
+    .from('players')
+    .select('id')
+    .in('grade', grades);
+  if (!players || players.length === 0) return [];
+  const playerIds = (players as R[]).map(p => p.id as string);
+
+  const allRows: R[] = [];
+  let offset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: chunk } = await client
+      .from('training_daily')
+      .select('training_date, total_distance, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, rpe, duration_min')
+      .in('player_id', playerIds)
+      .gte('training_date', weekStart)
+      .lte('training_date', endStr)
+      .range(offset, offset + PAGE - 1);
+    if (!chunk || chunk.length === 0) break;
+    allRows.push(...(chunk as R[]));
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const grouped = new Map<string, R[]>();
+  for (const row of allRows) {
+    const d = row.training_date as string;
+    if (!grouped.has(d)) grouped.set(d, []);
+    grouped.get(d)!.push(row);
+  }
+
+  const results: {
+    date: string; day: string;
+    td: number; hsr: number; sprint: number; acc: number; dec: number; acd_load: number; max_speed: number;
+    training_load: number;
+  }[] = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayName = dayNames[d.getDay()];
+    const rows = grouped.get(dateStr) || [];
+
+    if (rows.length === 0) {
+      results.push({ date: dateStr, day: dayName, td: 0, hsr: 0, sprint: 0, acc: 0, dec: 0, acd_load: 0, max_speed: 0, training_load: 0 });
+      continue;
+    }
+
+    const avg = (arr: R[], key: string) => {
+      const vals = arr.map(r => Number(r[key]) || 0);
+      return vals.reduce((a, b) => a + b, 0) / vals.length;
+    };
+    const tl = rows.reduce((s, r) => {
+      const rpe = Number(r.rpe) || 0;
+      const dur = Number(r.duration_min) || 0;
+      return s + (rpe > 0 ? rpe * dur : 0);
+    }, 0) / rows.filter(r => Number(r.rpe) > 0).length || 0;
+
+    results.push({
+      date: dateStr, day: dayName,
+      td: Math.round(avg(rows, 'total_distance')),
+      hsr: Math.round(avg(rows, 'hsr_distance')),
+      sprint: Math.round(avg(rows, 'sprint_distance')),
+      acc: Math.round(avg(rows, 'acc_count') * 10) / 10,
+      dec: Math.round(avg(rows, 'dec_count') * 10) / 10,
+      acd_load: Math.round(avg(rows, 'acd_load')),
+      max_speed: Math.round(avg(rows, 'max_speed') * 10) / 10,
+      training_load: Math.round(tl),
+    });
+  }
+  return results;
+}
+
 export async function fetchPlayerIds(): Promise<string[]> {
   const client = requireSupabase();
   const { data, error } = await client.from('players').select('id');
