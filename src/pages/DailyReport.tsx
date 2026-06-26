@@ -108,9 +108,9 @@ function OverlayChart({ title, data, color, unit = '', targetLabel }: OverlayCha
         )}
       </div>
       <ResponsiveContainer width="100%" height={350}>
-        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 60, left: 15 }} barCategoryGap="20%">
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
           <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} domain={yDomain} width={60} />
           <Tooltip
             formatter={(v) => [`${Number(v).toLocaleString()}${unit}`, 'Real']}
@@ -153,9 +153,9 @@ function CompareChart({
     <div className="chart-card">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
-        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 60, left: 15 }} barCategoryGap="25%">
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="25%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
           <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.2)]} />
           <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`]}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
@@ -170,50 +170,41 @@ function CompareChart({
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function StackedLabel(props: any) {
-  const { x, width, value, index, data: chartData } = props;
-  if (index == null || !chartData) return null;
-  const row = chartData[index];
-  if (!row) return null;
-  const total = (row.acc || 0) + (row.dec || 0);
-  if (!total || props.dataKey !== 'dec') return null;
-  const accH = row.acc || 0;
-  const decH = row.dec || 0;
-  const totalH = accH + decH;
-  const maxVal = Math.max(...chartData.map((d: { acc: number; dec: number }) => (d.acc || 0) + (d.dec || 0)), 1);
-  const chartHeight = 350 - 30 - 60;
-  const barTop = 30 + chartHeight * (1 - totalH / (maxVal * 1.2));
-  void value;
-  return (
-    <text x={x + width / 2} y={barTop - 6} textAnchor="middle"
-      fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
-      {total}
-    </text>
-  );
-}
-
 function StackedActionChart({ title, data }: {
   title: string;
   data: { name: string; acc: number; dec: number }[];
 }) {
   const sorted = [...data].sort((a, b) => (b.acc + b.dec) - (a.acc + a.dec));
-  const maxVal = Math.max(...sorted.map(d => d.acc + d.dec), 1);
+  const withTotal = sorted.map(d => ({ ...d, total: d.acc + d.dec }));
+  const maxVal = Math.max(...withTotal.map(d => d.total), 1);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderTotalLabel = (props: any) => {
+    const { x, y, width, value } = props;
+    if (!value) return null;
+    return (
+      <text x={x + width / 2} y={y - 6} textAnchor="middle"
+        fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
+        {value}
+      </text>
+    );
+  };
+
   return (
     <div className="chart-card">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
-        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 60, left: 15 }} barCategoryGap="20%">
+        <BarChart data={withTotal} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
-          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.2)]} />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.25)]} />
           <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}회`]}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
           <Legend wrapperStyle={{ fontSize: 13 }} />
           <Bar dataKey="acc" name="ACC" fill="rgba(33, 150, 243, 0.7)" stackId="action" barSize={28} />
           <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action" barSize={28}
-            radius={[2, 2, 0, 0]}
-            label={<StackedLabel data={sorted} />} />
+            radius={[2, 2, 0, 0]} />
+          <Bar dataKey="total" name="합계" fill="transparent" barSize={28} label={renderTotalLabel} legendType="none" />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -313,6 +304,56 @@ export function DailyReport() {
   const pdfChart2Ref = useRef<HTMLDivElement>(null);
   const pdfChart3Ref = useRef<HTMLDivElement>(null);
 
+  const prepareForCapture = (el: HTMLElement) => {
+    const rollback: (() => void)[] = [];
+    const setStyle = (target: HTMLElement, props: Record<string, string>) => {
+      const orig = target.style.cssText;
+      rollback.push(() => { target.style.cssText = orig; });
+      for (const [k, v] of Object.entries(props)) target.style.setProperty(k, v, 'important');
+    };
+
+    el.querySelectorAll<HTMLElement>('th').forEach(th => {
+      setStyle(th, { background: '#4a4a60', color: '#ffffff', padding: '5px 8px', 'font-size': '10px', 'white-space': 'nowrap' });
+    });
+    el.querySelectorAll<HTMLElement>('thead, thead tr').forEach(t => {
+      setStyle(t, { background: '#4a4a60' });
+    });
+    el.querySelectorAll<HTMLElement>('tbody tr').forEach(tr => {
+      setStyle(tr, { background: '#ffffff', color: '#222222' });
+    });
+    el.querySelectorAll<HTMLElement>('td').forEach(td => {
+      setStyle(td, { background: '#ffffff', color: '#222222', padding: '4px 8px', 'font-size': '11px', 'white-space': 'nowrap', 'border-color': '#d0d0d0' });
+    });
+    el.querySelectorAll<HTMLElement>('.overflow-x-auto').forEach(o => {
+      setStyle(o, { overflow: 'visible' });
+    });
+    el.querySelectorAll<HTMLElement>('.sticky').forEach(s => {
+      setStyle(s, { position: 'static' });
+    });
+    el.querySelectorAll<HTMLElement>('select').forEach(s => {
+      setStyle(s, { 'font-size': '10px', color: '#222', background: '#fff', border: '1px solid #bbb', '-webkit-appearance': 'none' });
+    });
+    el.querySelectorAll<HTMLElement>('.pdf-location-text').forEach(s => {
+      setStyle(s, { display: 'inline', 'font-size': '12px', 'font-weight': '600', color: '#222' });
+    });
+    el.querySelectorAll<HTMLElement>('input[placeholder="장소 입력"]').forEach(inp => {
+      setStyle(inp, { display: 'none' });
+    });
+    el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
+      setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: '1px solid #ccc' });
+    });
+    el.querySelectorAll<HTMLElement>('.chart-title').forEach(t => {
+      setStyle(t, { color: '#222', 'font-size': '18px', 'font-weight': '700' });
+    });
+    el.querySelectorAll<HTMLElement>('svg text').forEach(t => {
+      const origFill = t.getAttribute('fill');
+      t.setAttribute('fill', '#333');
+      rollback.push(() => { if (origFill) t.setAttribute('fill', origFill); });
+    });
+
+    return () => rollback.forEach(fn => fn());
+  };
+
   const handlePDF = useCallback(async () => {
     const CAPTURE_W = 1600;
     const PDF_RATIO = 2784 / 1608;
@@ -327,11 +368,12 @@ export function DailyReport() {
       if (!el) continue;
       if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
 
-      const orig = el.style.cssText;
+      const origCss = el.style.cssText;
       el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
-      el.classList.add('pdf-mode');
 
-      await new Promise(r => setTimeout(r, 200));
+      const restore = prepareForCapture(el);
+
+      await new Promise(r => setTimeout(r, 300));
 
       const canvas = await html2canvas(el, {
         scale: 1,
@@ -340,8 +382,8 @@ export function DailyReport() {
         windowWidth: CAPTURE_W,
       });
 
-      el.style.cssText = orig;
-      el.classList.remove('pdf-mode');
+      restore();
+      el.style.cssText = origCss;
 
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
       const imgAspect = canvas.width / canvas.height;
