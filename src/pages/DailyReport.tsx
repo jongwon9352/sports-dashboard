@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend, LabelList,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
@@ -170,19 +170,37 @@ function CompareChart({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DecBarWithLabel(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width || !height) return null;
+  const total = (payload?.acc || 0) + (payload?.dec || 0);
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height}
+        fill="rgba(255, 152, 0, 0.7)" rx={2} ry={2} />
+      {total > 0 && (
+        <text x={x + width / 2} y={y - 6} textAnchor="middle"
+          fontSize={12} fontFamily="DM Mono" fontWeight="600" fill="#333">
+          {total}
+        </text>
+      )}
+    </g>
+  );
+}
+
 function StackedActionChart({ title, data }: {
   title: string;
   data: { name: string; acc: number; dec: number }[];
 }) {
   const sorted = [...data].sort((a, b) => (b.acc + b.dec) - (a.acc + a.dec));
-  const withTotal = sorted.map(d => ({ ...d, total: d.acc + d.dec }));
-  const maxVal = Math.max(...withTotal.map(d => d.total), 1);
+  const maxVal = Math.max(...sorted.map(d => d.acc + d.dec), 1);
 
   return (
     <div className="chart-card">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
-        <BarChart data={withTotal} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
           <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.25)]} />
@@ -190,10 +208,8 @@ function StackedActionChart({ title, data }: {
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
           <Legend wrapperStyle={{ fontSize: 13 }} />
           <Bar dataKey="acc" name="ACC" fill="rgba(33, 150, 243, 0.7)" stackId="action" barSize={28} />
-          <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action" barSize={28}
-            radius={[2, 2, 0, 0]}>
-            <LabelList dataKey="total" position="top" style={{ fontSize: 12, fontFamily: 'DM Mono', fontWeight: 600, fill: '#333' }} />
-          </Bar>
+          <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action"
+            barSize={28} shape={<DecBarWithLabel />} />
         </BarChart>
       </ResponsiveContainer>
     </div>
