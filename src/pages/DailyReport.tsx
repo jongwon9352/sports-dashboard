@@ -80,7 +80,7 @@ function DualBarShape(color: string) {
         <rect x={x + 2} y={y} width={width - 4} height={height}
           fill={color} rx={2} />
         <text x={x + width / 2} y={y - 8} textAnchor="middle"
-          fontSize={12} fontFamily="DM Mono" fill="var(--color-text-secondary)">
+          fontSize={12} fontFamily="DM Mono" fill="#666">
           {Math.round(value).toLocaleString()}
         </text>
       </g>
@@ -338,10 +338,15 @@ export function DailyReport() {
     el.querySelectorAll<HTMLElement>('.chart-title').forEach(t => {
       setStyle(t, { color: '#222', 'font-size': '18px', 'font-weight': '700' });
     });
-    el.querySelectorAll<HTMLElement>('svg text').forEach(t => {
+    el.querySelectorAll('svg text').forEach(t => {
       const origFill = t.getAttribute('fill');
+      const origStyle = (t as HTMLElement).style.cssText;
       t.setAttribute('fill', '#333');
-      rollback.push(() => { if (origFill) t.setAttribute('fill', origFill); });
+      (t as HTMLElement).style.setProperty('fill', '#333', 'important');
+      rollback.push(() => {
+        if (origFill) t.setAttribute('fill', origFill);
+        (t as HTMLElement).style.cssText = origStyle;
+      });
     });
 
     return () => rollback.forEach(fn => fn());
