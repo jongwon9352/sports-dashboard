@@ -359,7 +359,7 @@ export function DailyReport() {
       setStyle(inp, { display: 'none' });
     });
     el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
-      setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: '1px solid #ccc' });
+      setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: '1px solid #ccc', padding: '8px', 'margin-bottom': '6px' });
     });
     el.querySelectorAll<HTMLElement>('.chart-title').forEach(t => {
       setStyle(t, { color: '#222', 'font-size': '18px', 'font-weight': '700' });
@@ -393,7 +393,7 @@ export function DailyReport() {
       if (i > 0) pdf.addPage([pdfW, pdfH], 'landscape');
 
       const origCss = el.style.cssText;
-      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
+      el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:4px;`;
 
       const restore = prepareForCapture(el);
 
