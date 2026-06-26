@@ -126,6 +126,18 @@ function OverlayChart({ title, data, color, unit = '', targetLabel }: OverlayCha
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CompareBarLabel(props: any) {
+  const { x, y, width, value } = props;
+  if (!value) return null;
+  return (
+    <text x={x + width / 2} y={y - 6} textAnchor="middle"
+      fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
+      {Math.round(value).toLocaleString()}
+    </text>
+  );
+}
+
 function CompareChart({
   title, data, label1, label2, color1, color2, unit = '',
 }: {
@@ -136,19 +148,72 @@ function CompareChart({
   unit?: string;
 }) {
   const sorted = [...data].sort((a, b) => b.basic - a.basic);
+  const maxVal = Math.max(...sorted.map(d => Math.max(d.basic, d.custom)), 1);
   return (
     <div className="chart-card">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
-        <BarChart data={sorted} margin={{ top: 15, right: 15, bottom: 60, left: 15 }} barCategoryGap="25%">
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 60, left: 15 }} barCategoryGap="25%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
-          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.2)]} />
           <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}${unit}`]}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
           <Legend wrapperStyle={{ fontSize: 13 }} />
-          <Bar dataKey="basic" name={label1} fill={color1} barSize={18} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="custom" name={label2} fill={color2} barSize={18} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="basic" name={label1} fill={color1} barSize={18} radius={[2, 2, 0, 0]}
+            label={<CompareBarLabel />} />
+          <Bar dataKey="custom" name={label2} fill={color2} barSize={18} radius={[2, 2, 0, 0]}
+            label={<CompareBarLabel />} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function StackedLabel(props: any) {
+  const { x, width, value, index, data: chartData } = props;
+  if (index == null || !chartData) return null;
+  const row = chartData[index];
+  if (!row) return null;
+  const total = (row.acc || 0) + (row.dec || 0);
+  if (!total || props.dataKey !== 'dec') return null;
+  const accH = row.acc || 0;
+  const decH = row.dec || 0;
+  const totalH = accH + decH;
+  const maxVal = Math.max(...chartData.map((d: { acc: number; dec: number }) => (d.acc || 0) + (d.dec || 0)), 1);
+  const chartHeight = 350 - 30 - 60;
+  const barTop = 30 + chartHeight * (1 - totalH / (maxVal * 1.2));
+  void value;
+  return (
+    <text x={x + width / 2} y={barTop - 6} textAnchor="middle"
+      fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
+      {total}
+    </text>
+  );
+}
+
+function StackedActionChart({ title, data }: {
+  title: string;
+  data: { name: string; acc: number; dec: number }[];
+}) {
+  const sorted = [...data].sort((a, b) => (b.acc + b.dec) - (a.acc + a.dec));
+  const maxVal = Math.max(...sorted.map(d => d.acc + d.dec), 1);
+  return (
+    <div className="chart-card">
+      <div className="chart-title text-center">{title}</div>
+      <ResponsiveContainer width="100%" height={350}>
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 60, left: 15 }} barCategoryGap="20%">
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 12 }} angle={-30} textAnchor="end" height={65} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.2)]} />
+          <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}회`]}
+            contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Bar dataKey="acc" name="ACC" fill="rgba(33, 150, 243, 0.7)" stackId="action" barSize={28} />
+          <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action" barSize={28}
+            radius={[2, 2, 0, 0]}
+            label={<StackedLabel data={sorted} />} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -424,9 +489,8 @@ export function DailyReport() {
               <div ref={pdfChart1Ref} className="space-y-4 mb-5">
                 <OverlayChart title="TD(Plan vs Real)" data={mkChart(r => r.total_distance, tdTarget)}
                   color="rgba(139, 195, 74, 0.7)" unit=" m" targetLabel={tdTarget ? `${fmtN(tdTarget)}m` : undefined} />
-                <CompareChart title="Total Action(ACC+DEC)"
-                  data={grade3Rows.map(d => ({ name: d.player_name, basic: Math.round(d.acc_count), custom: Math.round(d.dec_count) }))}
-                  label1="ACC" label2="DEC" color1="rgba(33, 150, 243, 0.7)" color2="rgba(255, 152, 0, 0.7)" unit="회" />
+                <StackedActionChart title="Total Action(ACC+DEC)"
+                  data={grade3Rows.map(d => ({ name: d.player_name, acc: Math.round(d.acc_count), dec: Math.round(d.dec_count) }))} />
                 <OverlayChart title="ACD LOAD" data={mkChart(r => r.acd_load, 0)}
                   color="rgba(140, 20, 20, 0.7)" />
               </div>
