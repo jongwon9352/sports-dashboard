@@ -178,18 +178,6 @@ function StackedActionChart({ title, data }: {
   const withTotal = sorted.map(d => ({ ...d, total: d.acc + d.dec }));
   const maxVal = Math.max(...withTotal.map(d => d.total), 1);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const TotalLabel = (props: any) => {
-    const { x, y, width, value } = props;
-    if (!value || !width) return null;
-    return (
-      <text x={x + width / 2} y={y - 6} textAnchor="middle"
-        fontSize={12} fontFamily="DM Mono" fontWeight="600" fill="#333">
-        {value}
-      </text>
-    );
-  };
-
   return (
     <div className="chart-card">
       <div className="chart-title text-center">{title}</div>
@@ -204,7 +192,7 @@ function StackedActionChart({ title, data }: {
           <Bar dataKey="acc" name="ACC" fill="rgba(33, 150, 243, 0.7)" stackId="action" barSize={28} />
           <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action" barSize={28}
             radius={[2, 2, 0, 0]}>
-            <LabelList dataKey="total" position="top" content={TotalLabel} />
+            <LabelList dataKey="total" position="top" style={{ fontSize: 12, fontFamily: 'DM Mono', fontWeight: 600, fill: '#333' }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
