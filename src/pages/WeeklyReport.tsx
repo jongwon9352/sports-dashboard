@@ -248,6 +248,9 @@ export function WeeklyReport() {
     el.querySelectorAll<HTMLElement>('.overflow-x-auto').forEach(o => {
       setStyle(o, { overflow: 'visible' });
     });
+    el.querySelectorAll<HTMLElement>('table').forEach(t => {
+      setStyle(t, { width: '100%', 'table-layout': 'fixed' });
+    });
     el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
       setStyle(c, { background: '#fff', 'box-shadow': 'none', border: '1px solid #ccc', 'margin-bottom': '8px', padding: '8px' });
     });
