@@ -908,6 +908,27 @@ export async function fetchWeeklyGradeAvg(weekStart: string, grades: string[]): 
   return results;
 }
 
+export async function saveDailyReportConfig(date: string, playerTypes: Record<string, string>, location: string) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('daily_report_config')
+    .upsert({ training_date: date, player_types: playerTypes, location, updated_at: new Date().toISOString() },
+      { onConflict: 'training_date' });
+  if (error) throw error;
+}
+
+export async function fetchDailyReportConfig(date: string): Promise<{ player_types: Record<string, string>; location: string } | null> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('daily_report_config')
+    .select('player_types, location')
+    .eq('training_date', date)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { player_types: (data as R).player_types ?? {}, location: (data as R).location ?? '' };
+}
+
 export async function fetchPlayerIds(): Promise<string[]> {
   const client = requireSupabase();
   const { data, error } = await client.from('players').select('id');

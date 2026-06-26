@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
-import { fetchAvailableDates, fetchDailyReportData, fetchDayTarget } from '../lib/api';
+import { fetchAvailableDates, fetchDailyReportData, fetchDayTarget, saveDailyReportConfig, fetchDailyReportConfig } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
@@ -225,49 +225,56 @@ function StackedActionChart({ title, data }: {
 
 export function DailyReport() {
   const [dates, setDates] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState(() => sessionStorage.getItem('dailyReportDate') || '');
+  const [selectedDate, setSelectedDate] = useState('');
   const [data, setData] = useState<DailyReportRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [location, setLocation] = useState(() => sessionStorage.getItem('dailyReportLocation') || '');
-  const [playerTypes, setPlayerTypes] = useState<Record<string, TrainingType>>(() => {
-    const savedDate = sessionStorage.getItem('dailyReportDate') || '';
-    try { return JSON.parse(sessionStorage.getItem(`dailyTypes_${savedDate}`) || '{}'); } catch { return {}; }
-  });
+  const [location, setLocation] = useState('');
+  const [playerTypes, setPlayerTypes] = useState<Record<string, TrainingType>>({});
   const [targets, setTargets] = useState<{ td: number; hsr: number; sprint: number } | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
-  const loadTypesForDate = (date: string) => {
-    try {
-      const saved = sessionStorage.getItem(`dailyTypes_${date}`);
-      return saved ? JSON.parse(saved) : {};
-    } catch { return {}; }
-  };
+  const loadDateConfig = useCallback(async (date: string) => {
+    const config = await fetchDailyReportConfig(date).catch(() => null);
+    if (config) {
+      setPlayerTypes(config.player_types as Record<string, TrainingType>);
+      setLocation(config.location);
+    } else {
+      setPlayerTypes({});
+      setLocation('');
+    }
+  }, []);
 
   useEffect(() => {
     fetchAvailableDates().then(d => {
       setDates(d);
-      const saved = sessionStorage.getItem('dailyReportDate');
-      const dateToUse = saved && d.includes(saved) ? saved : d[0] || '';
+      const dateToUse = d[0] || '';
       if (dateToUse) {
         setSelectedDate(dateToUse);
-        setPlayerTypes(loadTypesForDate(dateToUse));
+        loadDateConfig(dateToUse);
         fetchDailyReportData(dateToUse).then(rows => { setData(rows); setLoading(false); });
         fetchDayTarget(dateToUse).then(setTargets);
       } else { setLoading(false); }
     });
+  }, [loadDateConfig]);
+
+  const saveToDb = useCallback((date: string, types: Record<string, TrainingType>, loc: string) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveDailyReportConfig(date, types, loc).catch(() => {});
+    }, 500);
   }, []);
 
-  useEffect(() => { if (selectedDate) sessionStorage.setItem('dailyReportDate', selectedDate); }, [selectedDate]);
-  useEffect(() => { sessionStorage.setItem('dailyReportLocation', location); }, [location]);
   useEffect(() => {
-    if (selectedDate) sessionStorage.setItem(`dailyTypes_${selectedDate}`, JSON.stringify(playerTypes));
-  }, [playerTypes, selectedDate]);
+    if (selectedDate && Object.keys(playerTypes).length > 0) {
+      saveToDb(selectedDate, playerTypes, location);
+    }
+  }, [playerTypes, location, selectedDate, saveToDb]);
 
-  const handleDateChange = (date: string) => {
-    if (selectedDate) sessionStorage.setItem(`dailyTypes_${selectedDate}`, JSON.stringify(playerTypes));
+  const handleDateChange = async (date: string) => {
     setSelectedDate(date);
-    setPlayerTypes(loadTypesForDate(date));
     setLoading(true);
+    await loadDateConfig(date);
     fetchDailyReportData(date).then(rows => { setData(rows); setLoading(false); });
     fetchDayTarget(date).then(setTargets);
   };
@@ -359,7 +366,7 @@ export function DailyReport() {
       setStyle(inp, { display: 'none' });
     });
     el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
-      setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: '1px solid #ccc', padding: '8px', 'margin-bottom': '6px' });
+      setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: 'none', padding: '0', 'margin-bottom': '4px' });
     });
     el.querySelectorAll<HTMLElement>('.chart-title').forEach(t => {
       setStyle(t, { color: '#222', 'font-size': '18px', 'font-weight': '700' });
