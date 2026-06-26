@@ -1,7 +1,9 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import html2canvas from 'html2canvas-pro';
+import { jsPDF } from 'jspdf';
 import { fetchSavedWeeks, fetchWeeklyPeriodization, fetchWeeklyGradeAvg, type DayPlan } from '../lib/api';
 
 const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
@@ -93,7 +95,7 @@ function WeeklyChart({ title, data, planColor, realColor, unit = '' }: {
           </span>
         )}
       </div>
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={180}>
         <BarChart data={data} margin={{ top: 25, right: 15, bottom: 5, left: 15 }} barCategoryGap="20%">
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="day" tick={{ fontSize: 11 }} />
@@ -119,6 +121,7 @@ export function WeeklyReport() {
   }[]>([]);
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState('');
+  const pdfRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchSavedWeeks().then(weeks => {
@@ -220,6 +223,74 @@ export function WeeklyReport() {
 
   const accDecMax = Math.max(...accDecChartData.map(d => d.acc + d.dec), 1);
 
+  const handlePDF = useCallback(async () => {
+    const el = pdfRef.current;
+    if (!el) return;
+    const CAPTURE_W = 1200;
+    const origCss = el.style.cssText;
+    el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:16px;`;
+
+    const rollback: (() => void)[] = [];
+    const setStyle = (target: HTMLElement, props: Record<string, string>) => {
+      const orig = target.style.cssText;
+      rollback.push(() => { target.style.cssText = orig; });
+      for (const [k, v] of Object.entries(props)) target.style.setProperty(k, v, 'important');
+    };
+    el.querySelectorAll<HTMLElement>('th').forEach(th => {
+      setStyle(th, { background: '#4a4a60', color: '#fff', padding: '4px 6px', 'font-size': '9px' });
+    });
+    el.querySelectorAll<HTMLElement>('td').forEach(td => {
+      setStyle(td, { background: '#fff', color: '#222', padding: '3px 6px', 'font-size': '9px', 'border-color': '#d0d0d0' });
+    });
+    el.querySelectorAll<HTMLElement>('tbody tr').forEach(tr => {
+      setStyle(tr, { background: '#fff', color: '#222' });
+    });
+    el.querySelectorAll<HTMLElement>('.overflow-x-auto').forEach(o => {
+      setStyle(o, { overflow: 'visible' });
+    });
+    el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
+      setStyle(c, { background: '#fff', 'box-shadow': 'none', border: '1px solid #ccc', 'margin-bottom': '8px', padding: '8px' });
+    });
+    el.querySelectorAll<HTMLElement>('.chart-title').forEach(t => {
+      setStyle(t, { color: '#222', 'font-size': '12px', 'font-weight': '700' });
+    });
+    el.querySelectorAll('svg text').forEach(t => {
+      const orig = t.getAttribute('fill');
+      const origStyle = (t as HTMLElement).style.cssText;
+      t.setAttribute('fill', '#333');
+      (t as HTMLElement).style.setProperty('fill', '#333', 'important');
+      rollback.push(() => { if (orig) t.setAttribute('fill', orig); (t as HTMLElement).style.cssText = origStyle; });
+    });
+    el.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(ta => {
+      const span = document.createElement('div');
+      span.textContent = ta.value || '—';
+      span.style.cssText = 'font-size:10px;color:#222;padding:4px;white-space:pre-wrap;';
+      ta.parentNode?.insertBefore(span, ta);
+      setStyle(ta, { display: 'none' });
+      rollback.push(() => { span.remove(); });
+    });
+
+    await new Promise(r => setTimeout(r, 300));
+
+    const canvas = await html2canvas(el, {
+      scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: CAPTURE_W,
+    });
+
+    rollback.forEach(fn => fn());
+    el.style.cssText = origCss;
+
+    const pdfW = 210;
+    const pdfH = 297;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const imgAspect = canvas.width / canvas.height;
+    let dW = pdfW - 10, dH = (pdfW - 10) / imgAspect;
+    if (dH > pdfH - 10) { dH = pdfH - 10; dW = (pdfH - 10) * imgAspect; }
+    pdf.addImage(imgData, 'JPEG', (pdfW - dW) / 2, 5, dW, dH);
+    const weekLabel = savedWeeks.find(w => w.week_start === selectedWeek)?.week_label || selectedWeek;
+    pdf.save(`위클리리포트_${weekLabel}.pdf`);
+  }, [selectedWeek, savedWeeks]);
+
   return (
     <div className="p-6">
       <div className="sec-title">위클리 리포트</div>
@@ -243,12 +314,16 @@ export function WeeklyReport() {
         {periodization && (
           <span className="text-xs text-text-secondary ml-2">{periodization.topic}</span>
         )}
+        <button onClick={handlePDF}
+          className="ml-auto px-4 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary transition-colors flex items-center gap-1.5">
+          📥 PDF 다운로드
+        </button>
       </div>
 
       {loading ? (
         <div className="text-text-secondary text-center py-16">Loading...</div>
       ) : (
-        <>
+        <div ref={pdfRef}>
           {/* 헤더 테이블 */}
           <div className="chart-card mb-5 overflow-x-auto">
             <div className="text-center mb-2">
@@ -292,7 +367,7 @@ export function WeeklyReport() {
           {/* 가속/감속 횟수 (누적) */}
           <div className="chart-card mb-4">
             <div className="chart-title text-center">가속/감속 횟수 (times)</div>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={180}>
               <BarChart data={accDecChartData} margin={{ top: 25, right: 15, bottom: 5, left: 15 }} barCategoryGap="25%">
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis dataKey="day" tick={{ fontSize: 11 }} />
@@ -360,7 +435,7 @@ export function WeeklyReport() {
               className="w-full px-4 py-3 text-sm rounded-lg border border-surface-secondary bg-transparent outline-none resize-y min-h-[100px] focus:border-purple"
             />
           </div>
-        </>
+        </div>
       )}
     </div>
   );
