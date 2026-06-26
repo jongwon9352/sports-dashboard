@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend, LabelList,
 } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
@@ -179,15 +179,13 @@ function StackedActionChart({ title, data }: {
   const maxVal = Math.max(...withTotal.map(d => d.total), 1);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const StackedTopLabel = (props: any) => {
-    const { x, y, width, index } = props;
-    if (index == null) return null;
-    const row = withTotal[index];
-    if (!row || !row.total) return null;
+  const TotalLabel = (props: any) => {
+    const { x, y, width, value } = props;
+    if (!value || !width) return null;
     return (
       <text x={x + width / 2} y={y - 6} textAnchor="middle"
-        fontSize={11} fontFamily="DM Mono" fill="var(--color-text-secondary)">
-        {row.total}
+        fontSize={12} fontFamily="DM Mono" fontWeight="600" fill="#333">
+        {value}
       </text>
     );
   };
@@ -200,12 +198,14 @@ function StackedActionChart({ title, data }: {
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
           <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.25)]} />
-          <Tooltip formatter={(v, name) => [name === '합계' ? null : `${Number(v).toLocaleString()}회`, name]}
+          <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}회`]}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
           <Legend wrapperStyle={{ fontSize: 13 }} />
           <Bar dataKey="acc" name="ACC" fill="rgba(33, 150, 243, 0.7)" stackId="action" barSize={28} />
           <Bar dataKey="dec" name="DEC" fill="rgba(255, 152, 0, 0.7)" stackId="action" barSize={28}
-            radius={[2, 2, 0, 0]} label={StackedTopLabel} />
+            radius={[2, 2, 0, 0]}>
+            <LabelList dataKey="total" position="top" content={TotalLabel} />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
