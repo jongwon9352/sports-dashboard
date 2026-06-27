@@ -11,6 +11,7 @@ import { PlayerProfile } from './pages/PlayerProfile';
 import { Settings } from './pages/Settings';
 import { WeeklyPeriodization } from './pages/WeeklyPeriodization';
 import { RawDataPage } from './pages/RawDataPage';
+import { MatchReport } from './pages/MatchReport';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/daily" element={<DailyReport />} />
               <Route path="/weekly" element={<WeeklyReport />} />
+              <Route path="/match" element={<MatchReport />} />
               <Route path="/acwr" element={<AcwrPage />} />
               <Route path="/rpe" element={<RpePage />} />
               <Route path="/periodization" element={<WeeklyPeriodization />} />

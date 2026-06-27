@@ -126,13 +126,27 @@ export interface MatchData {
   play_time_min: number;
   rpe: number | null;
   total_distance: number;
+  speed_zone_1: number;
+  speed_zone_2: number;
+  speed_zone_3: number;
+  speed_zone_4: number;
+  speed_zone_5: number;
+  m_per_min: number;
   hsr_distance: number;
   sprint_distance: number;
   sprint_count: number;
   acc_count: number;
   dec_count: number;
+  acd_load: number;
   max_speed: number;
+  action_count: number;
   created_at: string;
+}
+
+export interface MatchReportRow extends MatchData {
+  player_name: string;
+  jersey_number: number | null;
+  position: string | null;
 }
 
 export type AcwrZone = 'safe' | 'caution' | 'danger' | 'insufficient';

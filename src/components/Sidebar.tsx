@@ -4,7 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 export function Sidebar() {
   const location = useLocation();
   const isDashboardGroup = ['/'].includes(location.pathname);
-  const isReportGroup = ['/daily', '/weekly'].includes(location.pathname);
+  const isReportGroup = ['/daily', '/weekly', '/match'].includes(location.pathname);
   const isDataGroup = ['/upload', '/raw-data'].includes(location.pathname);
   const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
   const [reportOpen, setReportOpen] = useState(isReportGroup);
@@ -58,6 +58,9 @@ export function Sidebar() {
               </NavLink>
               <NavLink to="/weekly" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
                 <span className="w-[18px] text-center text-[13px]">📆</span>위클리 리포트
+              </NavLink>
+              <NavLink to="/match" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">⚽</span>매치 리포트
               </NavLink>
             </div>
           )}

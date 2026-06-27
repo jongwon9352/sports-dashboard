@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import type {
   Player, PlayerWithAcwr, AcwrZone, AcwrDaily, TrainingDaily,
-  TeamDailyAggregate, DailyReportRow, SidebarPlayer, MatchData,
+  TeamDailyAggregate, DailyReportRow, SidebarPlayer, MatchData, MatchReportRow,
 } from '../types';
 import {
   calculateAcuteEwma,
@@ -1041,4 +1041,45 @@ export async function fetchDayTarget(date: string): Promise<{ td: number; hsr: n
     hsr: parseVal(plan.hsr_distance),
     sprint: parseVal(plan.sprint_distance),
   };
+}
+
+export async function fetchMatchDates(): Promise<{ date: string; opponent: string; event_type: string }[]> {
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from('match_data')
+    .select('match_date, opponent, event_type')
+    .order('match_date', { ascending: false });
+  if (!data) return [];
+  const seen = new Set<string>();
+  return data.filter(r => {
+    const key = `${r.match_date}_${r.opponent}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(r => ({ date: r.match_date, opponent: r.opponent, event_type: r.event_type }));
+}
+
+export async function fetchMatchReportData(date: string, opponent: string): Promise<MatchReportRow[]> {
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from('match_data')
+    .select('*, players!inner(name, jersey_number, position)')
+    .eq('match_date', date)
+    .eq('opponent', opponent);
+  if (!data) return [];
+  return (data as any[]).map(r => ({
+    ...r,
+    player_name: r.players?.name ?? '',
+    jersey_number: r.players?.jersey_number ?? null,
+    position: r.players?.position ?? null,
+    players: undefined,
+  })) as MatchReportRow[];
+}
+
+export async function saveMatchPositions(ids: string[], positions: Record<string, string>): Promise<void> {
+  if (!supabase) return;
+  const updates = Object.entries(positions)
+    .filter(([id]) => ids.includes(id))
+    .map(([id, pos]) => supabase!.from('match_data').update({ position_played: pos }).eq('id', id));
+  await Promise.all(updates);
 }
