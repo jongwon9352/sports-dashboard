@@ -119,7 +119,7 @@ export function Upload() {
         newStatuses[newStatuses.length - 1] = {
           filename: file.name,
           status: 'error',
-          message: e instanceof Error ? e.message : '알 수 없는 오류',
+          message: e instanceof Error ? e.message : (e as any)?.message ?? JSON.stringify(e),
         };
       }
       setStatuses([...newStatuses]);
