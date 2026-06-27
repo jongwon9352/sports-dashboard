@@ -11,6 +11,7 @@ import {
   getAcwrZone,
 } from '../utils/calculations';
 import type { ParsedDailyRow, ParsedSessionRow } from '../utils/csvParser';
+import { parseMatchFilename } from '../utils/csvParser';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
 
@@ -212,6 +213,58 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
   if (error) throw error;
 
   await recalculatePlayerAcwr([...new Set(dailyRows.map(row => row.player_id as string))]);
+}
+
+export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: string) {
+  const matchInfo = parseMatchFilename(filename);
+  if (!matchInfo) throw new Error('파일명에서 경기 정보를 추출할 수 없습니다. (형식: 날짜-대회-상대.csv)');
+
+  const { date, event_type, opponent } = matchInfo;
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows);
+  const now = new Date().toISOString();
+
+  const matchRows = validRows.map(row => {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    return {
+      id: crypto.randomUUID(),
+      player_id: playerId,
+      match_date: date,
+      opponent,
+      event_type,
+      play_time_min: row.duration_min,
+      rpe: row.rpe,
+      total_distance: row.total_distance,
+      speed_zone_1: row.speed_zone_1,
+      speed_zone_2: row.speed_zone_2,
+      speed_zone_3: row.speed_zone_3,
+      speed_zone_4: row.speed_zone_4,
+      speed_zone_5: row.speed_zone_5,
+      m_per_min: row.m_per_min,
+      hsr_distance: row.hsr_distance,
+      sprint_distance: row.sprint_distance,
+      sprint_count: row.sprint_count,
+      acc_count: row.acc_count,
+      dec_count: row.dec_count,
+      acd_load: row.acd_load,
+      max_speed: row.max_speed,
+      action_count: row.acc_count + row.dec_count,
+      created_at: now,
+    };
+  }).filter(row => row.player_id);
+
+  if (matchRows.length === 0) return matchRows.length;
+
+  const { error: matchError } = await client
+    .from('match_data')
+    .upsert(matchRows, { onConflict: 'player_id,match_date,opponent' });
+  if (matchError) throw matchError;
+
+  // training_daily에도 저장 (데일리/위클리 리포트 반영)
+  await importDailyCsvRows(rows, date);
+
+  return matchRows.length;
 }
 
 async function recalculatePlayerAcwr(playerIds: string[]) {

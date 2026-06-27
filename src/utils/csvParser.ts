@@ -11,6 +11,19 @@ function parseNullableNumber(val: string | undefined): number | null {
   return isNaN(num) ? null : num;
 }
 
+export function parseMatchFilename(filename: string): { date: string; event_type: string; opponent: string } | null {
+  const name = filename.replace(/\.csv$/i, '').normalize('NFC');
+  const parts = name.split('-');
+  if (parts.length >= 5) {
+    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const event_type = parts[3];
+    const opponent = parts.slice(4).join('-');
+    if (event_type && opponent) return { date, event_type, opponent };
+  }
+  return null;
+}
+
 export function extractDateFromFilename(filename: string): string {
   const match = filename.match(/(\d{4}-\d{2}-\d{2})/);
   if (match) return match[1];

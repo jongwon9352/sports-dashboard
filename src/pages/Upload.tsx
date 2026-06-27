@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, type DragEvent } from 'react';
-import { parseSessionCsv, parseDailyCsv, extractDateFromFilename } from '../utils/csvParser';
+import { parseSessionCsv, parseDailyCsv, extractDateFromFilename, parseMatchFilename } from '../utils/csvParser';
 import {
   importDailyCsvRows,
   importSessionCsvRows,
+  importMatchCsvRows,
   saveCsvUploadRecord,
   fetchCsvUploads,
   deleteCsvUpload,
@@ -10,9 +11,10 @@ import {
   type CsvUploadRecord,
 } from '../lib/api';
 
-type FileType = 'session' | 'daily' | null;
+type FileType = 'session' | 'daily' | 'match' | null;
 
 function detectFileType(filename: string): FileType {
+  if (parseMatchFilename(filename)) return 'match';
   const normalized = filename.normalize('NFC').toLowerCase();
   if (normalized.includes('리포트') || normalized.includes('report') || normalized.includes('테이블')) return 'session';
   if (normalized.includes('운동부하') || normalized.includes('모니터링') || normalized.includes('workload') || normalized.includes('trend')) return 'daily';
@@ -79,7 +81,11 @@ export function Upload() {
 
       try {
         let rowCount = 0;
-        if (type === 'session') {
+        if (type === 'match') {
+          const rows = parseDailyCsv(text);
+          if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
+          rowCount = await importMatchCsvRows(rows, file.name);
+        } else if (type === 'session') {
           const rows = parseSessionCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           await importSessionCsvRows(rows, date);
@@ -91,19 +97,23 @@ export function Upload() {
           rowCount = rows.length;
         }
 
+        const matchInfo = type === 'match' ? parseMatchFilename(file.name) : null;
+
         await saveCsvUploadRecord({
           filename: file.name,
           file_type: type,
           file_size: file.size,
           row_count: rowCount,
-          training_date: date,
+          training_date: matchInfo?.date ?? date,
           csv_content: text,
         });
 
+        const typeLabel = type === 'match' ? '경기' : type === 'session' ? '세션' : '일일';
+        const dateLabel = matchInfo ? `${matchInfo.date} vs ${matchInfo.opponent}` : date;
         newStatuses[newStatuses.length - 1] = {
           filename: file.name,
           status: 'success',
-          message: `${type === 'session' ? '세션' : '일일'} 데이터 ${rowCount}행 · 날짜: ${date}`,
+          message: `${typeLabel} 데이터 ${rowCount}행 · ${dateLabel}`,
         };
       } catch (e) {
         newStatuses[newStatuses.length - 1] = {
