@@ -200,6 +200,10 @@ export function MatchReport() {
 
   const posAvgMinTime = maxPlayTime >= 80 ? 60 : maxPlayTime >= 70 ? 50 : 0;
 
+  const fullTimeRows = useMemo(() =>
+    assignedRows.filter(r => r.play_time_min >= maxPlayTime - 1),
+  [assignedRows, maxPlayTime]);
+
   const positionOrder: Position[] = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'];
   const groupedRows = useMemo(() => {
     const groups: { pos: Position; rows: MatchReportRow[]; avgRows: MatchReportRow[] }[] = [];
@@ -430,8 +434,8 @@ export function MatchReport() {
                       </>
                     ))}
                     {/* 팀 평균(풀타임) */}
-                    {assignedRows.length > 0 && (
-                      <PosAvgRow label="팀 평균(풀타임)" rows={assignedRows}
+                    {fullTimeRows.length > 0 && (
+                      <PosAvgRow label="팀 평균(풀타임)" rows={fullTimeRows}
                         cls={{ name: avgNameC, td: avgTdC }} />
                     )}
                     {/* unassigned rows */}
