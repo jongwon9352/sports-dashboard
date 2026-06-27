@@ -87,6 +87,106 @@ function SimpleChart({ title, data, color, unit = '' }: {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function TdMminBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width) return null;
+  const td = payload?.td ?? 0;
+  const mmin = payload?.mmin ?? 0;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height || 0} fill="rgba(139, 195, 74, 0.7)" rx={2} ry={2} />
+      {td > 0 && (
+        <text x={x + width / 2} y={y - 18} textAnchor="middle"
+          fontSize={11} fontFamily="DM Mono" fill="#666">
+          {Math.round(td).toLocaleString()}
+        </text>
+      )}
+      {mmin > 0 && (
+        <text x={x + width / 2} y={y - 5} textAnchor="middle"
+          fontSize={10} fontFamily="DM Mono" fontWeight="600" fill="#c62828">
+          {mmin.toFixed(1)}
+        </text>
+      )}
+    </g>
+  );
+}
+
+function TdComboChart({ title, data }: {
+  title: string;
+  data: { name: string; td: number; mmin: number }[];
+}) {
+  const sorted = [...data].sort((a, b) => b.td - a.td);
+  const maxTd = Math.max(...sorted.map(d => d.td), 1);
+  return (
+    <div className="chart-card">
+      <div className="chart-title text-center">{title}</div>
+      <div className="flex items-center justify-center gap-4 mb-2">
+        <span className="flex items-center gap-1 text-[10px]">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'rgba(139,195,74,0.7)' }} /> TD
+        </span>
+        <span className="flex items-center gap-1 text-[10px]">
+          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#c62828' }} /> M/min
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height={350}>
+        <BarChart data={sorted} margin={{ top: 35, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} domain={[0, Math.ceil(maxTd * 1.15)]} width={60} />
+          <Tooltip formatter={(v, name) => [`${Number(v).toLocaleString()}${name === 'td' ? ' m' : ' m/min'}`, name === 'td' ? 'TD' : 'M/min']}
+            contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
+          <Bar dataKey="td" shape={<TdMminBarShape />} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function HsrSprintTopShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width) return null;
+  const total = (payload?.hsr || 0) + (payload?.sprint || 0);
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height || 0} fill="rgba(164, 40, 67, 0.6)" rx={0} ry={0} />
+      {total > 0 && (
+        <text x={x + width / 2} y={y - 6} textAnchor="middle"
+          fontSize={11} fontFamily="DM Mono" fontWeight="600" fill="#333">
+          {Math.round(total).toLocaleString()}
+        </text>
+      )}
+    </g>
+  );
+}
+
+function StackedHsrSprintChart({ title, data }: {
+  title: string;
+  data: { name: string; hsr: number; sprint: number }[];
+}) {
+  const sorted = [...data].sort((a, b) => (b.hsr + b.sprint) - (a.hsr + a.sprint));
+  const maxVal = Math.max(...sorted.map(d => d.hsr + d.sprint), 1);
+  return (
+    <div className="chart-card">
+      <div className="chart-title text-center">{title}</div>
+      <ResponsiveContainer width="100%" height={350}>
+        <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={35} />
+          <YAxis tick={{ fontSize: 12, fontFamily: 'DM Mono' }} width={60} domain={[0, Math.ceil(maxVal * 1.2)]} />
+          <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} m`]}
+            contentStyle={{ fontFamily: 'DM Mono', fontSize: 13 }} />
+          <Legend wrapperStyle={{ fontSize: 13 }} />
+          <Bar dataKey="hsr" name="HSR" fill="rgba(0, 140, 126, 0.6)" stackId="hs" barSize={28} />
+          <Bar dataKey="sprint" name="Sprint" fill="rgba(164, 40, 67, 0.6)" stackId="hs"
+            barSize={28} shape={<HsrSprintTopShape />} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function StackedActionChart({ title, data }: {
   title: string;
   data: { name: string; acc: number; dec: number }[];
@@ -227,9 +327,29 @@ export function MatchReport() {
     GK: 'GK평균', CB: 'CB평균', FB: 'FB평균', MF: 'MF평균', WF: 'WF평균', CF: 'CF평균',
   };
 
+  const posChartData = useMemo(() => {
+    const display: Position[] = ['CB', 'FB', 'MF', 'WF', 'CF'];
+    return display.map(pos => {
+      const rows = assignedRows.filter(r => positions[r.id] === pos && r.play_time_min >= posAvgMinTime);
+      if (!rows.length) return null;
+      return {
+        name: pos,
+        td: Math.round(avgOf(rows, r => r.total_distance)),
+        mmin: Number(avgOf(rows, r => r.m_per_min).toFixed(1)),
+        hsr: Math.round(avgOf(rows, r => r.hsr_distance)),
+        sprint: Math.round(avgOf(rows, r => r.sprint_distance)),
+        acc: Math.round(avgOf(rows, r => r.acc_count)),
+        dec: Math.round(avgOf(rows, r => r.dec_count)),
+        action: Math.round(avgOf(rows, r => r.acc_count + r.dec_count)),
+        acd: Math.round(avgOf(rows, r => r.acd_load)),
+      };
+    }).filter(Boolean) as { name: string; td: number; mmin: number; hsr: number; sprint: number; acc: number; dec: number; action: number; acd: number }[];
+  }, [assignedRows, positions, posAvgMinTime]);
+
   const pdfTableRef = useRef<HTMLDivElement>(null);
   const pdfChart1Ref = useRef<HTMLDivElement>(null);
   const pdfChart2Ref = useRef<HTMLDivElement>(null);
+  const pdfChart3Ref = useRef<HTMLDivElement>(null);
 
   const prepareForCapture = (el: HTMLElement) => {
     const rollback: (() => void)[] = [];
@@ -306,7 +426,7 @@ export function MatchReport() {
     const pdfH = pdfW / PDF_RATIO;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
 
-    const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref];
+    const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
 
     for (let i = 0; i < refs.length; i++) {
       const el = refs[i].current;
@@ -342,6 +462,14 @@ export function MatchReport() {
 
   const mkChart = (fn: (r: MatchReportRow) => number) =>
     assignedRows.map(d => ({ name: d.player_name, value: Math.round(fn(d)) }));
+
+  const tdComboData = assignedRows.map(d => ({
+    name: d.player_name, td: Math.round(d.total_distance), mmin: d.m_per_min,
+  }));
+
+  const hsrSprintData = assignedRows.map(d => ({
+    name: d.player_name, hsr: Math.round(d.hsr_distance), sprint: Math.round(d.sprint_distance),
+  }));
 
   return (
     <div className="p-6">
@@ -461,19 +589,39 @@ export function MatchReport() {
 
           {assignedRows.length > 0 && (
             <>
+              <div className="mb-3">
+                <span className="text-sm font-semibold">선수별 데이터</span>
+              </div>
               <div ref={pdfChart1Ref} className="space-y-4 mb-5">
-                <SimpleChart title="TD (Total Distance)" data={mkChart(r => r.total_distance)}
-                  color="rgba(139, 195, 74, 0.7)" unit=" m" />
-                <SimpleChart title="HSR (High Speed Running)" data={mkChart(r => r.hsr_distance)}
-                  color="rgba(0, 140, 126, 0.6)" unit=" m" />
+                <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={tdComboData} />
+                <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
+                  data={hsrSprintData} />
               </div>
 
               <div ref={pdfChart2Ref} className="space-y-4 mb-5">
-                <StackedActionChart title="Total Action (ACC + DEC)"
+                <StackedActionChart title="액션 (ACC/DEC)"
                   data={assignedRows.map(d => ({ name: d.player_name, acc: Math.round(d.acc_count), dec: Math.round(d.dec_count) }))} />
-                <SimpleChart title="ACD LOAD" data={mkChart(r => r.acd_load)}
+                <SimpleChart title="ACD LOAD (Intensity)" data={mkChart(r => r.acd_load)}
                   color="rgba(140, 20, 20, 0.7)" />
               </div>
+
+              {posChartData.length > 0 && (
+                <>
+                  <div className="mb-3">
+                    <span className="text-sm font-semibold">포지션별 데이터</span>
+                  </div>
+                  <div ref={pdfChart3Ref} className="grid grid-cols-2 gap-4 mb-5">
+                    <SimpleChart title="총 뛴 거리 (TD)" data={posChartData.map(d => ({ name: d.name, value: d.td }))}
+                      color="rgba(21, 62, 111, 0.8)" unit=" m" />
+                    <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
+                      data={posChartData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
+                    <StackedActionChart title="액션 (ACC/DEC)"
+                      data={posChartData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
+                    <SimpleChart title="ACD LOAD (Intensity)" data={posChartData.map(d => ({ name: d.name, value: d.acd }))}
+                      color="rgba(140, 20, 20, 0.7)" />
+                  </div>
+                </>
+              )}
             </>
           )}
         </>
