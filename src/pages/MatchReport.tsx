@@ -194,15 +194,22 @@ export function MatchReport() {
     sortedData.filter(r => !!positions[r.id]),
   [sortedData, positions]);
 
+  const maxPlayTime = useMemo(() =>
+    Math.max(...assignedRows.map(r => r.play_time_min), 0),
+  [assignedRows]);
+
+  const posAvgMinTime = maxPlayTime >= 80 ? 60 : maxPlayTime >= 70 ? 50 : 0;
+
   const positionOrder: Position[] = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'];
   const groupedRows = useMemo(() => {
-    const groups: { pos: Position; rows: MatchReportRow[] }[] = [];
+    const groups: { pos: Position; rows: MatchReportRow[]; avgRows: MatchReportRow[] }[] = [];
     for (const pos of positionOrder) {
       const rows = assignedRows.filter(r => positions[r.id] === pos);
-      if (rows.length) groups.push({ pos, rows });
+      const avgRows = rows.filter(r => r.play_time_min >= posAvgMinTime);
+      if (rows.length) groups.push({ pos, rows, avgRows });
     }
     return groups;
-  }, [assignedRows, positions]);
+  }, [assignedRows, positions, posAvgMinTime]);
 
   const selectedMatchInfo = matches.find(m => `${m.date}_${m.opponent}` === selectedMatch);
 
@@ -392,7 +399,7 @@ export function MatchReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {groupedRows.map(({ pos, rows }) => (
+                    {groupedRows.map(({ pos, rows, avgRows }) => (
                       <>
                         {rows.map((row) => (
                           <tr key={row.id} className="hover:bg-surface-secondary/20 transition-colors">
@@ -418,10 +425,15 @@ export function MatchReport() {
                             <td className={tdC}>{fmtD(row.max_speed, 1)}</td>
                           </tr>
                         ))}
-                        <PosAvgRow label={posLabels[pos]} rows={rows}
+                        <PosAvgRow label={posLabels[pos]} rows={avgRows}
                           cls={{ name: avgNameC, td: avgTdC }} />
                       </>
                     ))}
+                    {/* 팀 평균(풀타임) */}
+                    {assignedRows.length > 0 && (
+                      <PosAvgRow label="팀 평균(풀타임)" rows={assignedRows}
+                        cls={{ name: avgNameC, td: avgTdC }} />
+                    )}
                     {/* unassigned rows */}
                     {sortedData.filter(r => !positions[r.id]).map(row => (
                       <tr key={row.id} className="hover:bg-surface-secondary/20 transition-colors">
