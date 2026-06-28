@@ -406,7 +406,7 @@ export function MatchReport() {
     el.querySelectorAll<HTMLElement>('td').forEach(td => {
       setStyle(td, { background: '#ffffff', color: '#222222', padding: '4px 8px', 'font-size': '11px', 'white-space': 'nowrap', 'border-color': '#d0d0d0' });
     });
-    el.querySelectorAll<HTMLElement>('.overflow-x-auto').forEach(o => {
+    el.querySelectorAll<HTMLElement>('.overflow-x-auto, .overflow-hidden').forEach(o => {
       setStyle(o, { overflow: 'visible' });
     });
     el.querySelectorAll<HTMLElement>('table').forEach(t => {
@@ -432,6 +432,12 @@ export function MatchReport() {
     });
     el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
       setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: 'none', padding: '0', 'margin-bottom': '4px' });
+    });
+    el.querySelectorAll<HTMLElement>('.grid.grid-cols-2').forEach(g => {
+      setStyle(g, { display: 'grid', 'grid-template-columns': '1fr 1fr', gap: '4px', width: '100%' });
+    });
+    el.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(c => {
+      setStyle(c, { width: '100%', 'min-width': '0' });
     });
     el.querySelectorAll('svg text').forEach(t => {
       const origFill = t.getAttribute('fill');
