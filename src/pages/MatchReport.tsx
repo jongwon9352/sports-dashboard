@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
-import { fetchMatchDates, fetchMatchReportData, saveMatchPositions } from '../lib/api';
+import { fetchMatchDates, fetchMatchReportData, saveMatchPositions, fetchMatchSessionData, type MatchSessionRow } from '../lib/api';
 import type { MatchReportRow } from '../types';
 
 const POSITIONS = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'] as const;
@@ -238,6 +238,7 @@ export function MatchReport() {
   const [matches, setMatches] = useState<{ date: string; opponent: string; event_type: string }[]>([]);
   const [selectedMatch, setSelectedMatch] = useState('');
   const [data, setData] = useState<MatchReportRow[]>([]);
+  const [sessionData, setSessionData] = useState<MatchSessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [positions, setPositions] = useState<Record<string, Position>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -257,8 +258,12 @@ export function MatchReport() {
 
   const loadMatch = async (date: string, opponent: string) => {
     setLoading(true);
-    const rows = await fetchMatchReportData(date, opponent);
+    const [rows, sessions] = await Promise.all([
+      fetchMatchReportData(date, opponent),
+      fetchMatchSessionData(date, opponent).catch(() => []),
+    ]);
     setData(rows);
+    setSessionData(sessions);
     const posMap: Record<string, Position> = {};
     rows.forEach(r => {
       if (r.position_played && POSITIONS.includes(r.position_played as Position)) {
@@ -346,10 +351,35 @@ export function MatchReport() {
     }).filter(Boolean) as { name: string; td: number; mmin: number; hsr: number; sprint: number; acc: number; dec: number; action: number; acd: number }[];
   }, [assignedRows, positions, posAvgMinTime]);
 
+  const sessionCompareData = useMemo(() => {
+    if (!sessionData.length) return null;
+    const sessions = [...new Set(sessionData.map(s => s.session_name))];
+    if (sessions.length < 2) return null;
+
+    const fullTimePlayerIds = new Set(fullTimeRows.map(r => r.player_id));
+
+    return sessions.map(sn => {
+      const rows = sessionData.filter(r => r.session_name === sn && fullTimePlayerIds.has(r.player_id));
+      if (!rows.length) return null;
+      const avg = (fn: (r: MatchSessionRow) => number) => rows.reduce((s, r) => s + fn(r), 0) / rows.length;
+      return {
+        name: sn,
+        td: Math.round(avg(r => r.total_distance)),
+        mmin: Number(avg(r => r.m_per_min).toFixed(1)),
+        hsr: Math.round(avg(r => r.hsr_distance)),
+        sprint: Math.round(avg(r => r.sprint_distance)),
+        acc: Math.round(avg(r => r.acc_count)),
+        dec: Math.round(avg(r => r.dec_count)),
+        acd: Math.round(avg(r => r.acd_load)),
+      };
+    }).filter(Boolean) as { name: string; td: number; mmin: number; hsr: number; sprint: number; acc: number; dec: number; acd: number }[];
+  }, [sessionData, fullTimeRows]);
+
   const pdfTableRef = useRef<HTMLDivElement>(null);
   const pdfChart1Ref = useRef<HTMLDivElement>(null);
   const pdfChart2Ref = useRef<HTMLDivElement>(null);
   const pdfChart3Ref = useRef<HTMLDivElement>(null);
+  const pdfChart4Ref = useRef<HTMLDivElement>(null);
 
   const prepareForCapture = (el: HTMLElement) => {
     const rollback: (() => void)[] = [];
@@ -426,7 +456,7 @@ export function MatchReport() {
     const pdfH = pdfW / PDF_RATIO;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
 
-    const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref];
+    const refs = [pdfTableRef, pdfChart1Ref, pdfChart2Ref, pdfChart3Ref, pdfChart4Ref];
 
     for (let i = 0; i < refs.length; i++) {
       const el = refs[i].current;
@@ -618,6 +648,23 @@ export function MatchReport() {
                     <StackedActionChart title="액션 (ACC/DEC)"
                       data={posChartData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
                     <SimpleChart title="ACD LOAD (Intensity)" data={posChartData.map(d => ({ name: d.name, value: d.acd }))}
+                      color="rgba(140, 20, 20, 0.7)" />
+                  </div>
+                </>
+              )}
+
+              {sessionCompareData && sessionCompareData.length >= 2 && (
+                <>
+                  <div className="mb-3">
+                    <span className="text-sm font-semibold">전/후반 비교 데이터</span>
+                  </div>
+                  <div ref={pdfChart4Ref} className="grid grid-cols-2 gap-4 mb-5">
+                    <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
+                    <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
+                      data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
+                    <StackedActionChart title="액션 (ACC/DEC)"
+                      data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
+                    <SimpleChart title="ACD LOAD (Intensity)" data={sessionCompareData.map(d => ({ name: d.name, value: d.acd }))}
                       color="rgba(140, 20, 20, 0.7)" />
                   </div>
                 </>

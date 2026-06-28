@@ -10,8 +10,8 @@ import {
   calculateMonotony,
   getAcwrZone,
 } from '../utils/calculations';
-import type { ParsedDailyRow, ParsedSessionRow } from '../utils/csvParser';
-import { parseMatchFilename } from '../utils/csvParser';
+import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow } from '../utils/csvParser';
+import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
 
@@ -1135,4 +1135,96 @@ export async function saveMatchPositions(ids: string[], positions: Record<string
     .filter(([id]) => ids.includes(id))
     .map(([id, pos]) => supabase!.from('match_data').update({ position_played: pos }).eq('id', id));
   await Promise.all(updates);
+}
+
+export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], filename: string): Promise<number> {
+  const matchInfo = parseMatchSessionFilename(filename);
+  if (!matchInfo) throw new Error('파일명에서 경기 정보를 추출할 수 없습니다. (형식: 날짜-대회-상대-세션별.csv)');
+
+  const { date, opponent } = matchInfo;
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows);
+  const now = new Date().toISOString();
+
+  const sessionRows = validRows.map(row => {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    return {
+      id: crypto.randomUUID(),
+      player_id: playerId,
+      match_date: date,
+      opponent,
+      session_name: row.session_name,
+      play_time_min: row.duration_min,
+      total_distance: row.total_distance,
+      speed_zone_1: row.speed_zone_1,
+      speed_zone_2: row.speed_zone_2,
+      speed_zone_3: row.speed_zone_3,
+      speed_zone_4: row.speed_zone_4,
+      speed_zone_5: row.speed_zone_5,
+      m_per_min: row.m_per_min,
+      hsr_distance: row.hsr_distance,
+      hsr_custom: row.hsr_custom,
+      sprint_distance: row.sprint_distance,
+      sprint_custom: row.sprint_custom,
+      sprint_count: row.sprint_count,
+      sprint_count_custom: row.sprint_count_custom,
+      acc_count: row.acc_count,
+      dec_count: row.dec_count,
+      acd_load: row.acd_load,
+      max_speed: row.max_speed,
+      action_count: row.acc_count + row.dec_count,
+      created_at: now,
+    };
+  }).filter(row => row.player_id);
+
+  if (sessionRows.length === 0) return 0;
+
+  const { error } = await client
+    .from('match_session_data')
+    .upsert(sessionRows, { onConflict: 'player_id,match_date,opponent,session_name' });
+  if (error) throw error;
+
+  return sessionRows.length;
+}
+
+export interface MatchSessionRow {
+  session_name: string;
+  player_name: string;
+  player_id: string;
+  total_distance: number;
+  m_per_min: number;
+  hsr_distance: number;
+  sprint_distance: number;
+  sprint_count: number;
+  acc_count: number;
+  dec_count: number;
+  acd_load: number;
+  max_speed: number;
+  play_time_min: number;
+}
+
+export async function fetchMatchSessionData(date: string, opponent: string): Promise<MatchSessionRow[]> {
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from('match_session_data')
+    .select('*, players!inner(name)')
+    .eq('match_date', date)
+    .eq('opponent', opponent);
+  if (!data) return [];
+  return (data as any[]).map(r => ({
+    session_name: r.session_name,
+    player_name: r.players?.name ?? '',
+    player_id: r.player_id,
+    total_distance: Number(r.total_distance) || 0,
+    m_per_min: Number(r.m_per_min) || 0,
+    hsr_distance: Number(r.hsr_distance) || 0,
+    sprint_distance: Number(r.sprint_distance) || 0,
+    sprint_count: Number(r.sprint_count) || 0,
+    acc_count: Number(r.acc_count) || 0,
+    dec_count: Number(r.dec_count) || 0,
+    acd_load: Number(r.acd_load) || 0,
+    max_speed: Number(r.max_speed) || 0,
+    play_time_min: Number(r.play_time_min) || 0,
+  }));
 }

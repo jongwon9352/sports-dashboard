@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, type DragEvent } from 'react';
-import { parseSessionCsv, parseDailyCsv, extractDateFromFilename, parseMatchFilename } from '../utils/csvParser';
+import { parseSessionCsv, parseDailyCsv, parseMatchSessionCsv, extractDateFromFilename, parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 import {
   importDailyCsvRows,
   importSessionCsvRows,
   importMatchCsvRows,
+  importMatchSessionCsvRows,
   saveCsvUploadRecord,
   fetchCsvUploads,
   deleteCsvUpload,
@@ -11,9 +12,10 @@ import {
   type CsvUploadRecord,
 } from '../lib/api';
 
-type FileType = 'session' | 'daily' | 'match' | null;
+type FileType = 'session' | 'daily' | 'match' | 'match_session' | null;
 
 function detectFileType(filename: string): FileType {
+  if (parseMatchSessionFilename(filename)) return 'match_session';
   if (parseMatchFilename(filename)) return 'match';
   const normalized = filename.normalize('NFC').toLowerCase();
   if (normalized.includes('리포트') || normalized.includes('report') || normalized.includes('테이블')) return 'session';
@@ -81,7 +83,11 @@ export function Upload() {
 
       try {
         let rowCount = 0;
-        if (type === 'match') {
+        if (type === 'match_session') {
+          const rows = parseMatchSessionCsv(text);
+          if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
+          rowCount = await importMatchSessionCsvRows(rows, file.name);
+        } else if (type === 'match') {
           const rows = parseDailyCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           rowCount = await importMatchCsvRows(rows, file.name);
@@ -97,7 +103,7 @@ export function Upload() {
           rowCount = rows.length;
         }
 
-        const matchInfo = type === 'match' ? parseMatchFilename(file.name) : null;
+        const matchInfo = type === 'match' ? parseMatchFilename(file.name) : type === 'match_session' ? parseMatchSessionFilename(file.name) : null;
 
         await saveCsvUploadRecord({
           filename: file.name,
@@ -108,7 +114,7 @@ export function Upload() {
           csv_content: text,
         });
 
-        const typeLabel = type === 'match' ? '경기' : type === 'session' ? '세션' : '일일';
+        const typeLabel = type === 'match_session' ? '세션별 경기' : type === 'match' ? '경기' : type === 'session' ? '세션' : '일일';
         const dateLabel = matchInfo ? `${matchInfo.date} vs ${matchInfo.opponent}` : date;
         newStatuses[newStatuses.length - 1] = {
           filename: file.name,
