@@ -356,10 +356,15 @@ export function MatchReport() {
     const sessions = [...new Set(sessionData.map(s => s.session_name))];
     if (sessions.length < 2) return null;
 
-    const fullTimePlayerIds = new Set(fullTimeRows.map(r => r.player_id));
+    const maxSessionTime = Math.max(...data.map(r => r.play_time_min), 0);
+    const ftPlayerIds = new Set(
+      data.filter(r => r.play_time_min >= maxSessionTime - 1).map(r => r.player_id)
+    );
 
     return sessions.map(sn => {
-      const rows = sessionData.filter(r => r.session_name === sn && fullTimePlayerIds.has(r.player_id));
+      const rows = ftPlayerIds.size > 0
+        ? sessionData.filter(r => r.session_name === sn && ftPlayerIds.has(r.player_id))
+        : sessionData.filter(r => r.session_name === sn);
       if (!rows.length) return null;
       const avg = (fn: (r: MatchSessionRow) => number) => rows.reduce((s, r) => s + fn(r), 0) / rows.length;
       return {
@@ -373,7 +378,7 @@ export function MatchReport() {
         acd: Math.round(avg(r => r.acd_load)),
       };
     }).filter(Boolean) as { name: string; td: number; mmin: number; hsr: number; sprint: number; acc: number; dec: number; acd: number }[];
-  }, [sessionData, fullTimeRows]);
+  }, [sessionData, data]);
 
   const pdfTableRef = useRef<HTMLDivElement>(null);
   const pdfChart1Ref = useRef<HTMLDivElement>(null);
@@ -653,22 +658,23 @@ export function MatchReport() {
                 </>
               )}
 
-              {sessionCompareData && sessionCompareData.length >= 2 && (
-                <>
-                  <div className="mb-3">
-                    <span className="text-sm font-semibold">전/후반 비교 데이터</span>
-                  </div>
-                  <div ref={pdfChart4Ref} className="grid grid-cols-2 gap-4 mb-5">
-                    <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
-                    <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
-                      data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
-                    <StackedActionChart title="액션 (ACC/DEC)"
-                      data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
-                    <SimpleChart title="ACD LOAD (Intensity)" data={sessionCompareData.map(d => ({ name: d.name, value: d.acd }))}
-                      color="rgba(140, 20, 20, 0.7)" />
-                  </div>
-                </>
-              )}
+            </>
+          )}
+
+          {sessionCompareData && sessionCompareData.length >= 2 && (
+            <>
+              <div className="mb-3">
+                <span className="text-sm font-semibold">전/후반 비교 데이터</span>
+              </div>
+              <div ref={pdfChart4Ref} className="grid grid-cols-2 gap-4 mb-5">
+                <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
+                <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
+                  data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
+                <StackedActionChart title="액션 (ACC/DEC)"
+                  data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
+                <SimpleChart title="ACD LOAD (Intensity)" data={sessionCompareData.map(d => ({ name: d.name, value: d.acd }))}
+                  color="rgba(140, 20, 20, 0.7)" />
+              </div>
             </>
           )}
         </>
