@@ -12,7 +12,7 @@ function parseNullableNumber(val: string | undefined): number | null {
 }
 
 export function parseMatchFilename(filename: string): { date: string; event_type: string; opponent: string } | null {
-  const name = filename.replace(/\.csv$/i, '').normalize('NFC');
+  const name = filename.replace(/\.csv$/i, '').normalize('NFC').trim();
   if (name.endsWith('-세션별') || name.endsWith('-세션별데이터')) return null;
   const parts = name.split('-');
   if (parts.length >= 5) {
@@ -26,18 +26,16 @@ export function parseMatchFilename(filename: string): { date: string; event_type
 }
 
 export function parseMatchSessionFilename(filename: string): { date: string; event_type: string; opponent: string } | null {
-  const name = filename.replace(/\.csv$/i, '').normalize('NFC');
+  const name = filename.replace(/\.csv$/i, '').normalize('NFC').trim();
   if (!name.endsWith('-세션별') && !name.endsWith('-세션별데이터')) return null;
   const cleaned = name.replace(/-세션별데이터$/, '').replace(/-세션별$/, '');
   const parts = cleaned.split('-');
-  if (parts.length >= 5) {
-    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-    const event_type = parts[3];
-    const opponent = parts.slice(4).join('-');
-    if (event_type && opponent) return { date, event_type, opponent };
-  }
-  return null;
+  if (parts.length < 4) return null;
+  const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const event_type = parts[3] || '';
+  const opponent = parts.length >= 5 ? parts.slice(4).join('-') : '';
+  return { date, event_type, opponent };
 }
 
 export interface ParsedMatchSessionRow {
@@ -46,11 +44,6 @@ export interface ParsedMatchSessionRow {
   jersey_number: number;
   duration_min: number;
   total_distance: number;
-  speed_zone_1: number;
-  speed_zone_2: number;
-  speed_zone_3: number;
-  speed_zone_4: number;
-  speed_zone_5: number;
   m_per_min: number;
   hsr_distance: number;
   hsr_custom: number;
@@ -75,22 +68,17 @@ export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
     jersey_number: parseNumber(row[2]),
     duration_min: parseNumber(row[3]),
     total_distance: parseNumber(row[4]),
-    speed_zone_1: parseNumber(row[5]),
-    speed_zone_2: parseNumber(row[6]),
-    speed_zone_3: parseNumber(row[7]),
-    speed_zone_4: parseNumber(row[8]),
-    speed_zone_5: parseNumber(row[9]),
-    m_per_min: parseNumber(row[10]),
-    hsr_distance: parseNumber(row[11]),
-    hsr_custom: parseNumber(row[12]),
-    sprint_distance: parseNumber(row[13]),
-    sprint_custom: parseNumber(row[14]),
-    sprint_count: parseNumber(row[15]),
-    sprint_count_custom: parseNumber(row[16]),
-    acc_count: parseNumber(row[17]),
-    dec_count: parseNumber(row[18]),
-    acd_load: parseNumber(row[19]),
-    max_speed: parseNumber(row[20]),
+    m_per_min: parseNumber(row[5]),
+    hsr_distance: parseNumber(row[6]),
+    hsr_custom: parseNumber(row[7]),
+    sprint_distance: parseNumber(row[8]),
+    sprint_custom: parseNumber(row[9]),
+    sprint_count: parseNumber(row[10]),
+    sprint_count_custom: parseNumber(row[11]),
+    acc_count: parseNumber(row[12]),
+    dec_count: parseNumber(row[13]),
+    acd_load: parseNumber(row[14]),
+    max_speed: parseNumber(row[15]),
   })).filter(r => r.session_name && r.player_name);
 }
 

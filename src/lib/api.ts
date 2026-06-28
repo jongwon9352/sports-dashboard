@@ -1139,10 +1139,22 @@ export async function saveMatchPositions(ids: string[], positions: Record<string
 
 export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], filename: string): Promise<number> {
   const matchInfo = parseMatchSessionFilename(filename);
-  if (!matchInfo) throw new Error('파일명에서 경기 정보를 추출할 수 없습니다. (형식: 날짜-대회-상대-세션별.csv)');
+  if (!matchInfo) throw new Error('파일명에서 경기 정보를 추출할 수 없습니다. (형식: 날짜-타입-세션별.csv)');
 
-  const { date, opponent } = matchInfo;
+  const { date } = matchInfo;
+  let opponent = matchInfo.opponent;
   const client = requireSupabase();
+
+  if (!opponent) {
+    const { data: matches } = await client
+      .from('match_data')
+      .select('opponent')
+      .eq('match_date', date)
+      .limit(1);
+    opponent = matches?.[0]?.opponent ?? '';
+    if (!opponent) throw new Error(`${date} 날짜의 경기 데이터가 없습니다. 경기 데이터 CSV를 먼저 업로드해주세요.`);
+  }
+
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows);
   const now = new Date().toISOString();
@@ -1157,11 +1169,6 @@ export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], f
       session_name: row.session_name,
       play_time_min: row.duration_min,
       total_distance: row.total_distance,
-      speed_zone_1: row.speed_zone_1,
-      speed_zone_2: row.speed_zone_2,
-      speed_zone_3: row.speed_zone_3,
-      speed_zone_4: row.speed_zone_4,
-      speed_zone_5: row.speed_zone_5,
       m_per_min: row.m_per_min,
       hsr_distance: row.hsr_distance,
       hsr_custom: row.hsr_custom,
