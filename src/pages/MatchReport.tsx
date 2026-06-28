@@ -71,7 +71,7 @@ function SimpleChart({ title, data, color, unit = '' }: {
   const sorted = [...data].sort((a, b) => b.value - a.value);
   const maxVal = Math.max(...sorted.map(d => d.value), 1);
   return (
-    <div className="chart-card">
+    <div className="chart-card min-w-0">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
         <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
@@ -119,7 +119,7 @@ function TdComboChart({ title, data }: {
   const sorted = [...data].sort((a, b) => b.td - a.td);
   const maxTd = Math.max(...sorted.map(d => d.td), 1);
   return (
-    <div className="chart-card">
+    <div className="chart-card min-w-0">
       <div className="chart-title text-center">{title}</div>
       <div className="flex items-center justify-center gap-4 mb-2">
         <span className="flex items-center gap-1 text-[10px]">
@@ -168,7 +168,7 @@ function StackedHsrSprintChart({ title, data }: {
   const sorted = [...data].sort((a, b) => (b.hsr + b.sprint) - (a.hsr + a.sprint));
   const maxVal = Math.max(...sorted.map(d => d.hsr + d.sprint), 1);
   return (
-    <div className="chart-card">
+    <div className="chart-card min-w-0">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
         <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
@@ -194,7 +194,7 @@ function StackedActionChart({ title, data }: {
   const sorted = [...data].sort((a, b) => (b.acc + b.dec) - (a.acc + a.dec));
   const maxVal = Math.max(...sorted.map(d => d.acc + d.dec), 1);
   return (
-    <div className="chart-card">
+    <div className="chart-card min-w-0">
       <div className="chart-title text-center">{title}</div>
       <ResponsiveContainer width="100%" height={350}>
         <BarChart data={sorted} margin={{ top: 30, right: 15, bottom: 30, left: 15 }} barCategoryGap="20%">
@@ -645,7 +645,7 @@ export function MatchReport() {
                   <div className="mb-3">
                     <span className="text-sm font-semibold">포지션별 데이터</span>
                   </div>
-                  <div ref={pdfChart3Ref} className="grid grid-cols-2 gap-4 mb-5">
+                  <div ref={pdfChart3Ref} className="grid grid-cols-2 gap-4 mb-5 min-w-0 overflow-hidden">
                     <SimpleChart title="총 뛴 거리 (TD)" data={posChartData.map(d => ({ name: d.name, value: d.td }))}
                       color="rgba(21, 62, 111, 0.8)" unit=" m" />
                     <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
@@ -666,7 +666,7 @@ export function MatchReport() {
               <div className="mb-3">
                 <span className="text-sm font-semibold">전/후반 비교 데이터</span>
               </div>
-              <div ref={pdfChart4Ref} className="grid grid-cols-2 gap-4 mb-5">
+              <div ref={pdfChart4Ref} className="grid grid-cols-2 gap-4 mb-5 min-w-0 overflow-hidden">
                 <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
                 <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
                   data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
