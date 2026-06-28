@@ -216,7 +216,7 @@ function StackedActionChart({ title, data }: {
 function PosAvgRow({ label, rows, cls }: { label: string; rows: MatchReportRow[]; cls: { name: string; td: string } }) {
   if (!rows.length) return null;
   return (
-    <tr className="bg-surface-secondary/20">
+    <tr className="bg-surface-secondary/30 pos-avg-row">
       <td className={`${cls.name} sticky left-0 bg-surface-secondary/20 z-10`}>{label}</td>
       <td className={cls.name}></td>
       <td className={cls.td}>{fmtD(avgOf(rows, r => r.play_time_min), 0)}</td>
@@ -433,8 +433,11 @@ export function MatchReport() {
     el.querySelectorAll<HTMLElement>('.chart-card').forEach(c => {
       setStyle(c, { background: '#ffffff', 'box-shadow': 'none', border: 'none', padding: '0', 'margin-bottom': '4px' });
     });
-    el.querySelectorAll<HTMLElement>('.grid.grid-cols-2').forEach(g => {
-      setStyle(g, { display: 'grid', 'grid-template-columns': '1fr 1fr', gap: '4px', width: '100%' });
+    el.querySelectorAll<HTMLElement>('.flex.flex-wrap').forEach(g => {
+      setStyle(g, { display: 'flex', 'flex-wrap': 'wrap', margin: '0', width: '100%' });
+    });
+    el.querySelectorAll<HTMLElement>('.w-1\\/2').forEach(c => {
+      setStyle(c, { width: '50%', 'box-sizing': 'border-box', padding: '0 4px' });
     });
     el.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(c => {
       setStyle(c, { width: '100%', 'min-width': '0' });
@@ -449,11 +452,10 @@ export function MatchReport() {
         (t as HTMLElement).style.cssText = origStyle;
       });
     });
-    // position avg rows background
     el.querySelectorAll<HTMLElement>('tr.pos-avg-row').forEach(tr => {
-      setStyle(tr, { background: '#f0f0f0', color: '#222' });
+      setStyle(tr, { background: '#e8e8f0', color: '#222' });
       tr.querySelectorAll<HTMLElement>('td').forEach(td => {
-        setStyle(td, { background: '#f0f0f0', color: '#222' });
+        setStyle(td, { background: '#e8e8f0', color: '#222', 'font-weight': '700', 'border-top': '2px solid #999' });
       });
     });
 
@@ -651,15 +653,25 @@ export function MatchReport() {
                   <div className="mb-3">
                     <span className="text-sm font-semibold">포지션별 데이터</span>
                   </div>
-                  <div ref={pdfChart3Ref} className="grid grid-cols-2 gap-4 mb-5 min-w-0 overflow-hidden">
-                    <SimpleChart title="총 뛴 거리 (TD)" data={posChartData.map(d => ({ name: d.name, value: d.td }))}
-                      color="rgba(21, 62, 111, 0.8)" unit=" m" />
-                    <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
-                      data={posChartData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
-                    <StackedActionChart title="액션 (ACC/DEC)"
-                      data={posChartData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
-                    <SimpleChart title="ACD LOAD (Intensity)" data={posChartData.map(d => ({ name: d.name, value: d.acd }))}
-                      color="rgba(140, 20, 20, 0.7)" />
+                  <div ref={pdfChart3Ref} className="mb-5">
+                    <div className="flex flex-wrap" style={{ margin: '0 -8px' }}>
+                      <div className="w-1/2 px-2 mb-4 min-w-0">
+                        <SimpleChart title="총 뛴 거리 (TD)" data={posChartData.map(d => ({ name: d.name, value: d.td }))}
+                          color="rgba(21, 62, 111, 0.8)" unit=" m" />
+                      </div>
+                      <div className="w-1/2 px-2 mb-4 min-w-0">
+                        <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
+                          data={posChartData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
+                      </div>
+                      <div className="w-1/2 px-2 mb-4 min-w-0">
+                        <StackedActionChart title="액션 (ACC/DEC)"
+                          data={posChartData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
+                      </div>
+                      <div className="w-1/2 px-2 mb-4 min-w-0">
+                        <SimpleChart title="ACD LOAD (Intensity)" data={posChartData.map(d => ({ name: d.name, value: d.acd }))}
+                          color="rgba(140, 20, 20, 0.7)" />
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
@@ -672,14 +684,24 @@ export function MatchReport() {
               <div className="mb-3">
                 <span className="text-sm font-semibold">전/후반 비교 데이터</span>
               </div>
-              <div ref={pdfChart4Ref} className="grid grid-cols-2 gap-4 mb-5 min-w-0 overflow-hidden">
-                <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
-                <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
-                  data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
-                <StackedActionChart title="액션 (ACC/DEC)"
-                  data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
-                <SimpleChart title="ACD LOAD (Intensity)" data={sessionCompareData.map(d => ({ name: d.name, value: d.acd }))}
-                  color="rgba(140, 20, 20, 0.7)" />
+              <div ref={pdfChart4Ref} className="mb-5">
+                <div className="flex flex-wrap" style={{ margin: '0 -8px' }}>
+                  <div className="w-1/2 px-2 mb-4 min-w-0">
+                    <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
+                  </div>
+                  <div className="w-1/2 px-2 mb-4 min-w-0">
+                    <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
+                      data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
+                  </div>
+                  <div className="w-1/2 px-2 mb-4 min-w-0">
+                    <StackedActionChart title="액션 (ACC/DEC)"
+                      data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
+                  </div>
+                  <div className="w-1/2 px-2 mb-4 min-w-0">
+                    <SimpleChart title="ACD LOAD (Intensity)" data={sessionCompareData.map(d => ({ name: d.name, value: d.acd }))}
+                      color="rgba(140, 20, 20, 0.7)" />
+                  </div>
+                </div>
               </div>
             </>
           )}
