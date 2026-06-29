@@ -707,8 +707,80 @@ export async function fetchCsvUploads(): Promise<CsvUploadRecord[]> {
 
 export async function deleteCsvUpload(id: string) {
   const client = requireSupabase();
+
+  const { data: record } = await client.from('csv_uploads').select('*').eq('id', id).single();
+  if (!record) return;
+
+  const { file_type, training_date, filename, csv_content } = record as CsvUploadRecord;
+
+  if (training_date && csv_content) {
+    const playerNames = extractPlayerNamesFromCsv(csv_content, file_type);
+    if (playerNames.length > 0) {
+      const playerIds = await resolvePlayerIds(playerNames);
+      if (playerIds.length > 0) {
+        if (file_type === 'daily' || file_type === 'match') {
+          await client.from('training_daily')
+            .delete()
+            .eq('training_date', training_date)
+            .in('player_id', playerIds);
+        }
+        if (file_type === 'match') {
+          const matchInfo = parseMatchFilename(filename);
+          if (matchInfo) {
+            await client.from('match_data')
+              .delete()
+              .eq('match_date', training_date)
+              .eq('opponent', matchInfo.opponent)
+              .in('player_id', playerIds);
+          }
+        }
+        if (file_type === 'match_session') {
+          const sessionInfo = parseMatchSessionFilename(filename);
+          if (sessionInfo) {
+            const opponent = sessionInfo.opponent || await getOpponentByDate(training_date);
+            if (opponent) {
+              await client.from('match_session_data')
+                .delete()
+                .eq('match_date', training_date)
+                .eq('opponent', opponent)
+                .in('player_id', playerIds);
+            }
+          }
+        }
+        if (file_type === 'daily' || file_type === 'match') {
+          await recalculatePlayerAcwr(playerIds);
+        }
+      }
+    }
+  }
+
   const { error } = await client.from('csv_uploads').delete().eq('id', id);
   if (error) throw error;
+}
+
+function extractPlayerNamesFromCsv(csv: string, fileType: string): string[] {
+  const lines = csv.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const nameCol = (fileType === 'match_session') ? 1 : 0;
+  return lines.slice(1).map(line => {
+    const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    return normalizeName(cols[nameCol] || '');
+  }).filter(Boolean);
+}
+
+async function resolvePlayerIds(names: string[]): Promise<string[]> {
+  const client = requireSupabase();
+  const unique = [...new Set(names)];
+  const { data } = await client.from('players').select('id, name');
+  if (!data) return [];
+  const map = new Map((data as R[]).map(p => [normalizeName(String(p.name)), String(p.id)]));
+  return unique.map(n => map.get(n)).filter(Boolean) as string[];
+}
+
+async function getOpponentByDate(date: string): Promise<string> {
+  const client = requireSupabase();
+  const { data } = await client.from('match_data').select('opponent').eq('match_date', date).limit(1);
+  return (data as R[])?.[0]?.opponent as string ?? '';
 }
 
 export async function fetchDataSummary() {
