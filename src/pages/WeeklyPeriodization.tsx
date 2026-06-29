@@ -257,6 +257,12 @@ export function WeeklyPeriodization() {
         rollback.push(() => { el.setAttribute('stroke', origStroke); });
       }
     });
+    el.querySelectorAll<HTMLElement>('.pitch-cell').forEach(td => {
+      setStyle(td, { padding: '2px', 'text-align': 'center', 'vertical-align': 'middle' });
+    });
+    el.querySelectorAll<HTMLElement>('.pitch-cell > div').forEach(d => {
+      setStyle(d, { display: 'flex', 'justify-content': 'center', 'align-items': 'center' });
+    });
 
     return () => rollback.forEach(fn => fn());
   };
@@ -266,7 +272,7 @@ export function WeeklyPeriodization() {
     const el = tableRef.current;
     const CAPTURE_W = 1400;
     const origCss = el.style.cssText;
-    el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;padding:8px;`;
+    el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;padding:4px 2px;`;
 
     const restore = prepareForCapture(el);
     await new Promise(r => setTimeout(r, 300));
@@ -418,8 +424,8 @@ export function WeeklyPeriodization() {
             <tr>
               <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3 row-label`}>피치 사이즈</td>
               {days.map((day, di) => (
-                <td key={di} className={`${C} p-1`}>
-                  <div className="flex justify-center">
+                <td key={di} className={`${C} p-1 pitch-cell`}>
+                  <div className="flex justify-center items-center">
                     <div style={{ width: 72, height: 110 }}>
                       <PitchDiagram
                         rect={day.pitch_rect || { x: 5, y: 5, w: 58, h: 95 }}
