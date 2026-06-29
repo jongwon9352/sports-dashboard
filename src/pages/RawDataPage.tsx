@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
+import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
+
+const GROUP_TYPES = ['U15', 'U14', 'U13', 'GK', 'RE'] as const;
 
 const PAGE_SIZE = 30;
 
@@ -9,6 +11,7 @@ type ColDef =
 
 const COLUMNS: ColDef[] = [
   { key: 'player_name', label: '이름' },
+  { key: 'group_type', label: '그룹' },
   { key: 'duration_min', label: 'TIME' },
   { key: 'rpe', label: 'RPE' },
   { key: 'total_distance', label: 'TD' },
@@ -199,7 +202,27 @@ export function RawDataPage() {
 
   const pageAllSelected = pageData.length > 0 && pageData.every(r => selected.has(r.id));
 
+  const handleGroupChange = async (rowId: string, val: string) => {
+    try {
+      await updateGroupType(rowId, val);
+      setData(prev => prev.map(r => r.id === rowId ? { ...r, group_type: val || null } : r));
+    } catch { /* */ }
+  };
+
   const renderCell = (row: typeof mergedData[0], col: ColDef) => {
+    if (col.key === 'group_type') {
+      return (
+        <select
+          value={row.group_type || ''}
+          onChange={e => handleGroupChange(row.id, e.target.value)}
+          className="w-[52px] px-1 py-0.5 text-[10px] rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
+          style={{ fontFamily: 'var(--font-data)' }}
+        >
+          <option value="">—</option>
+          {GROUP_TYPES.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      );
+    }
     if (col.key === 'rpe') {
       const fromSheet = row._rpeSource === 'sheet';
       if (fromSheet) {

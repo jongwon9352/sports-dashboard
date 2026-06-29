@@ -72,7 +72,7 @@ function defaultPlayer(name: string, jerseyNumber: number) {
     name,
     jersey_number: jerseyNumber,
     position: 'MF',
-    grade: 'U15',
+    grade: '1학년',
     birth_date: '',
     maturity_status: 'Mid',
     maturity_offset: 0,
@@ -874,6 +874,7 @@ export interface RawDataRow {
   training_date: string;
   player_name: string;
   jersey_number: number | null;
+  group_type: string | null;
   rpe: number | null;
   duration_min: number;
   total_distance: number;
@@ -924,7 +925,7 @@ export async function fetchRawDataByDates(dates: string[]): Promise<RawDataRow[]
   while (true) {
     const { data: chunk, error } = await client
       .from('training_daily')
-      .select('id, player_id, training_date, duration_min, rpe, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, players(name, jersey_number)')
+      .select('id, player_id, training_date, group_type, duration_min, rpe, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, players(name, jersey_number)')
       .in('training_date', dates)
       .order('training_date', { ascending: false })
       .range(offset, offset + PAGE - 1);
@@ -940,6 +941,7 @@ export async function fetchRawDataByDates(dates: string[]): Promise<RawDataRow[]
     training_date: row.training_date,
     player_name: row.players?.name ?? '',
     jersey_number: row.players?.jersey_number ?? null,
+    group_type: row.group_type ?? null,
     rpe: row.rpe != null ? Number(row.rpe) : null,
     duration_min: Number(row.duration_min) || 0,
     total_distance: Number(row.total_distance) || 0,
@@ -975,6 +977,15 @@ export async function updateRpe(id: string, rpe: number) {
   const { error } = await client
     .from('training_daily')
     .update({ rpe, daily_training_load: dailyLoad })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function updateGroupType(id: string, groupType: string) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('training_daily')
+    .update({ group_type: groupType || null })
     .eq('id', id);
   if (error) throw error;
 }
@@ -1375,32 +1386,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - days);
 
-  // Step 1: Get eligible players (2,3학년 = U14, U15 in players table)
-  const { data: eligiblePlayers } = await supabase
-    .from('players')
-    .select('id')
-    .in('grade', ['U15', 'U14', '2학년', '3학년']);
-  const eligibleIds = new Set((eligiblePlayers ?? []).map((p: any) => p.id as string));
-
-  // Step 2: Get daily_report_config - players marked as 3학년/U15/U14 training type
-  const { data: configs } = await supabase
-    .from('daily_report_config')
-    .select('training_date, player_types');
-
-  const grade3Tags = ['3학년'];
-  const grade3PlayersByDate = new Map<string, Set<string>>();
-  if (configs) {
-    for (const cfg of configs as any[]) {
-      const types = cfg.player_types as Record<string, string>;
-      if (!types) continue;
-      const ids = Object.entries(types)
-        .filter(([, t]) => grade3Tags.includes(t))
-        .map(([id]) => id);
-      if (ids.length > 0) grade3PlayersByDate.set(cfg.training_date, new Set(ids));
-    }
-  }
-
-  // Fetch training_daily in chunks to avoid Supabase 1000-row limit
+  // Fetch training_daily with group_type in chunks (Supabase 1000-row limit)
   const dailyData: any[] = [];
   const chunkSize = 14;
   for (let offset = 0; offset < days; offset += chunkSize) {
@@ -1412,7 +1398,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
 
     const { data: chunk } = await supabase
       .from('training_daily')
-      .select('training_date, player_id, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+      .select('training_date, player_id, group_type, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
       .gte('training_date', cStart.toISOString().split('T')[0])
       .lte('training_date', cEnd.toISOString().split('T')[0])
       .order('training_date', { ascending: true });
@@ -1421,8 +1407,6 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
 
   if (dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
 
-  // Group by date and compute team average for 3학년 players
-  const dateMap = new Map<string, TeamAcwrDayData>();
   const byDate = new Map<string, any[]>();
   for (const row of dailyData as any[]) {
     const d = row.training_date as string;
@@ -1430,18 +1414,15 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     byDate.get(d)!.push(row);
   }
 
-  // Fill all dates from start to today
   const allDates: string[] = [];
   for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
     allDates.push(d.toISOString().split('T')[0]);
   }
 
+  const dateMap = new Map<string, TeamAcwrDayData>();
   for (const date of allDates) {
     const rows = byDate.get(date) ?? [];
-    const grade3Ids = grade3PlayersByDate.get(date);
-    const filtered = grade3Ids
-      ? rows.filter((r: any) => grade3Ids.has(r.player_id))
-      : rows.filter((r: any) => eligibleIds.has(r.player_id));
+    const filtered = rows.filter((r: any) => r.group_type === 'U15');
 
     const avg = (fn: (r: any) => number) => {
       if (filtered.length === 0) return 0;
