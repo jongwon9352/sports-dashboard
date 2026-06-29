@@ -213,14 +213,73 @@ export function WeeklyPeriodization() {
     setSaving(false);
   };
 
+  const prepareForCapture = (el: HTMLElement) => {
+    const rollback: (() => void)[] = [];
+    const setStyle = (target: HTMLElement, props: Record<string, string>) => {
+      const orig = target.style.cssText;
+      rollback.push(() => { target.style.cssText = orig; });
+      for (const [k, v] of Object.entries(props)) target.style.setProperty(k, v, 'important');
+    };
+
+    setStyle(el, { background: '#ffffff', color: '#222', 'border-radius': '0', 'box-shadow': 'none', overflow: 'visible' });
+    el.querySelectorAll<HTMLElement>('table').forEach(t => {
+      setStyle(t, { width: '100%', 'table-layout': 'fixed', 'border-collapse': 'collapse' });
+    });
+    el.querySelectorAll<HTMLElement>('th').forEach(th => {
+      setStyle(th, { background: '#f0f4f8', color: '#222', padding: '8px 6px', 'font-size': '11px', border: '1px solid #ccc', 'white-space': 'nowrap' });
+    });
+    el.querySelectorAll<HTMLElement>('td').forEach(td => {
+      setStyle(td, { background: '#ffffff', color: '#222', padding: '6px 4px', 'font-size': '11px', border: '1px solid #ddd', 'vertical-align': 'middle' });
+    });
+    el.querySelectorAll<HTMLElement>('td.row-label').forEach(td => {
+      setStyle(td, { background: '#f0f4f8', color: '#333', 'font-weight': '600' });
+    });
+    el.querySelectorAll<HTMLElement>('td.total-col').forEach(td => {
+      setStyle(td, { background: '#e8f8f5', color: '#00897b', 'font-weight': '600' });
+    });
+    el.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(ta => {
+      const span = document.createElement('span');
+      span.textContent = ta.value || '';
+      span.style.cssText = 'font-size:11px;color:#222;white-space:pre-wrap;word-break:break-word;display:block;text-align:center;';
+      ta.parentNode?.insertBefore(span, ta);
+      setStyle(ta, { display: 'none' });
+      rollback.push(() => { span.remove(); });
+    });
+    el.querySelectorAll('svg text').forEach(t => {
+      const origFill = t.getAttribute('fill');
+      t.setAttribute('fill', '#333');
+      rollback.push(() => { if (origFill) t.setAttribute('fill', origFill); });
+    });
+    el.querySelectorAll('svg line, svg rect').forEach(el => {
+      const origStroke = el.getAttribute('stroke');
+      if (origStroke && origStroke !== 'none') {
+        el.setAttribute('stroke', '#555');
+        rollback.push(() => { el.setAttribute('stroke', origStroke); });
+      }
+    });
+
+    return () => rollback.forEach(fn => fn());
+  };
+
   const handlePDF = async () => {
     if (!tableRef.current) return;
-    const canvas = await html2canvas(tableRef.current, { scale: 2, backgroundColor: '#1a1a2e' });
-    const imgData = canvas.toDataURL('image/png');
-    const ratio = 2784 / 1608;
-    const pdfW = 297, pdfH = pdfW / ratio;
+    const el = tableRef.current;
+    const CAPTURE_W = 1400;
+    const origCss = el.style.cssText;
+    el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;padding:8px;`;
+
+    const restore = prepareForCapture(el);
+    await new Promise(r => setTimeout(r, 300));
+
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: CAPTURE_W });
+
+    restore();
+    el.style.cssText = origCss;
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const pdfW = 420, pdfH = pdfW * (canvas.height / canvas.width);
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfW, pdfH] });
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+    pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
     pdf.save(`주간주기화_${weekLabel || weekStart}.pdf`);
   };
 
@@ -326,7 +385,7 @@ export function WeeklyPeriodization() {
           </thead>
           <tbody>
             <tr>
-              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>Weekly Topic</td>
+              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3 row-label`}>Weekly Topic</td>
               <td colSpan={7} className={C}>
                 <AutoCell value={topic} onChange={v => { setTopic(v); setSaved(false); }} className={`${I} text-left`} />
               </td>
@@ -339,7 +398,7 @@ export function WeeklyPeriodization() {
               const isIntensity = key === 'intensity';
               return (
                 <tr key={key}>
-                  <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>{label}</td>
+                  <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3 row-label`}>{label}</td>
                   {days.map((day, di) => (
                     <td key={di} className={C}>
                       <AutoCell value={day[key] as string}
@@ -351,13 +410,13 @@ export function WeeklyPeriodization() {
                         className={I} />
                     </td>
                   ))}
-                  <td className={`${C} bg-cyan-400/5 font-medium text-cyan-400`}>{isNum ? totals[key] : ''}</td>
+                  <td className={`${C} bg-cyan-400/5 font-medium text-cyan-400 total-col`}>{isNum ? totals[key] : ''}</td>
                 </tr>
               );
             })}
 
             <tr>
-              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>피치 사이즈</td>
+              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3 row-label`}>피치 사이즈</td>
               {days.map((day, di) => (
                 <td key={di} className={`${C} p-1`}>
                   <div className="flex justify-center">
@@ -374,7 +433,7 @@ export function WeeklyPeriodization() {
             </tr>
 
             <tr>
-              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>Prep</td>
+              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3 row-label`}>Prep</td>
               {days.map((day, di) => (
                 <td key={di} className={C}>
                   <AutoCell value={day.prep} onChange={v => updateDay(di, 'prep', v)} className={I} />
@@ -384,7 +443,7 @@ export function WeeklyPeriodization() {
             </tr>
 
             <tr>
-              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3`}>Warm up</td>
+              <td className={`${C} bg-surface-secondary/30 font-medium text-text-secondary text-left pl-3 row-label`}>Warm up</td>
               {days.map((day, di) => (
                 <td key={di} className={C}>
                   <AutoCell value={day.warmup} onChange={v => updateDay(di, 'warmup', v)} className={I} />
