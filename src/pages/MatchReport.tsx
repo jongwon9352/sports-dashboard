@@ -62,13 +62,14 @@ function DecBarWithLabel(props: any) {
   );
 }
 
-function SimpleChart({ title, data, color, unit = '' }: {
+function SimpleChart({ title, data, color, unit = '', noSort }: {
   title: string;
   data: { name: string; value: number }[];
   color: string;
   unit?: string;
+  noSort?: boolean;
 }) {
-  const sorted = [...data].sort((a, b) => b.value - a.value);
+  const sorted = noSort ? data : [...data].sort((a, b) => b.value - a.value);
   const maxVal = Math.max(...sorted.map(d => d.value), 1);
   return (
     <div className="chart-card min-w-0">
@@ -112,11 +113,12 @@ function TdMminBarShape(props: any) {
   );
 }
 
-function TdComboChart({ title, data }: {
+function TdComboChart({ title, data, noSort }: {
   title: string;
   data: { name: string; td: number; mmin: number }[];
+  noSort?: boolean;
 }) {
-  const sorted = [...data].sort((a, b) => b.td - a.td);
+  const sorted = noSort ? data : [...data].sort((a, b) => b.td - a.td);
   const maxTd = Math.max(...sorted.map(d => d.td), 1);
   return (
     <div className="chart-card min-w-0">
@@ -161,11 +163,12 @@ function HsrSprintTopShape(props: any) {
   );
 }
 
-function StackedHsrSprintChart({ title, data }: {
+function StackedHsrSprintChart({ title, data, noSort }: {
   title: string;
   data: { name: string; hsr: number; sprint: number }[];
+  noSort?: boolean;
 }) {
-  const sorted = [...data].sort((a, b) => (b.hsr + b.sprint) - (a.hsr + a.sprint));
+  const sorted = noSort ? data : [...data].sort((a, b) => (b.hsr + b.sprint) - (a.hsr + a.sprint));
   const maxVal = Math.max(...sorted.map(d => d.hsr + d.sprint), 1);
   return (
     <div className="chart-card min-w-0">
@@ -187,11 +190,12 @@ function StackedHsrSprintChart({ title, data }: {
   );
 }
 
-function StackedActionChart({ title, data }: {
+function StackedActionChart({ title, data, noSort }: {
   title: string;
   data: { name: string; acc: number; dec: number }[];
+  noSort?: boolean;
 }) {
-  const sorted = [...data].sort((a, b) => (b.acc + b.dec) - (a.acc + a.dec));
+  const sorted = noSort ? data : [...data].sort((a, b) => (b.acc + b.dec) - (a.acc + a.dec));
   const maxVal = Math.max(...sorted.map(d => d.acc + d.dec), 1);
   return (
     <div className="chart-card min-w-0">
@@ -353,7 +357,12 @@ export function MatchReport() {
 
   const sessionCompareData = useMemo(() => {
     if (!sessionData.length) return null;
-    const sessions = [...new Set(sessionData.map(s => s.session_name))];
+    const rawSessions = [...new Set(sessionData.map(s => s.session_name))];
+    const sessions = rawSessions.sort((a, b) => {
+      if (a === '전반') return -1;
+      if (b === '전반') return 1;
+      return a.localeCompare(b);
+    });
     if (sessions.length < 2) return null;
 
     const maxSessionTime = Math.max(...data.map(r => r.play_time_min), 0);
@@ -687,19 +696,19 @@ export function MatchReport() {
               <div ref={pdfChart4Ref} className="mb-5">
                 <div className="flex flex-wrap" style={{ margin: '0 -8px' }}>
                   <div className="w-1/2 px-2 mb-4 min-w-0">
-                    <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} />
+                    <TdComboChart title="총 뛴 거리 / 분당 뛴 거리" data={sessionCompareData.map(d => ({ name: d.name, td: d.td, mmin: d.mmin }))} noSort />
                   </div>
                   <div className="w-1/2 px-2 mb-4 min-w-0">
                     <StackedHsrSprintChart title="고강도 이동거리 (Sprint/HSR)"
-                      data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} />
+                      data={sessionCompareData.map(d => ({ name: d.name, hsr: d.hsr, sprint: d.sprint }))} noSort />
                   </div>
                   <div className="w-1/2 px-2 mb-4 min-w-0">
                     <StackedActionChart title="액션 (ACC/DEC)"
-                      data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} />
+                      data={sessionCompareData.map(d => ({ name: d.name, acc: d.acc, dec: d.dec }))} noSort />
                   </div>
                   <div className="w-1/2 px-2 mb-4 min-w-0">
                     <SimpleChart title="ACD LOAD (Intensity)" data={sessionCompareData.map(d => ({ name: d.name, value: d.acd }))}
-                      color="rgba(140, 20, 20, 0.7)" />
+                      color="rgba(140, 20, 20, 0.7)" noSort />
                   </div>
                 </div>
               </div>
