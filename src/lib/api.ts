@@ -1386,8 +1386,9 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     for (const cfg of configs as any[]) {
       const types = cfg.player_types as Record<string, string>;
       if (!types) continue;
+      const grade3Tags = ['3학년', 'U15', 'U14'];
       const ids = Object.entries(types)
-        .filter(([, t]) => t === '3학년')
+        .filter(([, t]) => grade3Tags.includes(t))
         .map(([id]) => id);
       if (ids.length > 0) grade3PlayersByDate.set(cfg.training_date, new Set(ids));
     }

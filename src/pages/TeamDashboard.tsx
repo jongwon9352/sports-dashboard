@@ -11,6 +11,19 @@ const COLORS = {
   acwr: '#A42843',
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function AcwrLabelDot(props: any) {
+  const { cx, cy, payload } = props;
+  if (!cx || !cy || !payload?.acwr) return null;
+  const val = payload.acwr;
+  if (val <= 0) return null;
+  return (
+    <text x={cx} y={cy - 10} textAnchor="middle" fontSize={9} fontFamily="DM Mono" fontWeight="600" fill="#A42843">
+      {val.toFixed(2)}
+    </text>
+  );
+}
+
 function AcwrComboChart({ title, data, unit }: {
   title: string;
   data: TeamAcwrSeries[];
@@ -18,7 +31,8 @@ function AcwrComboChart({ title, data, unit }: {
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const last28 = data.slice(-28);
-  const chartWidth = Math.max(last28.length * 36, 800);
+  const dayWidth = 48;
+  const chartWidth = last28.length * dayWidth;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -38,10 +52,10 @@ function AcwrComboChart({ title, data, unit }: {
   return (
     <div className="chart-card mb-4">
       <div className="chart-title text-center">{title}</div>
-      <div ref={scrollRef} className="overflow-x-auto" style={{ direction: 'ltr' }}>
-        <div style={{ width: chartWidth, minWidth: '100%' }}>
-          <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={last28} margin={{ top: 20, right: 40, bottom: 20, left: 10 }}>
+      <div ref={scrollRef} className="overflow-x-auto">
+        <div style={{ width: chartWidth }}>
+          <ResponsiveContainer width="100%" height={320}>
+            <ComposedChart data={last28} margin={{ top: 25, right: 40, bottom: 20, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 10 }} interval={0} />
               <YAxis yAxisId="left" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
@@ -60,8 +74,9 @@ function AcwrComboChart({ title, data, unit }: {
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Area yAxisId="left" type="monotone" dataKey="chronic" name="Chronic" fill={COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
               <Area yAxisId="left" type="monotone" dataKey="acute" name="Acute" fill={COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
-              <Bar yAxisId="left" dataKey="daily" name="Daily" fill={COLORS.daily} barSize={14} />
-              <Line yAxisId="right" type="monotone" dataKey="acwr" name="ACWR" stroke={COLORS.acwr} strokeWidth={2} dot={false} />
+              <Bar yAxisId="left" dataKey="daily" name="Daily" fill={COLORS.daily} barSize={16} />
+              <Line yAxisId="right" type="monotone" dataKey="acwr" name="ACWR" stroke={COLORS.acwr} strokeWidth={2}
+                dot={<AcwrLabelDot />} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
