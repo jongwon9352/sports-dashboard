@@ -1396,7 +1396,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   // Fetch training_daily for the date range
   const { data: dailyData } = await supabase
     .from('training_daily')
-    .select('training_date, player_id, daily_training_load, total_distance, hsr_distance, sprint_distance, acd_load')
+    .select('training_date, player_id, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
     .gte('training_date', startStr)
     .order('training_date', { ascending: true });
 
@@ -1422,16 +1422,24 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     const grade3Ids = grade3PlayersByDate.get(date);
     const filtered = grade3Ids
       ? rows.filter((r: any) => grade3Ids.has(r.player_id))
-      : [];
+      : rows;
 
     const avg = (fn: (r: any) => number) => {
       if (filtered.length === 0) return 0;
       return filtered.reduce((s: number, r: any) => s + fn(r), 0) / filtered.length;
     };
 
+    const tlVal = avg(r => {
+      const dtl = Number(r.daily_training_load);
+      if (dtl > 0) return dtl;
+      const dur = Number(r.duration_min) || 0;
+      const rpe = Number(r.rpe) || 0;
+      return dur * rpe;
+    });
+
     dateMap.set(date, {
       date,
-      tl: avg(r => Number(r.daily_training_load) || 0),
+      tl: tlVal,
       td: avg(r => Number(r.total_distance) || 0),
       hsr: avg(r => Number(r.hsr_distance) || 0),
       sprint: avg(r => Number(r.sprint_distance) || 0),
