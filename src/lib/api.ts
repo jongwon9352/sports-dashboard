@@ -1379,7 +1379,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   // Fetch daily_report_config to get players marked as '3학년'
   const { data: configs } = await supabase
     .from('daily_report_config')
-    .select('report_date, player_types');
+    .select('training_date, player_types');
 
   const grade3PlayersByDate = new Map<string, Set<string>>();
   if (configs) {
@@ -1389,7 +1389,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
       const ids = Object.entries(types)
         .filter(([, t]) => t === '3학년')
         .map(([id]) => id);
-      if (ids.length > 0) grade3PlayersByDate.set(cfg.report_date, new Set(ids));
+      if (ids.length > 0) grade3PlayersByDate.set(cfg.training_date, new Set(ids));
     }
   }
 
