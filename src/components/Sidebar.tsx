@@ -3,10 +3,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 
 export function Sidebar() {
   const location = useLocation();
-  const isDashboardGroup = ['/'].includes(location.pathname);
   const isReportGroup = ['/daily', '/weekly', '/match'].includes(location.pathname);
   const isDataGroup = ['/upload', '/raw-data'].includes(location.pathname);
-  const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
   const [reportOpen, setReportOpen] = useState(isReportGroup);
   const [dataOpen, setDataOpen] = useState(isDataGroup);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -21,24 +19,10 @@ export function Sidebar() {
           메뉴
         </p>
         <nav className="px-2 flex flex-col gap-0.5">
-          {/* 대시보드 그룹 */}
-          <button
-            onClick={() => setDashboardOpen(!dashboardOpen)}
-            className={`sidebar-nav-item w-full ${isDashboardGroup ? 'active' : ''}`}
-          >
-            <span className="w-[18px] text-center text-[13px]">📊</span>
-            대시보드
-            <span className={`ml-auto text-[10px] text-text-disabled transition-transform ${dashboardOpen ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
-          </button>
-          {dashboardOpen && (
-            <div className="pl-5 flex flex-col gap-0.5">
-              <NavLink to="/" end className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-                <span className="w-[18px] text-center text-[13px]">🏠</span>팀 대시보드
-              </NavLink>
-            </div>
-          )}
+          {/* 홈 */}
+          <NavLink to="/" end className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            <span className="w-[18px] text-center text-[13px]">🏠</span>홈
+          </NavLink>
 
           {/* 리포트 그룹 */}
           <button
