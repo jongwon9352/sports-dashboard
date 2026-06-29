@@ -1374,7 +1374,6 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   const today = new Date();
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - days);
-  const startStr = startDate.toISOString().split('T')[0];
 
   // Fetch daily_report_config to get players marked as '3학년'
   const { data: configs } = await supabase
@@ -1394,14 +1393,26 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     }
   }
 
-  // Fetch training_daily for the date range
-  const { data: dailyData } = await supabase
-    .from('training_daily')
-    .select('training_date, player_id, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
-    .gte('training_date', startStr)
-    .order('training_date', { ascending: true });
+  // Fetch training_daily in chunks to avoid Supabase 1000-row limit
+  const dailyData: any[] = [];
+  const chunkSize = 30;
+  for (let offset = 0; offset < days; offset += chunkSize) {
+    const cStart = new Date(startDate);
+    cStart.setDate(startDate.getDate() + offset);
+    const cEnd = new Date(startDate);
+    cEnd.setDate(startDate.getDate() + offset + chunkSize - 1);
+    if (cEnd > today) cEnd.setTime(today.getTime());
 
-  if (!dailyData || dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+    const { data: chunk } = await supabase
+      .from('training_daily')
+      .select('training_date, player_id, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+      .gte('training_date', cStart.toISOString().split('T')[0])
+      .lte('training_date', cEnd.toISOString().split('T')[0])
+      .order('training_date', { ascending: true });
+    if (chunk) dailyData.push(...chunk);
+  }
+
+  if (dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
 
   // Group by date and compute team average for 3학년 players
   const dateMap = new Map<string, TeamAcwrDayData>();
