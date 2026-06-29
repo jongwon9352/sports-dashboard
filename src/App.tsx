@@ -12,6 +12,7 @@ import { Settings } from './pages/Settings';
 import { WeeklyPeriodization } from './pages/WeeklyPeriodization';
 import { RawDataPage } from './pages/RawDataPage';
 import { MatchReport } from './pages/MatchReport';
+import { TeamDashboard } from './pages/TeamDashboard';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <main className="flex-1 min-w-0 overflow-x-hidden">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/team-dashboard" element={<TeamDashboard />} />
               <Route path="/daily" element={<DailyReport />} />
               <Route path="/weekly" element={<WeeklyReport />} />
               <Route path="/match" element={<MatchReport />} />

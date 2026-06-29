@@ -1344,3 +1344,128 @@ export async function fetchMatchSessionData(date: string, opponent: string): Pro
     play_time_min: Number(r.play_time_min) || 0,
   }));
 }
+
+export interface TeamAcwrDayData {
+  date: string;
+  tl: number;
+  td: number;
+  hsr: number;
+  sprint: number;
+  acd: number;
+}
+
+export interface TeamAcwrSeries {
+  date: string;
+  daily: number;
+  acute: number;
+  chronic: number;
+  acwr: number;
+}
+
+export async function fetchTeamAcwrData(days: number = 60): Promise<{
+  tl: TeamAcwrSeries[];
+  td: TeamAcwrSeries[];
+  hsr: TeamAcwrSeries[];
+  sprint: TeamAcwrSeries[];
+  acd: TeamAcwrSeries[];
+}> {
+  if (!supabase) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - days);
+  const startStr = startDate.toISOString().split('T')[0];
+
+  // Fetch daily_report_config to get players marked as '3학년'
+  const { data: configs } = await supabase
+    .from('daily_report_config')
+    .select('report_date, player_types');
+
+  const grade3PlayersByDate = new Map<string, Set<string>>();
+  if (configs) {
+    for (const cfg of configs as any[]) {
+      const types = cfg.player_types as Record<string, string>;
+      if (!types) continue;
+      const ids = Object.entries(types)
+        .filter(([, t]) => t === '3학년')
+        .map(([id]) => id);
+      if (ids.length > 0) grade3PlayersByDate.set(cfg.report_date, new Set(ids));
+    }
+  }
+
+  // Fetch training_daily for the date range
+  const { data: dailyData } = await supabase
+    .from('training_daily')
+    .select('training_date, player_id, daily_training_load, total_distance, hsr_distance, sprint_distance, acd_load')
+    .gte('training_date', startStr)
+    .order('training_date', { ascending: true });
+
+  if (!dailyData || dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+
+  // Group by date and compute team average for 3학년 players
+  const dateMap = new Map<string, TeamAcwrDayData>();
+  const byDate = new Map<string, any[]>();
+  for (const row of dailyData as any[]) {
+    const d = row.training_date as string;
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d)!.push(row);
+  }
+
+  // Fill all dates from start to today
+  const allDates: string[] = [];
+  for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+    allDates.push(d.toISOString().split('T')[0]);
+  }
+
+  for (const date of allDates) {
+    const rows = byDate.get(date) ?? [];
+    const grade3Ids = grade3PlayersByDate.get(date);
+    const filtered = grade3Ids
+      ? rows.filter((r: any) => grade3Ids.has(r.player_id))
+      : [];
+
+    const avg = (fn: (r: any) => number) => {
+      if (filtered.length === 0) return 0;
+      return filtered.reduce((s: number, r: any) => s + fn(r), 0) / filtered.length;
+    };
+
+    dateMap.set(date, {
+      date,
+      tl: avg(r => Number(r.daily_training_load) || 0),
+      td: avg(r => Number(r.total_distance) || 0),
+      hsr: avg(r => Number(r.hsr_distance) || 0),
+      sprint: avg(r => Number(r.sprint_distance) || 0),
+      acd: avg(r => Number(r.acd_load) || 0),
+    });
+  }
+
+  // Compute EWMA for each metric
+  function computeEwma(dailyValues: { date: string; value: number }[]): TeamAcwrSeries[] {
+    let acute: number | null = null;
+    let chronic: number | null = null;
+    return dailyValues.map(({ date, value }) => {
+      if (acute === null) {
+        acute = value;
+        chronic = value;
+      } else {
+        acute = acute * 0.25 + value * 0.75;
+        chronic = value * 0.069 + chronic! * 0.931;
+      }
+      const acwr = (acute > 0 && chronic! > 0) ? acute / chronic! : 0;
+      return { date, daily: value, acute, chronic: chronic!, acwr };
+    });
+  }
+
+  const metrics: (keyof TeamAcwrDayData)[] = ['tl', 'td', 'hsr', 'sprint', 'acd'];
+  const result: Record<string, TeamAcwrSeries[]> = {};
+
+  for (const metric of metrics) {
+    const dailyValues = allDates.map(d => ({
+      date: d,
+      value: dateMap.get(d)?.[metric] as number ?? 0,
+    }));
+    result[metric] = computeEwma(dailyValues);
+  }
+
+  return result as any;
+}
