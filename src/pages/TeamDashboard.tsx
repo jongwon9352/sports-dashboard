@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  ComposedChart, Bar, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { fetchTeamAcwrData, type TeamAcwrSeries } from '../lib/api';
 
@@ -10,19 +10,6 @@ const COLORS = {
   chronic: 'rgba(0, 140, 126, 0.3)',
   acwr: '#A42843',
 };
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function AcwrLabelDot(props: any) {
-  const { cx, cy, payload } = props;
-  if (!cx || !cy || !payload?.acwr) return null;
-  const val = payload.acwr;
-  if (val <= 0) return null;
-  return (
-    <text x={cx} y={cy - 10} textAnchor="middle" fontSize={9} fontFamily="DM Mono" fontWeight="600" fill="#A42843">
-      {val.toFixed(2)}
-    </text>
-  );
-}
 
 function AcwrComboChart({ title, data, unit }: {
   title: string;
@@ -55,28 +42,24 @@ function AcwrComboChart({ title, data, unit }: {
       <div ref={scrollRef} className="overflow-x-auto">
         <div style={{ width: chartWidth }}>
           <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={last28} margin={{ top: 25, right: 40, bottom: 20, left: 10 }}>
+            <ComposedChart data={last28} margin={{ top: 25, right: 20, bottom: 20, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 10 }} interval={0} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fontFamily: 'DM Mono', fill: COLORS.acwr }}
-                domain={[0, 3]} width={40} />
+              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
               <Tooltip
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter={(v: any, name: any) => {
-                  const label = name === 'daily' ? 'Daily' : name === 'acute' ? 'Acute' : name === 'chronic' ? 'Chronic' : 'ACWR';
-                  const val = name === 'acwr' ? Number(v).toFixed(2) : Math.round(Number(v)).toLocaleString();
-                  return [`${val}${name !== 'acwr' ? (unit || '') : ''}`, label];
+                  const labels: Record<string, string> = { daily: 'Daily', acute: 'Acute', chronic: 'Chronic' };
+                  const label = labels[name] ?? name;
+                  return [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, label];
                 }}
                 labelFormatter={(d: any) => formatDate(String(d))}
                 contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Area yAxisId="left" type="monotone" dataKey="chronic" name="Chronic" fill={COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
-              <Area yAxisId="left" type="monotone" dataKey="acute" name="Acute" fill={COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
-              <Bar yAxisId="left" dataKey="daily" name="Daily" fill={COLORS.daily} barSize={16} />
-              <Line yAxisId="right" type="monotone" dataKey="acwr" name="ACWR" stroke={COLORS.acwr} strokeWidth={2}
-                dot={<AcwrLabelDot />} />
+              <Area type="monotone" dataKey="chronic" name="Chronic" fill={COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
+              <Area type="monotone" dataKey="acute" name="Acute" fill={COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
+              <Bar dataKey="daily" name="Daily" fill={COLORS.daily} barSize={16} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
