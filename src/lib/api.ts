@@ -1375,19 +1375,26 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - days);
 
-  // Fetch daily_report_config to get players marked as '3학년'
+  // Step 1: Get eligible players (2,3학년 = U14, U15 in players table)
+  const { data: eligiblePlayers } = await supabase
+    .from('players')
+    .select('id')
+    .in('grade', ['U15', 'U14', '2학년', '3학년']);
+  const eligibleIds = new Set((eligiblePlayers ?? []).map((p: any) => p.id as string));
+
+  // Step 2: Get daily_report_config - players marked as 3학년/U15/U14 training type
   const { data: configs } = await supabase
     .from('daily_report_config')
     .select('training_date, player_types');
 
+  const grade3Tags = ['3학년', 'U15', 'U14'];
   const grade3PlayersByDate = new Map<string, Set<string>>();
   if (configs) {
     for (const cfg of configs as any[]) {
       const types = cfg.player_types as Record<string, string>;
       if (!types) continue;
-      const grade3Tags = ['3학년', 'U15', 'U14'];
       const ids = Object.entries(types)
-        .filter(([, t]) => grade3Tags.includes(t))
+        .filter(([id, t]) => grade3Tags.includes(t) && eligibleIds.has(id))
         .map(([id]) => id);
       if (ids.length > 0) grade3PlayersByDate.set(cfg.training_date, new Set(ids));
     }
@@ -1434,7 +1441,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     const grade3Ids = grade3PlayersByDate.get(date);
     const filtered = grade3Ids
       ? rows.filter((r: any) => grade3Ids.has(r.player_id))
-      : rows;
+      : rows.filter((r: any) => eligibleIds.has(r.player_id));
 
     const avg = (fn: (r: any) => number) => {
       if (filtered.length === 0) return 0;
