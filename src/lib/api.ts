@@ -207,12 +207,49 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
 
   if (dailyRows.length === 0) return;
 
+  const playerIds = [...new Set(dailyRows.map(r => r.player_id as string))];
+  const { data: existing } = await client
+    .from('training_daily')
+    .select('player_id, duration_min, total_distance, m_per_min, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, daily_training_load')
+    .eq('training_date', date)
+    .in('player_id', playerIds);
+
+  const existMap = new Map((existing ?? []).map((e: any) => [e.player_id, e]));
+
+  const mergedRows = dailyRows.map(row => {
+    const prev = existMap.get(row.player_id);
+    if (!prev) return row;
+    const add = (a: number, b: number) => (Number(a) || 0) + (Number(b) || 0);
+    return {
+      ...row,
+      duration_min: add(prev.duration_min, row.duration_min),
+      total_distance: add(prev.total_distance, row.total_distance),
+      speed_zone_1: add(prev.speed_zone_1, row.speed_zone_1),
+      speed_zone_2: add(prev.speed_zone_2, row.speed_zone_2),
+      speed_zone_3: add(prev.speed_zone_3, row.speed_zone_3),
+      speed_zone_4: add(prev.speed_zone_4, row.speed_zone_4),
+      speed_zone_5: add(prev.speed_zone_5, row.speed_zone_5),
+      hsr_distance: add(prev.hsr_distance, row.hsr_distance),
+      hsr_custom: add(prev.hsr_custom, row.hsr_custom),
+      sprint_distance: add(prev.sprint_distance, row.sprint_distance),
+      sprint_custom: add(prev.sprint_custom, row.sprint_custom),
+      sprint_count: add(prev.sprint_count, row.sprint_count),
+      sprint_count_custom: add(prev.sprint_count_custom, row.sprint_count_custom),
+      acc_count: add(prev.acc_count, row.acc_count),
+      dec_count: add(prev.dec_count, row.dec_count),
+      acd_load: add(prev.acd_load, row.acd_load),
+      max_speed: Math.max(Number(prev.max_speed) || 0, row.max_speed),
+      m_per_min: add(prev.total_distance, row.total_distance) / add(prev.duration_min, row.duration_min) || 0,
+      daily_training_load: row.rpe !== null ? add(prev.duration_min, row.duration_min) * (row.rpe as number) : (prev.daily_training_load ?? null),
+    };
+  });
+
   const { error } = await client
     .from('training_daily')
-    .upsert(dailyRows, { onConflict: 'player_id,training_date' });
+    .upsert(mergedRows, { onConflict: 'player_id,training_date' });
   if (error) throw error;
 
-  await recalculatePlayerAcwr([...new Set(dailyRows.map(row => row.player_id as string))]);
+  await recalculatePlayerAcwr(playerIds);
 }
 
 export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: string) {
