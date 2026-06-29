@@ -1387,14 +1387,14 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     .from('daily_report_config')
     .select('training_date, player_types');
 
-  const grade3Tags = ['3학년', 'U15', 'U14'];
+  const grade3Tags = ['3학년'];
   const grade3PlayersByDate = new Map<string, Set<string>>();
   if (configs) {
     for (const cfg of configs as any[]) {
       const types = cfg.player_types as Record<string, string>;
       if (!types) continue;
       const ids = Object.entries(types)
-        .filter(([id, t]) => grade3Tags.includes(t) && eligibleIds.has(id))
+        .filter(([, t]) => grade3Tags.includes(t))
         .map(([id]) => id);
       if (ids.length > 0) grade3PlayersByDate.set(cfg.training_date, new Set(ids));
     }
