@@ -91,6 +91,25 @@ export function RawDataPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // 구글 시트 RPE를 DB에 영속화 (시트값과 DB값이 다른 행만)
+  useEffect(() => {
+    if (!data.length || rpeMap.size === 0) return;
+    const toSync: { id: string; rpe: number }[] = [];
+    for (const row of data) {
+      const sheetValue = rpeMap.get(`${row.training_date}|${row.player_name}`);
+      if (sheetValue != null && row.rpe !== sheetValue) {
+        toSync.push({ id: row.id, rpe: sheetValue });
+      }
+    }
+    if (toSync.length === 0) return;
+    Promise.all(toSync.map(r => updateRpe(r.id, r.rpe).catch(() => {}))).then(() => {
+      setData(prev => prev.map(r => {
+        const match = toSync.find(s => s.id === r.id);
+        return match ? { ...r, rpe: match.rpe } : r;
+      }));
+    });
+  }, [data, rpeMap]);
+
   const mergedData = useMemo(() => {
     return data.map(row => {
       const key = `${row.training_date}|${row.player_name}`;

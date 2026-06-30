@@ -11,6 +11,31 @@ const COLORS = {
   acwr: '#A42843',
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DailyAcwrBarShape(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width) return null;
+  const daily = payload?.daily ?? 0;
+  const acwr = payload?.acwr ?? 0;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height || 0} fill={COLORS.daily} rx={2} ry={2} />
+      {daily > 0 && (
+        <text x={x + width / 2} y={y - 18} textAnchor="middle"
+          fontSize={10} fontFamily="DM Mono" fill="#555">
+          {Math.round(daily).toLocaleString()}
+        </text>
+      )}
+      {acwr > 0 && (
+        <text x={x + width / 2} y={y - 6} textAnchor="middle"
+          fontSize={10} fontFamily="DM Mono" fontWeight="700" fill={COLORS.acwr}>
+          {acwr.toFixed(2)}
+        </text>
+      )}
+    </g>
+  );
+}
+
 function AcwrComboChart({ title, data, unit }: {
   title: string;
   data: TeamAcwrSeries[];
@@ -29,7 +54,7 @@ function AcwrComboChart({ title, data, unit }: {
 
   const maxDaily = Math.max(...last28.map(d => d.daily), 1);
   const maxAcute = Math.max(...last28.map(d => Math.max(d.acute, d.chronic)), 1);
-  const yMax = Math.ceil(Math.max(maxDaily, maxAcute) * 1.2);
+  const yMax = Math.ceil(Math.max(maxDaily, maxAcute) * 1.35);
 
   const formatDate = (d: string) => {
     const dt = new Date(d);
@@ -42,7 +67,7 @@ function AcwrComboChart({ title, data, unit }: {
       <div ref={scrollRef} className="overflow-x-auto">
         <div style={{ width: chartWidth }}>
           <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={last28} margin={{ top: 25, right: 20, bottom: 20, left: 10 }}>
+            <ComposedChart data={last28} margin={{ top: 40, right: 20, bottom: 20, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 10 }} interval={0} />
               <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
@@ -59,7 +84,7 @@ function AcwrComboChart({ title, data, unit }: {
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Area type="monotone" dataKey="chronic" name="Chronic" fill={COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
               <Area type="monotone" dataKey="acute" name="Acute" fill={COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
-              <Bar dataKey="daily" name="Daily" fill={COLORS.daily} barSize={16} />
+              <Bar dataKey="daily" name="Daily" fill={COLORS.daily} barSize={16} shape={<DailyAcwrBarShape />} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
