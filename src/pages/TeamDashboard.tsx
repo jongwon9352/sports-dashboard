@@ -107,7 +107,7 @@ export function TeamDashboard() {
     fetchTeamAcwrData(60).then(d => { setData(d); setLoading(false); });
   }, []);
 
-  const [tab, setTab] = useState<'acwr'>('acwr');
+  const [tab, setTab] = useState<'acwr' | 'monotony'>('acwr');
 
   return (
     <div className="p-6">
@@ -123,23 +123,39 @@ export function TeamDashboard() {
         >
           ACWR
         </button>
+        <button
+          onClick={() => setTab('monotony')}
+          className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+            tab === 'monotony'
+              ? 'bg-purple text-white border-purple'
+              : 'border-surface-secondary hover:bg-surface-secondary'
+          }`}
+        >
+          MONOTONY
+        </button>
       </div>
-      <p className="text-xs text-text-secondary mb-4">3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주</p>
 
       {tab === 'acwr' && (
-        loading ? (
-          <div className="text-text-secondary text-center py-16">Loading...</div>
-        ) : data ? (
-          <div className="space-y-2">
-            <AcwrComboChart title="TL / ACWR" data={data.tl} />
-            <AcwrComboChart title="TD / ACWR" data={data.td} unit=" m" />
-            <AcwrComboChart title="HSR / ACWR" data={data.hsr} unit=" m" />
-            <AcwrComboChart title="Sprint / ACWR" data={data.sprint} unit=" m" />
-            <AcwrComboChart title="ACD LOAD / ACWR" data={data.acd} />
-          </div>
-        ) : (
-          <div className="text-text-secondary text-center py-16">데이터가 없습니다.</div>
-        )
+        <>
+          <p className="text-xs text-text-secondary mb-4">3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주</p>
+          {loading ? (
+            <div className="text-text-secondary text-center py-16">Loading...</div>
+          ) : data ? (
+            <div className="space-y-2">
+              <AcwrComboChart title="TL / ACWR" data={data.tl} />
+              <AcwrComboChart title="TD / ACWR" data={data.td} unit=" m" />
+              <AcwrComboChart title="HSR / ACWR" data={data.hsr} unit=" m" />
+              <AcwrComboChart title="Sprint / ACWR" data={data.sprint} unit=" m" />
+              <AcwrComboChart title="ACD LOAD / ACWR" data={data.acd} />
+            </div>
+          ) : (
+            <div className="text-text-secondary text-center py-16">데이터가 없습니다.</div>
+          )}
+        </>
+      )}
+
+      {tab === 'monotony' && (
+        <div className="text-text-secondary text-center py-16">준비 중입니다.</div>
       )}
     </div>
   );
