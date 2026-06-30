@@ -10,8 +10,10 @@ import { StatCard } from '../components/StatCard';
 import { colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
 
-const TRAINING_TYPES = ['TR', 'GAME', 'RE', 'OFF', 'GK', '1학년', '2학년', '3학년'] as const;
-type TrainingType = typeof TRAINING_TYPES[number];
+const GROUP_TYPE_ORDER = ['U15', 'U14', 'U13', 'GK', 'RE'] as const;
+const groupLabels: Record<string, string> = {
+  U15: 'U15', U14: 'U14', U13: 'U13', GK: 'GK', RE: 'RE',
+};
 
 function fmtN(v: number): string { return v ? Math.round(v).toLocaleString() : '0'; }
 function fmtD(v: number, d = 1): string { return v ? Number(v).toFixed(d) : '0'; }
@@ -229,20 +231,13 @@ export function DailyReport() {
   const [data, setData] = useState<DailyReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useState('');
-  const [playerTypes, setPlayerTypes] = useState<Record<string, TrainingType>>({});
   const [targets, setTargets] = useState<{ td: number; hsr: number; sprint: number } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
   const loadDateConfig = useCallback(async (date: string) => {
     const config = await fetchDailyReportConfig(date).catch(() => null);
-    if (config) {
-      setPlayerTypes(config.player_types as Record<string, TrainingType>);
-      setLocation(config.location);
-    } else {
-      setPlayerTypes({});
-      setLocation('');
-    }
+    setLocation(config?.location ?? '');
   }, []);
 
   useEffect(() => {
@@ -258,18 +253,16 @@ export function DailyReport() {
     });
   }, [loadDateConfig]);
 
-  const saveToDb = useCallback((date: string, types: Record<string, TrainingType>, loc: string) => {
+  const saveLocation = useCallback((date: string, loc: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveDailyReportConfig(date, types, loc).catch(() => {});
+      saveDailyReportConfig(date, {}, loc).catch(() => {});
     }, 500);
   }, []);
 
   useEffect(() => {
-    if (selectedDate && Object.keys(playerTypes).length > 0) {
-      saveToDb(selectedDate, playerTypes, location);
-    }
-  }, [playerTypes, location, selectedDate, saveToDb]);
+    if (selectedDate) saveLocation(selectedDate, location);
+  }, [location, selectedDate, saveLocation]);
 
   const handleDateChange = async (date: string) => {
     setSelectedDate(date);
@@ -277,10 +270,6 @@ export function DailyReport() {
     await loadDateConfig(date);
     fetchDailyReportData(date).then(rows => { setData(rows); setLoading(false); });
     fetchDayTarget(date).then(setTargets);
-  };
-
-  const setType = (playerId: string, type: TrainingType) => {
-    setPlayerTypes(prev => ({ ...prev, [playerId]: type }));
   };
 
   const sortedData = useMemo(() =>
@@ -294,8 +283,8 @@ export function DailyReport() {
   const avgRpe = avg(rpes);
 
   const grade3Rows = useMemo(() =>
-    sortedData.filter(r => playerTypes[r.player_id] === '3학년'),
-  [sortedData, playerTypes]);
+    sortedData.filter(r => r.group_type === 'U15'),
+  [sortedData]);
 
   const tdTarget = targets?.td ?? 0;
   const hsrTarget = targets?.hsr ?? 0;
@@ -304,19 +293,14 @@ export function DailyReport() {
   const mkChart = (fn: (r: DailyReportRow) => number, target: number) =>
     grade3Rows.map(d => ({ name: d.player_name, value: Math.round(fn(d)), target }));
 
-  const usedTypes = [...new Set(Object.values(playerTypes))].sort();
-  const rowsByType = (type: TrainingType) => sortedData.filter(r => playerTypes[r.player_id] === type);
+  const usedTypes = GROUP_TYPE_ORDER.filter(t => sortedData.some(r => r.group_type === t));
+  const rowsByType = (type: string) => sortedData.filter(r => r.group_type === type);
 
   const thC = 'px-2 py-2 text-[11px] font-semibold whitespace-nowrap border-b border-surface-secondary';
   const tdC = 'px-2 py-1.5 text-[11px] whitespace-nowrap border-b border-surface-secondary text-right';
   const tdNameC = 'px-2 py-1.5 text-[11px] font-medium whitespace-nowrap border-b border-surface-secondary';
   const avgTdC = 'px-2 py-2 text-[11px] font-bold whitespace-nowrap border-t-2 border-surface-secondary text-right';
   const avgNameC = 'px-2 py-2 text-[11px] font-bold whitespace-nowrap border-t-2 border-surface-secondary';
-
-  const typeLabels: Record<TrainingType, string> = {
-    TR: '훈련조', GAME: '경기조', RE: '회복조', OFF: 'OFF', GK: 'GK',
-    '1학년': '1학년', '2학년': '2학년', '3학년': '3학년',
-  };
 
   const pdfTableRef = useRef<HTMLDivElement>(null);
   const pdfChart1Ref = useRef<HTMLDivElement>(null);
@@ -438,7 +422,7 @@ export function DailyReport() {
     pdf.save(`데일리리포트_${selectedDate}.pdf`);
   }, [selectedDate]);
 
-  const hasType = (id: string) => !!playerTypes[id];
+  const hasType = (id: string) => sortedData.find(r => r.player_id === id)?.group_type != null;
 
   return (
     <div className="p-6">
@@ -513,12 +497,7 @@ export function DailyReport() {
                             {row.player_name}
                           </td>
                           <td className={`${tdNameC} text-center`}>
-                            <select value={playerTypes[row.player_id] || ''}
-                              onChange={e => setType(row.player_id, e.target.value as TrainingType)}
-                              className="text-[10px] px-1 py-0.5 rounded border border-surface-secondary bg-transparent outline-none w-16 text-center">
-                              <option value="">-</option>
-                              {TRAINING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
+                            {row.group_type ? groupLabels[row.group_type] ?? row.group_type : <span className="text-text-disabled">-</span>}
                           </td>
                           {typed ? (<>
                             <td className={tdC}>{fmtD(row.duration_min, 1)}</td>
@@ -542,7 +521,7 @@ export function DailyReport() {
                       );
                     })}
                     {usedTypes.map(type => (
-                      <AvgRow key={type} label={`팀 평균(${typeLabels[type]})`}
+                      <AvgRow key={type} label={`팀 평균(${groupLabels[type] ?? type})`}
                         rows={rowsByType(type)} cls={{ name: avgNameC, td: avgTdC }} />
                     ))}
                   </tbody>
@@ -561,7 +540,7 @@ export function DailyReport() {
           {grade3Rows.length > 0 && (
             <>
               <div className="mb-3 flex items-center gap-3">
-                <span className="text-sm font-semibold text-cyan-400">3학년 선수 차트</span>
+                <span className="text-sm font-semibold text-cyan-400">U15 선수 차트</span>
                 <span className="text-xs text-text-secondary">({grade3Rows.length}명)</span>
                 {targets && (
                   <span className="text-[10px] text-text-disabled ml-2">

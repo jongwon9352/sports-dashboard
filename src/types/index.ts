@@ -171,6 +171,7 @@ export interface DailyReportRow {
   jersey_number: number | null;
   position: string | null;
   player_id: string;
+  group_type: string | null;
   duration_min: number;
   total_distance: number;
   m_per_min: number;

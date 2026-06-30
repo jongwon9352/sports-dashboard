@@ -163,6 +163,12 @@ export async function importSessionCsvRows(rows: ParsedSessionRow[], date: strin
   if (error) throw error;
 }
 
+const GRADE_TO_GROUP: Record<string, string> = {
+  '1학년': 'U13',
+  '2학년': 'U14',
+  '3학년': 'U15',
+};
+
 export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
@@ -171,14 +177,24 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
   const parsedDate = new Date(date);
   const dayOfWeek = dayNames[parsedDate.getDay()] ?? '';
 
+  const allPlayerIds = [...new Set([...playerMap.values()])];
+  const { data: playerGrades } = await client
+    .from('players')
+    .select('id, grade')
+    .in('id', allPlayerIds);
+  const gradeMap = new Map((playerGrades ?? []).map((p: any) => [p.id as string, p.grade as string]));
+
   const dailyRows = validRows.map(row => {
     const playerId = playerMap.get(normalizeName(row.player_name));
     const dailyTrainingLoad = row.rpe !== null ? row.duration_min * row.rpe : null;
+    const grade = playerId ? gradeMap.get(playerId) : undefined;
+    const defaultGroupType = grade ? GRADE_TO_GROUP[grade] ?? null : null;
 
     return {
       id: crypto.randomUUID(),
       player_id: playerId,
       training_date: date,
+      group_type: defaultGroupType,
       day_of_week: dayOfWeek,
       week_label: '',
       duration_min: row.duration_min,
@@ -210,7 +226,7 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
   const playerIds = [...new Set(dailyRows.map(r => r.player_id as string))];
   const { data: existing } = await client
     .from('training_daily')
-    .select('player_id, duration_min, total_distance, m_per_min, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, daily_training_load')
+    .select('player_id, group_type, duration_min, total_distance, m_per_min, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, daily_training_load')
     .eq('training_date', date)
     .in('player_id', playerIds);
 
@@ -222,6 +238,7 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
     const add = (a: number, b: number) => (Number(a) || 0) + (Number(b) || 0);
     return {
       ...row,
+      group_type: prev.group_type ?? row.group_type,
       duration_min: add(prev.duration_min, row.duration_min),
       total_distance: add(prev.total_distance, row.total_distance),
       speed_zone_1: add(prev.speed_zone_1, row.speed_zone_1),
@@ -547,7 +564,7 @@ export async function fetchDailyReportData(date: string): Promise<DailyReportRow
 
   const { data } = await supabase
     .from('training_daily')
-    .select('player_id, duration_min, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, rpe, daily_training_load, players(name, jersey_number, position)')
+    .select('player_id, group_type, duration_min, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, rpe, daily_training_load, players(name, jersey_number, position)')
     .eq('training_date', date)
     .in('player_id', playerIds)
     .order('total_distance', { ascending: false });
@@ -556,6 +573,7 @@ export async function fetchDailyReportData(date: string): Promise<DailyReportRow
 
   return (data as R[]).map(row => ({
     player_id: row.player_id,
+    group_type: row.group_type ?? null,
     player_name: row.players?.name ?? '',
     jersey_number: row.players?.jersey_number,
     position: row.players?.position,

@@ -3,7 +3,7 @@ import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoo
 
 const GROUP_TYPES = ['U15', 'U14', 'U13', 'GK', 'RE'] as const;
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 40;
 
 type ColDef =
   | { key: keyof RawDataRow; label: string; computed?: undefined }
