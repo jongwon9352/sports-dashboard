@@ -13,6 +13,33 @@ const ACWR_COLORS = {
   acwr: '#A42843',
 };
 
+// ── EWMA ACWR 임계값 (Gabbett 2016; Hulin et al. 2016; Murray et al. 2017) ──
+const ACWR_THRESHOLDS = {
+  undertraining: 0.8,   // 미만: 과소훈련 (탈훈련 위험)
+  sweetSpotLow:  0.8,   // 최적 구간 하한
+  sweetSpotHigh: 1.3,   // 최적 구간 상한
+  caution:       1.3,   // 주의 구간 시작
+  danger:        1.5,   // 위험 구간 시작 (부상 위험 유의하게 증가)
+  highDanger:    2.0,   // 고위험 구간 (극도의 스파이크)
+};
+
+const ACWR_THRESHOLD_TABLE = [
+  { range: '< 0.8',     zone: '과소훈련', color: '#2563eb', basis: '탈훈련 위험, 체력 감소', ref: 'Gabbett 2016 (BJSM)' },
+  { range: '0.8 ~ 1.3', zone: '최적 (Sweet Spot)', color: '#16a34a', basis: '부상 위험 최소, 적응 최대', ref: 'Gabbett 2016; Hulin et al. 2016' },
+  { range: '1.3 ~ 1.5', zone: '주의', color: '#d97706', basis: '부상 위험 증가 시작', ref: 'Malone et al. 2017' },
+  { range: '> 1.5',     zone: '위험', color: '#dc2626', basis: '부상 위험 유의하게 증가 (odds ratio ~2)', ref: 'Hulin et al. 2014, 2016' },
+  { range: '> 2.0',     zone: '고위험', color: '#7f1d1d', basis: '급격한 부하 스파이크, 즉각 조정 필요', ref: 'Murray et al. 2017 (EWMA)' },
+];
+
+function getAcwrZone(val: number | null): ZoneType {
+  if (val === null) return 'safe';
+  if (val >= ACWR_THRESHOLDS.highDanger) return 'high-danger';
+  if (val >= ACWR_THRESHOLDS.danger) return 'danger';
+  if (val >= ACWR_THRESHOLDS.caution) return 'caution';
+  if (val < ACWR_THRESHOLDS.undertraining) return 'caution'; // 과소훈련도 주의
+  return 'safe';
+}
+
 // ── 지표별 Monotony 임계값 ─────────────────────────────────────────────
 interface Thresholds { caution: number; danger: number; highDanger: number; basis: string; }
 
@@ -106,24 +133,68 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
   const last28 = data.slice(-28);
   const chartWidth = last28.length * 48;
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [data]);
-  const yMax = Math.ceil(Math.max(...last28.map(d => Math.max(d.daily, d.acute, d.chronic)), 1) * 1.35);
+
+  // ACWR ratio 계산 (acute / chronic)
+  const chartData = last28.map(d => ({
+    ...d,
+    acwr: d.chronic > 0 ? +((d.acute / d.chronic).toFixed(2)) : null,
+  }));
+
+  const yMax = Math.ceil(Math.max(...chartData.map(d => Math.max(d.daily, d.acute, d.chronic)), 1) * 1.35);
   const fmt = (d: string) => { const dt = new Date(d); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
+
+  // 오늘 날짜 (데이터 기준 마지막 날)
+  const todayStr = chartData[chartData.length - 1]?.date ?? '';
+  // 최신 ACWR 값
+  const latestAcwr = [...chartData].reverse().find(d => d.acwr !== null)?.acwr ?? null;
+  const acwrZone = getAcwrZone(latestAcwr);
+
+  const nameMap: Record<string, string> = { daily: 'Daily', acute: 'Acute', chronic: 'Chronic', acwr: 'ACWR' };
+
   return (
     <div className="chart-card mb-4">
-      <div className="chart-title text-center">{title}</div>
+      <div className="flex items-center justify-center gap-2 mb-1">
+        <div className="chart-title !mb-0">{title}</div>
+        {latestAcwr !== null && (
+          <span className={`text-xs font-bold px-2 py-0.5 rounded ${ZONE_BADGE[acwrZone]}`}>
+            ACWR {latestAcwr} {ZONE_LABEL[acwrZone]}
+          </span>
+        )}
+      </div>
+      <div className="text-center text-xs text-text-secondary mb-1" style={{ fontSize: 10 }}>
+        Sweet Spot 0.8~1.3 · 주의 1.3 · 위험 1.5 · 고위험 2.0
+      </div>
       <div ref={scrollRef} className="overflow-x-auto">
         <div style={{ width: chartWidth }}>
           <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={last28} margin={{ top: 40, right: 20, bottom: 20, left: 10 }}>
+            <ComposedChart data={chartData} margin={{ top: 28, right: 56, bottom: 20, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fontFamily: 'DM Mono', fill: ACWR_COLORS.acwr }} domain={[0, 2.6]} width={36} tickCount={7} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <Tooltip formatter={(v: any, name: any) => { const l: Record<string, string> = { daily: 'Daily', acute: 'Acute', chronic: 'Chronic' }; return [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, l[name] ?? name]; }} labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Area type="monotone" dataKey="chronic" name="Chronic" fill={ACWR_COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
-              <Area type="monotone" dataKey="acute" name="Acute" fill={ACWR_COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
-              <Bar dataKey="daily" name="Daily" fill={ACWR_COLORS.daily} barSize={16} shape={<DailyAcwrBarShape />} />
+              <Tooltip formatter={(v: any, name: any) => {
+                if (name === 'acwr') return [v != null ? v : '-', 'ACWR'];
+                return [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, nameMap[name] ?? name];
+              }} labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} formatter={(val) => nameMap[val] ?? val} />
+              {/* 오늘 기준선 */}
+              <ReferenceLine yAxisId="left" x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
+                label={{ value: '오늘', position: 'insideTopLeft', fontSize: 9, fill: '#374151' }} />
+              {/* ACWR 임계값 기준선 (보조 Y축) */}
+              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.highDanger} stroke="#7f1d1d" strokeDasharray="4 2" strokeWidth={1.5}
+                label={{ value: '2.0 고위험', position: 'insideTopRight', fontSize: 9, fill: '#7f1d1d' }} />
+              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.danger} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1.5}
+                label={{ value: '1.5 위험', position: 'insideTopRight', fontSize: 9, fill: '#dc2626' }} />
+              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.caution} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1.5}
+                label={{ value: '1.3 주의', position: 'insideTopRight', fontSize: 9, fill: '#d97706' }} />
+              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.sweetSpotLow} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1}
+                label={{ value: '0.8 최저', position: 'insideBottomRight', fontSize: 9, fill: '#16a34a' }} />
+              <Area yAxisId="left" type="monotone" dataKey="chronic" name="chronic" fill={ACWR_COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
+              <Area yAxisId="left" type="monotone" dataKey="acute" name="acute" fill={ACWR_COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
+              <Bar yAxisId="left" dataKey="daily" name="daily" fill={ACWR_COLORS.daily} barSize={16} shape={<DailyAcwrBarShape />} />
+              <Line yAxisId="right" type="monotone" dataKey="acwr" name="acwr" stroke={ACWR_COLORS.acwr} strokeWidth={2}
+                dot={{ r: 2, fill: ACWR_COLORS.acwr }} activeDot={{ r: 5 }} connectNulls={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -479,7 +550,38 @@ export function TeamDashboard() {
       {/* ── ACWR 탭 ── */}
       {tab === 'acwr' && (
         <>
-          <p className="text-xs text-text-secondary mb-4">3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주</p>
+          <p className="text-xs text-text-secondary mb-2">3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주 · 오른쪽 Y축 = ACWR 비율</p>
+          {/* ACWR 임계값 기준표 토글 */}
+          <button
+            onClick={() => setShowThreshold(v => !v)}
+            className="text-xs text-text-secondary border border-surface-secondary rounded px-3 py-1 mb-4 hover:bg-surface-secondary transition-colors"
+          >
+            {showThreshold ? '▲' : '▼'} EWMA ACWR 임계값 기준 보기
+          </button>
+          {showThreshold && (
+            <div className="chart-card mb-4 overflow-x-auto">
+              <table className="w-full text-xs" style={{ fontFamily: 'DM Mono' }}>
+                <thead>
+                  <tr className="border-b border-surface-secondary">
+                    <th className="py-1.5 px-3 text-left font-semibold">ACWR 범위</th>
+                    <th className="py-1.5 px-3 text-left font-semibold">구간</th>
+                    <th className="py-1.5 px-3 text-left font-semibold">의미</th>
+                    <th className="py-1.5 px-3 text-left font-semibold">참고문헌</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ACWR_THRESHOLD_TABLE.map(row => (
+                    <tr key={row.range} className="border-b border-surface-secondary last:border-0">
+                      <td className="py-1.5 px-3 font-bold" style={{ color: row.color }}>{row.range}</td>
+                      <td className="py-1.5 px-3 font-semibold" style={{ color: row.color }}>{row.zone}</td>
+                      <td className="py-1.5 px-3 text-text-secondary">{row.basis}</td>
+                      <td className="py-1.5 px-3 text-text-secondary">{row.ref}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {loading ? <div className="text-text-secondary text-center py-16">Loading...</div>
             : data ? (
               <div className="space-y-2">
