@@ -257,14 +257,25 @@ export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: strin
   const playerMap = await getOrCreatePlayers(validRows);
   const now = new Date().toISOString();
 
+  const allPlayerIds = [...new Set([...playerMap.values()])] as string[];
+  const { data: playerMeta } = await client
+    .from('players')
+    .select('id, grade, position')
+    .in('id', allPlayerIds);
+  const metaMap = new Map((playerMeta ?? []).map((p: any) => [p.id as string, p as { grade: string; position: string }]));
+
   const matchRows = validRows.map(row => {
     const playerId = playerMap.get(normalizeName(row.player_name));
+    const meta = playerId ? metaMap.get(playerId) : undefined;
+    const playerGroup = meta?.grade ? (GRADE_TO_GROUP[meta.grade] ?? null) : null;
     return {
       id: crypto.randomUUID(),
       player_id: playerId,
       match_date: date,
       opponent,
       event_type,
+      player_group: playerGroup,
+      position_played: meta?.position ?? null,
       play_time_min: row.duration_min,
       rpe: row.rpe,
       total_distance: row.total_distance,
