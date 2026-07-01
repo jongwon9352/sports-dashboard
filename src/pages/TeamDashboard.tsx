@@ -118,12 +118,10 @@ function DailyAcwrBarShape(props: any) {
   const { x, y, width, height, payload } = props;
   if (!width) return null;
   const daily = payload?.daily ?? 0;
-  const acwr = payload?.acwr ?? 0;
   return (
     <g>
       <rect x={x} y={y} width={width} height={height || 0} fill={ACWR_COLORS.daily} rx={2} ry={2} />
-      {daily > 0 && <text x={x + width / 2} y={y - 18} textAnchor="middle" fontSize={10} fontFamily="DM Mono" fill="#555">{Math.round(daily).toLocaleString()}</text>}
-      {acwr > 0 && <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontFamily="DM Mono" fontWeight="700" fill={ACWR_COLORS.acwr}>{acwr.toFixed(2)}</text>}
+      {daily > 0 && <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontFamily="DM Mono" fill="#555">{Math.round(daily).toLocaleString()}</text>}
     </g>
   );
 }
@@ -134,7 +132,6 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
   const chartWidth = last28.length * 48;
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [data]);
 
-  // ACWR ratio 계산 (acute / chronic)
   const chartData = last28.map(d => ({
     ...d,
     acwr: d.chronic > 0 ? +((d.acute / d.chronic).toFixed(2)) : null,
@@ -142,54 +139,38 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
 
   const yMax = Math.ceil(Math.max(...chartData.map(d => Math.max(d.daily, d.acute, d.chronic)), 1) * 1.35);
   const fmt = (d: string) => { const dt = new Date(d); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
-
-  // 오늘 날짜 (데이터 기준 마지막 날)
   const todayStr = chartData[chartData.length - 1]?.date ?? '';
-  // 최신 ACWR 값
-  const latestAcwr = [...chartData].reverse().find(d => d.acwr !== null)?.acwr ?? null;
-  const acwrZone = getAcwrZone(latestAcwr);
-
   const nameMap: Record<string, string> = { daily: 'Daily', acute: 'Acute', chronic: 'Chronic', acwr: 'ACWR' };
 
   return (
     <div className="chart-card mb-4">
-      <div className="flex items-center justify-center gap-2 mb-1">
-        <div className="chart-title !mb-0">{title}</div>
-        {latestAcwr !== null && (
-          <span className={`text-xs font-bold px-2 py-0.5 rounded ${ZONE_BADGE[acwrZone]}`}>
-            ACWR {latestAcwr} {ZONE_LABEL[acwrZone]}
-          </span>
-        )}
-      </div>
-      <div className="text-center text-xs text-text-secondary mb-1" style={{ fontSize: 10 }}>
-        Sweet Spot 0.8~1.3 · 주의 1.3 · 위험 1.5 · 고위험 2.0
-      </div>
+      <div className="chart-title text-center">{title}</div>
       <div ref={scrollRef} className="overflow-x-auto">
         <div style={{ width: chartWidth }}>
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={chartData} margin={{ top: 28, right: 56, bottom: 20, left: 10 }}>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={chartData} margin={{ top: 20, right: 48, bottom: 20, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 10 }} interval={0} />
               <YAxis yAxisId="left" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fontFamily: 'DM Mono', fill: ACWR_COLORS.acwr }} domain={[0, 2.6]} width={36} tickCount={7} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fontFamily: 'DM Mono', fill: ACWR_COLORS.acwr }} domain={[0, 2.6]} width={36} tickCount={6} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Tooltip formatter={(v: any, name: any) => {
                 if (name === 'acwr') return [v != null ? v : '-', 'ACWR'];
                 return [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, nameMap[name] ?? name];
               }} labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} formatter={(val) => nameMap[val] ?? val} />
-              {/* 오늘 기준선 */}
+              {/* 오늘 기준 수직선 */}
               <ReferenceLine yAxisId="left" x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
                 label={{ value: '오늘', position: 'insideTopLeft', fontSize: 9, fill: '#374151' }} />
-              {/* ACWR 임계값 기준선 (보조 Y축) */}
-              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.highDanger} stroke="#7f1d1d" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: '2.0 고위험', position: 'insideTopRight', fontSize: 9, fill: '#7f1d1d' }} />
-              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.danger} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: '1.5 위험', position: 'insideTopRight', fontSize: 9, fill: '#dc2626' }} />
-              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.caution} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: '1.3 주의', position: 'insideTopRight', fontSize: 9, fill: '#d97706' }} />
-              <ReferenceLine yAxisId="right" y={ACWR_THRESHOLDS.sweetSpotLow} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1}
-                label={{ value: '0.8 최저', position: 'insideBottomRight', fontSize: 9, fill: '#16a34a' }} />
+              {/* ACWR 임계값 수평선 — 오른쪽 Y축 기준, 라벨은 왼쪽에 */}
+              <ReferenceLine yAxisId="right" y={2.0} stroke="#7f1d1d" strokeDasharray="4 2" strokeWidth={1.5}
+                label={{ value: '2.0', position: 'insideLeft', fontSize: 8, fill: '#7f1d1d' }} />
+              <ReferenceLine yAxisId="right" y={1.5} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1.5}
+                label={{ value: '1.5', position: 'insideLeft', fontSize: 8, fill: '#dc2626' }} />
+              <ReferenceLine yAxisId="right" y={1.3} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1}
+                label={{ value: '1.3', position: 'insideLeft', fontSize: 8, fill: '#d97706' }} />
+              <ReferenceLine yAxisId="right" y={0.8} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1}
+                label={{ value: '0.8', position: 'insideLeft', fontSize: 8, fill: '#16a34a' }} />
               <Area yAxisId="left" type="monotone" dataKey="chronic" name="chronic" fill={ACWR_COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
               <Area yAxisId="left" type="monotone" dataKey="acute" name="acute" fill={ACWR_COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
               <Bar yAxisId="left" dataKey="daily" name="daily" fill={ACWR_COLORS.daily} barSize={16} shape={<DailyAcwrBarShape />} />
@@ -484,6 +465,7 @@ export function TeamDashboard() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'acwr' | 'monotony'>('acwr');
   const [showThreshold, setShowThreshold] = useState(false);
+  const [showAcwrThreshold, setShowAcwrThreshold] = useState(false);
 
   useEffect(() => {
     fetchTeamAcwrData(60).then(d => { setData(d); setLoading(false); });
@@ -526,6 +508,28 @@ export function TeamDashboard() {
     ].filter(i => i.val !== null) as { label: string; val: number; zone: ZoneType; t: Thresholds }[];
   }, [latestMonotony]);
 
+  // 최신 ACWR 값 (각 지표 마지막 acute/chronic)
+  const latestAcwr = useMemo(() => {
+    if (!data) return null;
+    const calc = (s: TeamAcwrSeries[]) => {
+      const last = [...s].reverse().find(d => d.chronic > 0);
+      return last ? +((last.acute / last.chronic).toFixed(2)) : null;
+    };
+    return { tl: calc(data.tl), td: calc(data.td), hsr: calc(data.hsr), sprint: calc(data.sprint), acd: calc(data.acd) };
+  }, [data]);
+
+  // ACWR Insight 아이템
+  const acwrInsightItems = useMemo(() => {
+    if (!latestAcwr) return [];
+    return [
+      { label: 'TL',     val: latestAcwr.tl },
+      { label: 'TD',     val: latestAcwr.td },
+      { label: 'HSR',    val: latestAcwr.hsr },
+      { label: 'Sprint', val: latestAcwr.sprint },
+      { label: 'ACD',    val: latestAcwr.acd },
+    ].filter(i => i.val !== null) as { label: string; val: number }[];
+  }, [latestAcwr]);
+
   // Strain 데이터
   const weeklyStrain = useMemo(() => data ? computeWeeklyStrain(data.tl) : [], [data]);
   const strainMetrics = useMemo(() => {
@@ -550,47 +554,104 @@ export function TeamDashboard() {
       {/* ── ACWR 탭 ── */}
       {tab === 'acwr' && (
         <>
-          <p className="text-xs text-text-secondary mb-2">3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주 · 오른쪽 Y축 = ACWR 비율</p>
-          {/* ACWR 임계값 기준표 토글 */}
-          <button
-            onClick={() => setShowThreshold(v => !v)}
-            className="text-xs text-text-secondary border border-surface-secondary rounded px-3 py-1 mb-4 hover:bg-surface-secondary transition-colors"
-          >
-            {showThreshold ? '▲' : '▼'} EWMA ACWR 임계값 기준 보기
-          </button>
-          {showThreshold && (
-            <div className="chart-card mb-4 overflow-x-auto">
-              <table className="w-full text-xs" style={{ fontFamily: 'DM Mono' }}>
-                <thead>
-                  <tr className="border-b border-surface-secondary">
-                    <th className="py-1.5 px-3 text-left font-semibold">ACWR 범위</th>
-                    <th className="py-1.5 px-3 text-left font-semibold">구간</th>
-                    <th className="py-1.5 px-3 text-left font-semibold">의미</th>
-                    <th className="py-1.5 px-3 text-left font-semibold">참고문헌</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ACWR_THRESHOLD_TABLE.map(row => (
-                    <tr key={row.range} className="border-b border-surface-secondary last:border-0">
-                      <td className="py-1.5 px-3 font-bold" style={{ color: row.color }}>{row.range}</td>
-                      <td className="py-1.5 px-3 font-semibold" style={{ color: row.color }}>{row.zone}</td>
-                      <td className="py-1.5 px-3 text-text-secondary">{row.basis}</td>
-                      <td className="py-1.5 px-3 text-text-secondary">{row.ref}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <p className="text-xs text-text-secondary mb-3">3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주 · 우측 Y축 = ACWR 비율 (와인색 선)</p>
+
           {loading ? <div className="text-text-secondary text-center py-16">Loading...</div>
-            : data ? (
-              <div className="space-y-2">
-                <AcwrComboChart title="TL / ACWR" data={data.tl} />
-                <AcwrComboChart title="TD / ACWR" data={data.td} unit=" m" />
-                <AcwrComboChart title="HSR / ACWR" data={data.hsr} unit=" m" />
-                <AcwrComboChart title="Sprint / ACWR" data={data.sprint} unit=" m" />
-                <AcwrComboChart title="ACD LOAD / ACWR" data={data.acd} />
-              </div>
+            : (data && latestAcwr) ? (
+              <>
+                {/* 인사이트 박스 */}
+                {(() => {
+                  const danger = acwrInsightItems.filter(i => getAcwrZone(i.val) === 'danger' || getAcwrZone(i.val) === 'high-danger');
+                  const caution = acwrInsightItems.filter(i => getAcwrZone(i.val) === 'caution');
+                  if (danger.length === 0 && caution.length === 0) return null;
+                  return (
+                    <div className="mb-4 rounded-lg border p-4" style={{ borderColor: danger.length > 0 ? '#fca5a5' : '#fde68a', background: danger.length > 0 ? '#fff1f2' : '#fffbeb' }}>
+                      <div className="font-semibold text-sm mb-2" style={{ color: danger.length > 0 ? '#dc2626' : '#d97706' }}>
+                        {danger.length > 0 ? '⚠️ 주의 필요 (오늘 기준)' : '💡 모니터링 필요 (오늘 기준)'}
+                      </div>
+                      <ul className="text-xs space-y-1">
+                        {danger.map(i => (
+                          <li key={i.label} style={{ color: '#991b1b' }}>
+                            <strong>{i.label} ACWR {i.val}</strong> — {getAcwrZone(i.val) === 'high-danger' ? '고위험 구간 (기준 >2.0). 즉각 부하 조정 필요' : '위험 구간 (기준 >1.5). 부상 위험 유의하게 증가'}
+                          </li>
+                        ))}
+                        {caution.map(i => (
+                          <li key={i.label} style={{ color: '#92400e' }}>
+                            {i.val < ACWR_THRESHOLDS.undertraining
+                              ? `${i.label} ACWR ${i.val} — 과소훈련 구간 (기준 <0.8). 체력 저하 위험`
+                              : `${i.label} ACWR ${i.val} — 주의 구간 (기준 1.3~1.5). 부하 모니터링 강화`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
+
+                {/* 현황 카드 */}
+                <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">오늘 기준 ACWR 현황</div>
+                <div className="grid grid-cols-5 gap-3 mb-4">
+                  {[
+                    { label: 'TL',     val: latestAcwr.tl },
+                    { label: 'TD',     val: latestAcwr.td },
+                    { label: 'HSR',    val: latestAcwr.hsr },
+                    { label: 'Sprint', val: latestAcwr.sprint },
+                    { label: 'ACD',    val: latestAcwr.acd },
+                  ].map(({ label, val }) => {
+                    const zone = getAcwrZone(val);
+                    return (
+                      <div key={label} className="chart-card !p-4">
+                        <div className="text-text-secondary mb-1" style={{ fontSize: 10 }}>{label} ACWR</div>
+                        <div className="text-2xl font-bold mb-1" style={{ fontFamily: 'DM Mono', color: ZONE_COLOR[zone] }}>
+                          {val ?? '-'}
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${ZONE_BADGE[zone]}`}>{ZONE_LABEL[zone]}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 임계값 기준표 토글 */}
+                <button
+                  onClick={() => setShowAcwrThreshold(v => !v)}
+                  className="text-xs text-text-secondary border border-surface-secondary rounded px-3 py-1 mb-4 hover:bg-surface-secondary transition-colors"
+                >
+                  {showAcwrThreshold ? '▲' : '▼'} EWMA ACWR 임계값 기준 보기
+                </button>
+                {showAcwrThreshold && (
+                  <div className="chart-card mb-4 overflow-x-auto">
+                    <table className="w-full text-xs" style={{ fontFamily: 'DM Mono' }}>
+                      <thead>
+                        <tr className="border-b border-surface-secondary">
+                          <th className="py-1.5 px-3 text-left font-semibold">ACWR 범위</th>
+                          <th className="py-1.5 px-3 text-left font-semibold">구간</th>
+                          <th className="py-1.5 px-3 text-left font-semibold">의미</th>
+                          <th className="py-1.5 px-3 text-left font-semibold">참고문헌</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ACWR_THRESHOLD_TABLE.map(row => (
+                          <tr key={row.range} className="border-b border-surface-secondary last:border-0">
+                            <td className="py-1.5 px-3 font-bold" style={{ color: row.color }}>{row.range}</td>
+                            <td className="py-1.5 px-3 font-semibold" style={{ color: row.color }}>{row.zone}</td>
+                            <td className="py-1.5 px-3 text-text-secondary">{row.basis}</td>
+                            <td className="py-1.5 px-3 text-text-secondary">{row.ref}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 차트 */}
+                <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">일별 ACWR 흐름</div>
+                <div className="space-y-2">
+                  <AcwrComboChart title="TL / ACWR" data={data.tl} />
+                  <AcwrComboChart title="TD / ACWR" data={data.td} unit=" m" />
+                  <AcwrComboChart title="HSR / ACWR" data={data.hsr} unit=" m" />
+                  <AcwrComboChart title="Sprint / ACWR" data={data.sprint} unit=" m" />
+                  <AcwrComboChart title="ACD LOAD / ACWR" data={data.acd} />
+                </div>
+              </>
             ) : <div className="text-text-secondary text-center py-16">데이터가 없습니다.</div>}
         </>
       )}
