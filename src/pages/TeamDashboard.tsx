@@ -192,7 +192,10 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
                 label={{ value: '0.8 최저', position: 'insideBottomRight', fontSize: 8, fill: '#2563eb' }} />
               <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3" />
               <Line type="monotone" dataKey="acwr" stroke={ACWR_COLORS.acwr} strokeWidth={2.5}
-                dot={<AcwrDot />} activeDot={{ r: 5 }} connectNulls={false} />
+                dot={<AcwrDot />} activeDot={{ r: 5 }} connectNulls={false}
+                label={({ x, y, value }: any) => value != null
+                  ? <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontFamily="DM Mono" fontWeight="700" fill={ACWR_COLORS.acwr}>{value}</text>
+                  : null} />
             </LineChart>
           </ResponsiveContainer>
 
