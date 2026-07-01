@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ComposedChart, Line, BarChart,
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend,
 } from 'recharts';
 import { fetchMatchData, type MatchRow } from '../lib/api';
 
@@ -114,6 +115,150 @@ function XTick({ x, y, payload }: any) {
         </text>
       )}
     </g>
+  );
+}
+
+// ── 포지션 벤치마크 상수 & 계산 ───────────────────────────────────────────
+const POSITIONS = ['CB', 'FB', 'MF', 'WF', 'CF'] as const;
+type Pos = typeof POSITIONS[number];
+
+const BENCH_METRICS = [
+  { key: 'td',      label: 'TD',       unit: 'm'  },
+  { key: 'hsr',     label: 'HSR',      unit: 'm'  },
+  { key: 'sprint',  label: 'Sprint',   unit: 'm'  },
+  { key: 'action',  label: 'Action',   unit: ''   },
+  { key: 'acdLoad', label: 'ACD Load', unit: ''   },
+] as const;
+
+type BenchKey = 'td' | 'hsr' | 'sprint' | 'action' | 'acdLoad';
+
+interface PosMetrics { td: number; hsr: number; sprint: number; action: number; acdLoad: number; }
+interface PosStats {
+  cumAvg: PosMetrics;
+  lastMatch: PosMetrics | null;
+  lastLabel: string;
+  count: number;
+}
+
+const POS_COLORS: Record<Pos, string> = {
+  CB: '#3b82f6', FB: '#22c55e', MF: '#f97316', WF: '#ef4444', CF: '#a855f7',
+};
+
+function toMetrics(rs: MatchRow[]): PosMetrics {
+  return {
+    td:      round1(avg(rs.map(r => norm(r.total_distance, r.play_time_min)))),
+    hsr:     round1(avg(rs.map(r => norm(r.hsr_distance, r.play_time_min)))),
+    sprint:  round1(avg(rs.map(r => norm(r.sprint_distance, r.play_time_min)))),
+    action:  round1(avg(rs.map(r => norm(r.action_count, r.play_time_min)))),
+    acdLoad: round1(avg(rs.map(r => norm(r.acd_load, r.play_time_min)))),
+  };
+}
+
+function computePosStats(rows: MatchRow[]): Map<Pos, PosStats> {
+  const dates = [...new Set(rows.map(r => r.match_date))].sort();
+  const lastDate = dates[dates.length - 1];
+  const result = new Map<Pos, PosStats>();
+  for (const pos of POSITIONS) {
+    const posRows = rows.filter(r => r.position_played === pos);
+    const lastRows = posRows.filter(r => r.match_date === lastDate);
+    const lastOpp = lastRows[0]?.opponent ?? '미정';
+    const dt = lastDate ? new Date(lastDate) : null;
+    result.set(pos, {
+      cumAvg:    posRows.length ? toMetrics(posRows) : { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 },
+      lastMatch: lastRows.length ? toMetrics(lastRows) : null,
+      lastLabel: dt ? `${lastOpp} (${dt.getMonth()+1}/${dt.getDate()})` : '',
+      count:     [...new Set(posRows.map(r => r.match_date))].length,
+    });
+  }
+  return result;
+}
+
+// ── 포지션 레이더 카드 ─────────────────────────────────────────────────────
+function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxVals: PosMetrics }) {
+  const radarData = BENCH_METRICS.map(m => {
+    const key = m.key as BenchKey;
+    const scale = maxVals[key] > 0 ? maxVals[key] : 1;
+    return {
+      metric: m.label,
+      누적평균: Math.round((stats.cumAvg[key] / scale) * 100),
+      최근경기: stats.lastMatch ? Math.round((stats.lastMatch[key] / scale) * 100) : null,
+    };
+  });
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-col">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-base font-bold" style={{ color: POS_COLORS[pos] }}>{pos}</span>
+        <span className="text-[10px] text-gray-400">{stats.count}경기</span>
+      </div>
+      {stats.lastLabel && (
+        <p className="text-[10px] text-gray-400 mb-2 truncate">최근: {stats.lastLabel}</p>
+      )}
+      <div className="flex justify-center">
+        <RadarChart width={180} height={160} data={radarData} margin={{ top: 4, right: 16, bottom: 4, left: 16 }}>
+          <PolarGrid />
+          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9 }} />
+          <Radar dataKey="누적평균" stroke={POS_COLORS[pos]} fill={POS_COLORS[pos]} fillOpacity={0.35} name="누적 평균" />
+          {stats.lastMatch && (
+            <Radar dataKey="최근경기" stroke="#374151" fill="#374151" fillOpacity={0.08} strokeDasharray="4 2" name="최근 경기" />
+          )}
+        </RadarChart>
+      </div>
+      {/* 수치 테이블 */}
+      <div className="mt-2 space-y-1">
+        {BENCH_METRICS.map(m => {
+          const key = m.key as BenchKey;
+          const cum = stats.cumAvg[key];
+          const last = stats.lastMatch?.[key] ?? null;
+          const diff = last != null ? round1(last - cum) : null;
+          return (
+            <div key={key} className="flex items-center text-[10px] gap-1">
+              <span className="text-gray-400 w-10 shrink-0">{m.label}</span>
+              <span className="font-semibold text-gray-700 w-14 text-right">{cum.toLocaleString()}</span>
+              {diff != null && (
+                <span className={`w-12 text-right font-medium ${diff >= 0 ? 'text-green-500' : 'text-red-400'}`}>
+                  {diff >= 0 ? '+' : ''}{diff}
+                </span>
+              )}
+            </div>
+          );
+        })}
+        <div className="text-[9px] text-gray-300 mt-1">누적평균 | 최근경기 차이</div>
+      </div>
+    </div>
+  );
+}
+
+// ── 전체 포지션 비교 레이더 ────────────────────────────────────────────────
+function OverallRadarChart({ posStats, maxVals }: { posStats: Map<Pos, PosStats>; maxVals: PosMetrics }) {
+  const data = BENCH_METRICS.map(m => {
+    const key = m.key as BenchKey;
+    const scale = maxVals[key] > 0 ? maxVals[key] : 1;
+    const entry: Record<string, any> = { metric: m.label };
+    for (const pos of POSITIONS) {
+      const s = posStats.get(pos);
+      entry[pos] = s ? Math.round((s.cumAvg[key] / scale) * 100) : 0;
+    }
+    return entry;
+  });
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <h4 className="text-sm font-bold text-gray-700 mb-0.5">전체 포지션 누적 평균 비교</h4>
+      <p className="text-[11px] text-gray-400 mb-3">각 지표 최대값 대비 % · 포지션별 GPS 기준 프로파일</p>
+      <div className="flex justify-center">
+        <RadarChart width={480} height={360} data={data}>
+          <PolarGrid />
+          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 12 }} />
+          <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} tickCount={4} />
+          {POSITIONS.map(pos => (
+            <Radar key={pos} name={pos} dataKey={pos} stroke={POS_COLORS[pos]} fill={POS_COLORS[pos]} fillOpacity={0.12} strokeWidth={2} />
+          ))}
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Tooltip formatter={((v: any, name: any) => [`${v}%`, name]) as any} />
+        </RadarChart>
+      </div>
+    </div>
   );
 }
 
@@ -249,6 +394,17 @@ export default function MatchTab() {
   const matchData  = useMemo(() => aggregateByMatch(filtered), [filtered]);
   const playerData = useMemo(() => aggregateByPlayer(filtered), [filtered]);
 
+  const posStats = useMemo(() => computePosStats(filtered), [filtered]);
+  const maxVals  = useMemo((): PosMetrics => {
+    const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
+    for (const s of posStats.values()) {
+      for (const key of Object.keys(m) as BenchKey[]) {
+        if (s.cumAvg[key] > m[key]) m[key] = s.cumAvg[key];
+      }
+    }
+    return m;
+  }, [posStats]);
+
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-400">로딩 중...</div>;
   }
@@ -340,6 +496,30 @@ export default function MatchTab() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ── 포지션별 누적 비교 ── */}
+      <div className="space-y-3">
+        <div className="border-l-4 border-blue-500 pl-3">
+          <h3 className="text-sm font-bold text-gray-700">포지션별 누적 비교 데이터</h3>
+          <p className="text-[11px] text-gray-400">풀 타임 {FULL_TIME}분 기준 · 레이더 수치 = 포지션 최대값 대비 % · 점선 = 최근 경기</p>
+        </div>
+
+        {/* 5 포지션 카드 */}
+        <div className="grid grid-cols-5 gap-3">
+          {POSITIONS.map(pos => {
+            const stats = posStats.get(pos);
+            if (!stats || stats.count === 0) return (
+              <div key={pos} className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex items-center justify-center">
+                <span className="text-xs text-gray-400">{pos} 데이터 없음</span>
+              </div>
+            );
+            return <PosRadarCard key={pos} pos={pos} stats={stats} maxVals={maxVals} />;
+          })}
+        </div>
+
+        {/* 전체 비교 레이더 */}
+        <OverallRadarChart posStats={posStats} maxVals={maxVals} />
       </div>
     </div>
   );
