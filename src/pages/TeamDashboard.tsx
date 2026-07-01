@@ -78,7 +78,9 @@ function computeWeeklyStrain(series: TeamAcwrSeries[]) {
     const monotony = sd > 0 ? mean / sd : 0;
     const strain = Math.round(sum * monotony);
     const d = new Date(week);
-    const label = `${d.getMonth() + 1}/${d.getDate()}W`;
+    const sun = new Date(d);
+    sun.setDate(d.getDate() + 6);
+    const label = `${d.getMonth() + 1}/${d.getDate()}~${sun.getMonth() + 1}/${sun.getDate()}`;
     return { week, label, strain, monotony: +monotony.toFixed(2), sum: Math.round(sum) };
   });
 }
