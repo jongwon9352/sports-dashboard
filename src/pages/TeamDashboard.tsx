@@ -4,6 +4,7 @@ import {
   LineChart, Line, ReferenceLine, ReferenceArea,
 } from 'recharts';
 import { fetchTeamAcwrData, type TeamAcwrSeries } from '../lib/api';
+import MatchTab from './MatchTab';
 
 // ── 공통 상수 ──────────────────────────────────────────────────────────
 const METRIC_KEYS = [
@@ -485,7 +486,7 @@ export function TeamDashboard() {
   const [data, setData] = useState<MetricData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState<'acwr' | 'monotony'>('acwr');
+  const [tab, setTab] = useState<'acwr' | 'monotony' | 'match'>('acwr');
   const [showThreshold, setShowThreshold] = useState(false);
   const [showAcwrThreshold, setShowAcwrThreshold] = useState(false);
 
@@ -538,7 +539,7 @@ export function TeamDashboard() {
     ? METRIC_KEYS.map(({ key, label, unit }) => ({ key, label, monotony: monotonyState.series[key as keyof typeof monotonyState.series], unit }))
     : [], [monotonyState]);
 
-  const tabBtn = (id: 'acwr' | 'monotony', label: string) => (
+  const tabBtn = (id: 'acwr' | 'monotony' | 'match', label: string) => (
     <button onClick={() => setTab(id)}
       className={`px-3 py-1.5 text-sm rounded border transition-colors ${tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'}`}>
       {label}
@@ -557,6 +558,7 @@ export function TeamDashboard() {
         <div className="sec-title !mb-0">팀 대시보드</div>
         {tabBtn('acwr', 'ACWR')}
         {tabBtn('monotony', 'MONOTONY')}
+        {tabBtn('match', 'MATCH')}
       </div>
 
       {/* ── ACWR 탭 ── */}
@@ -623,6 +625,9 @@ export function TeamDashboard() {
           ) : null)}
         </>
       )}
+
+      {/* ── MATCH 탭 ── */}
+      {tab === 'match' && <MatchTab />}
     </div>
   );
 }

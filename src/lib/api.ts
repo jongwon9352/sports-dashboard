@@ -801,6 +801,51 @@ async function getOpponentByDate(date: string): Promise<string> {
   return (data as R[])?.[0]?.opponent as string ?? '';
 }
 
+export interface MatchRow {
+  match_date: string;
+  opponent: string;
+  event_type: string;
+  player_group: string | null;
+  position_played: string | null;
+  play_time_min: number;
+  total_distance: number;
+  m_per_min: number;
+  hsr_distance: number;
+  sprint_distance: number;
+  acc_count: number;
+  dec_count: number;
+  acd_load: number;
+  max_speed: number;
+  action_count: number;
+  player_name: string;
+}
+
+export async function fetchMatchData(): Promise<MatchRow[]> {
+  const client = requireSupabase();
+  const { data } = await client
+    .from('match_data')
+    .select('match_date, opponent, event_type, player_group, position_played, play_time_min, total_distance, m_per_min, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, action_count, players(name)')
+    .order('match_date', { ascending: true });
+  return ((data ?? []) as R[]).map(row => ({
+    match_date: row.match_date as string,
+    opponent: row.opponent as string,
+    event_type: row.event_type as string,
+    player_group: row.player_group as string | null,
+    position_played: row.position_played as string | null,
+    play_time_min: Number(row.play_time_min) || 0,
+    total_distance: Number(row.total_distance) || 0,
+    m_per_min: Number(row.m_per_min) || 0,
+    hsr_distance: Number(row.hsr_distance) || 0,
+    sprint_distance: Number(row.sprint_distance) || 0,
+    acc_count: Number(row.acc_count) || 0,
+    dec_count: Number(row.dec_count) || 0,
+    acd_load: Number(row.acd_load) || 0,
+    max_speed: Number(row.max_speed) || 0,
+    action_count: Number(row.action_count) || 0,
+    player_name: ((row.players as R)?.name as string) ?? '',
+  }));
+}
+
 export async function fetchDataSummary() {
   const client = requireSupabase();
   const { data: daily } = await client
