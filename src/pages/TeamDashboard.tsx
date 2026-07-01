@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import {
-  ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  LineChart, Line, ReferenceLine,
+  ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  LineChart, Line, ReferenceLine, ReferenceArea,
 } from 'recharts';
 import { fetchTeamAcwrData, type TeamAcwrSeries } from '../lib/api';
 
@@ -112,24 +112,11 @@ function computeWeeklyStrain(series: TeamAcwrSeries[]) {
   });
 }
 
-// ── ACWR 차트 ──────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function DailyAcwrBarShape(props: any) {
-  const { x, y, width, height, payload } = props;
-  if (!width) return null;
-  const daily = payload?.daily ?? 0;
-  return (
-    <g>
-      <rect x={x} y={y} width={width} height={height || 0} fill={ACWR_COLORS.daily} rx={2} ry={2} />
-      {daily > 0 && <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontFamily="DM Mono" fill="#555">{Math.round(daily).toLocaleString()}</text>}
-    </g>
-  );
-}
-
+// ── ACWR 차트 (상하 2패널) ─────────────────────────────────────────────
 function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSeries[]; unit?: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const last28 = data.slice(-28);
-  const chartWidth = last28.length * 48;
+  const chartWidth = Math.max(last28.length * 48, 600);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [data]);
 
   const chartData = last28.map(d => ({
@@ -137,47 +124,78 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
     acwr: d.chronic > 0 ? +((d.acute / d.chronic).toFixed(2)) : null,
   }));
 
-  const yMax = Math.ceil(Math.max(...chartData.map(d => Math.max(d.daily, d.acute, d.chronic)), 1) * 1.35);
+  const yMax = Math.ceil(Math.max(...chartData.map(d => Math.max(d.daily, d.acute, d.chronic)), 1) * 1.2);
   const fmt = (d: string) => { const dt = new Date(d); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
   const todayStr = chartData[chartData.length - 1]?.date ?? '';
-  const nameMap: Record<string, string> = { daily: 'Daily', acute: 'Acute', chronic: 'Chronic', acwr: 'ACWR' };
+  const margin = { top: 12, right: 20, bottom: 0, left: 54 };
+  const marginBottom = { top: 4, right: 20, bottom: 24, left: 54 };
+
+  // ACWR zone별 커스텀 dot
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const AcwrDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    const v = payload?.acwr;
+    if (v == null || !cx || !cy) return null;
+    const color = v >= 2.0 ? '#7f1d1d' : v >= 1.5 ? '#dc2626' : v >= 1.3 ? '#d97706' : v < 0.8 ? '#2563eb' : '#16a34a';
+    return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />;
+  };
 
   return (
     <div className="chart-card mb-4">
-      <div className="chart-title text-center">{title}</div>
+      <div className="chart-title text-center mb-0">{title}</div>
+
       <div ref={scrollRef} className="overflow-x-auto">
         <div style={{ width: chartWidth }}>
-          <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={chartData} margin={{ top: 20, right: 48, bottom: 20, left: 10 }}>
+
+          {/* 상단: Daily 바 + Acute/Chronic EWMA 라인 */}
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={chartData} margin={margin}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 10 }} interval={0} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fontFamily: 'DM Mono', fill: ACWR_COLORS.acwr }} domain={[0, 2.6]} width={36} tickCount={6} />
+              <XAxis dataKey="date" tickFormatter={fmt} tick={false} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={44} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Tooltip formatter={(v: any, name: any) => {
-                if (name === 'acwr') return [v != null ? v : '-', 'ACWR'];
-                return [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, nameMap[name] ?? name];
-              }} labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} formatter={(val) => nameMap[val] ?? val} />
-              {/* 오늘 기준 수직선 */}
-              <ReferenceLine yAxisId="left" x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
+                const l: Record<string, string> = { daily: 'Daily', acute: 'Acute(EWMA)', chronic: 'Chronic(EWMA)' };
+                return [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, l[name] ?? name];
+              }} labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
+              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+                formatter={(val: string) => ({ daily: 'Daily', acute: 'Acute (EWMA)', chronic: 'Chronic (EWMA)' }[val] ?? val)} />
+              <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
                 label={{ value: '오늘', position: 'insideTopLeft', fontSize: 9, fill: '#374151' }} />
-              {/* ACWR 임계값 수평선 — 오른쪽 Y축 기준, 라벨은 왼쪽에 */}
-              <ReferenceLine yAxisId="right" y={2.0} stroke="#7f1d1d" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: '2.0', position: 'insideLeft', fontSize: 8, fill: '#7f1d1d' }} />
-              <ReferenceLine yAxisId="right" y={1.5} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: '1.5', position: 'insideLeft', fontSize: 8, fill: '#dc2626' }} />
-              <ReferenceLine yAxisId="right" y={1.3} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1}
-                label={{ value: '1.3', position: 'insideLeft', fontSize: 8, fill: '#d97706' }} />
-              <ReferenceLine yAxisId="right" y={0.8} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1}
-                label={{ value: '0.8', position: 'insideLeft', fontSize: 8, fill: '#16a34a' }} />
-              <Area yAxisId="left" type="monotone" dataKey="chronic" name="chronic" fill={ACWR_COLORS.chronic} stroke="rgba(0,140,126,0.6)" strokeWidth={1.5} />
-              <Area yAxisId="left" type="monotone" dataKey="acute" name="acute" fill={ACWR_COLORS.acute} stroke="rgba(255,99,71,0.8)" strokeWidth={1.5} />
-              <Bar yAxisId="left" dataKey="daily" name="daily" fill={ACWR_COLORS.daily} barSize={16} shape={<DailyAcwrBarShape />} />
-              <Line yAxisId="right" type="monotone" dataKey="acwr" name="acwr" stroke={ACWR_COLORS.acwr} strokeWidth={2}
-                dot={{ r: 2, fill: ACWR_COLORS.acwr }} activeDot={{ r: 5 }} connectNulls={false} />
+              <Bar dataKey="daily" name="daily" fill="rgba(100,149,237,0.55)" barSize={14} radius={[2, 2, 0, 0]} />
+              <Line type="monotone" dataKey="chronic" name="chronic" stroke="#008c7e" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="acute" name="acute" stroke="#e85d3a" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
+
+          {/* 하단: ACWR 비율 라인 + 구간 색상 배경 */}
+          <ResponsiveContainer width="100%" height={140}>
+            <LineChart data={chartData} margin={marginBottom}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+              <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 10 }} interval={0} />
+              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} domain={[0, 2.5]} width={44} ticks={[0, 0.8, 1.3, 1.5, 2.0, 2.5]} />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <Tooltip formatter={(v: any) => [v != null ? v : '-', 'ACWR']}
+                labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
+              {/* 구간 배경 */}
+              <ReferenceArea y1={0}   y2={0.8} fill="#dbeafe" fillOpacity={0.5} />
+              <ReferenceArea y1={0.8} y2={1.3} fill="#dcfce7" fillOpacity={0.5} />
+              <ReferenceArea y1={1.3} y2={1.5} fill="#fef9c3" fillOpacity={0.6} />
+              <ReferenceArea y1={1.5} y2={2.0} fill="#fee2e2" fillOpacity={0.6} />
+              <ReferenceArea y1={2.0} y2={2.5} fill="#fecaca" fillOpacity={0.7} />
+              {/* 구간 경계선 */}
+              <ReferenceLine y={1.5} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1}
+                label={{ value: '1.5 위험', position: 'insideTopRight', fontSize: 8, fill: '#dc2626' }} />
+              <ReferenceLine y={1.3} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1}
+                label={{ value: '1.3 주의', position: 'insideTopRight', fontSize: 8, fill: '#d97706' }} />
+              <ReferenceLine y={0.8} stroke="#2563eb" strokeDasharray="4 2" strokeWidth={1}
+                label={{ value: '0.8 최저', position: 'insideBottomRight', fontSize: 8, fill: '#2563eb' }} />
+              <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3" />
+              <Line type="monotone" dataKey="acwr" stroke={ACWR_COLORS.acwr} strokeWidth={2.5}
+                dot={<AcwrDot />} activeDot={{ r: 5 }} connectNulls={false} />
+            </LineChart>
+          </ResponsiveContainer>
+
         </div>
       </div>
     </div>
