@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, Line, BarChart,
-  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend,
+  ComposedChart, Line, BarChart, Cell, LabelList,
+  Radar, RadarChart, PolarGrid, PolarAngleAxis,
 } from 'recharts';
 import { fetchMatchData, type MatchRow } from '../lib/api';
 
@@ -154,15 +154,28 @@ function toMetrics(rs: MatchRow[]): PosMetrics {
   };
 }
 
-function computePosStats(rows: MatchRow[]): Map<Pos, PosStats> {
+function computePosStats(rows: MatchRow[], selectedMatchKey: string | null): Map<Pos, PosStats> {
   const dates = [...new Set(rows.map(r => r.match_date))].sort();
   const lastDate = dates[dates.length - 1];
+
+  let refDate: string | null = null;
+  let refOpp: string | null = null;
+  if (selectedMatchKey) {
+    const idx = selectedMatchKey.indexOf('__');
+    refDate = selectedMatchKey.slice(0, idx);
+    refOpp  = selectedMatchKey.slice(idx + 2);
+  } else {
+    refDate = lastDate ?? null;
+  }
+
   const result = new Map<Pos, PosStats>();
   for (const pos of POSITIONS) {
     const posRows = rows.filter(r => r.position_played === pos);
-    const lastRows = posRows.filter(r => r.match_date === lastDate);
-    const lastOpp = lastRows[0]?.opponent ?? '미정';
-    const dt = lastDate ? new Date(lastDate) : null;
+    const lastRows = posRows.filter(r =>
+      r.match_date === refDate && (refOpp === null || r.opponent === refOpp)
+    );
+    const lastOpp = lastRows[0]?.opponent ?? refOpp ?? '미정';
+    const dt = refDate ? new Date(refDate) : null;
     result.set(pos, {
       cumAvg:    posRows.length ? toMetrics(posRows) : { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 },
       lastMatch: lastRows.length ? toMetrics(lastRows) : null,
@@ -192,7 +205,7 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
         <span className="text-[10px] text-gray-400">{stats.count}경기</span>
       </div>
       {stats.lastLabel && (
-        <p className="text-[10px] text-gray-400 mb-2 truncate">최근: {stats.lastLabel}</p>
+        <p className="text-[10px] text-gray-400 mb-2 truncate">선택: {stats.lastLabel}</p>
       )}
       <div className="flex justify-center">
         <RadarChart width={180} height={160} data={radarData} margin={{ top: 4, right: 16, bottom: 4, left: 16 }}>
@@ -229,34 +242,55 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
   );
 }
 
-// ── 전체 포지션 비교 레이더 ────────────────────────────────────────────────
-function OverallRadarChart({ posStats, maxVals }: { posStats: Map<Pos, PosStats>; maxVals: PosMetrics }) {
-  const data = BENCH_METRICS.map(m => {
-    const key = m.key as BenchKey;
-    const scale = maxVals[key] > 0 ? maxVals[key] : 1;
-    const entry: Record<string, any> = { metric: m.label };
-    for (const pos of POSITIONS) {
-      const s = posStats.get(pos);
-      entry[pos] = s ? Math.round((s.cumAvg[key] / scale) * 100) : 0;
-    }
-    return entry;
-  });
+// ── 전체 누적평균 vs 선택경기 막대 비교 ───────────────────────────────────
+function OverallCompareChart({ filtered, selectedMatchKey }: {
+  filtered: MatchRow[];
+  selectedMatchKey: string | null;
+}) {
+  const cumAvg = useMemo(() => (filtered.length ? toMetrics(filtered) : null), [filtered]);
+
+  const selectedRows = useMemo(() => {
+    if (!selectedMatchKey) return [];
+    const idx = selectedMatchKey.indexOf('__');
+    const date = selectedMatchKey.slice(0, idx);
+    const opp  = selectedMatchKey.slice(idx + 2);
+    return filtered.filter(r => r.match_date === date && r.opponent === opp);
+  }, [filtered, selectedMatchKey]);
+
+  const selectedAvg = useMemo(() => (selectedRows.length ? toMetrics(selectedRows) : null), [selectedRows]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <h4 className="text-sm font-bold text-gray-700 mb-0.5">전체 포지션 누적 평균 비교</h4>
-      <p className="text-[11px] text-gray-400 mb-3">각 지표 최대값 대비 % · 포지션별 GPS 기준 프로파일</p>
-      <div className="flex justify-center">
-        <RadarChart width={480} height={360} data={data}>
-          <PolarGrid />
-          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 12 }} />
-          <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} tickCount={4} />
-          {POSITIONS.map(pos => (
-            <Radar key={pos} name={pos} dataKey={pos} stroke={POS_COLORS[pos]} fill={POS_COLORS[pos]} fillOpacity={0.12} strokeWidth={2} />
-          ))}
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Tooltip formatter={((v: any, name: any) => [`${v}%`, name]) as any} />
-        </RadarChart>
+      <p className="text-[11px] text-gray-400 mb-3">누적 전체 평균(회색) vs 선택 경기(파랑) · 풀 타임 {FULL_TIME}분 기준</p>
+      <div className="grid grid-cols-5 gap-3">
+        {BENCH_METRICS.map(m => {
+          const key = m.key as BenchKey;
+          const data = [
+            { name: '누적평균', value: cumAvg ? round1(cumAvg[key]) : 0 },
+            { name: '선택경기', value: selectedAvg ? round1(selectedAvg[key]) : 0 },
+          ];
+          const maxVal = Math.max(...data.map(d => d.value), 1);
+          return (
+            <div key={key} className="flex flex-col items-center">
+              <p className="text-xs font-semibold text-gray-600 mb-1">{m.label}</p>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={data} margin={{ top: 20, right: 4, left: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 8 }} width={36} />
+                  <Tooltip formatter={((v: any) => [v, m.label]) as any} />
+                  <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                    {data.map((_, i) => (
+                      <Cell key={i} fill={i === 0 ? '#9ca3af' : '#3b82f6'} />
+                    ))}
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={((v: number) => v.toLocaleString()) as any} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -362,6 +396,7 @@ export default function MatchTab() {
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<string>('전체');
   const [selectedGroup, setSelectedGroup] = useState<string>('전체');
+  const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMatchData().then(data => {
@@ -394,7 +429,22 @@ export default function MatchTab() {
   const matchData  = useMemo(() => aggregateByMatch(filtered), [filtered]);
   const playerData = useMemo(() => aggregateByPlayer(filtered), [filtered]);
 
-  const posStats = useMemo(() => computePosStats(filtered), [filtered]);
+  // 드롭다운용 경기 목록 (최신순)
+  const matchKeys = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { key: string; label: string }[] = [];
+    for (const r of [...filtered].sort((a, b) => b.match_date.localeCompare(a.match_date))) {
+      const key = `${r.match_date}__${r.opponent ?? '미정'}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        const dt = new Date(r.match_date);
+        result.push({ key, label: `${r.opponent} (${dt.getMonth()+1}/${dt.getDate()}) · ${r.event_type}` });
+      }
+    }
+    return result;
+  }, [filtered]);
+
+  const posStats = useMemo(() => computePosStats(filtered, selectedMatchKey), [filtered, selectedMatchKey]);
   const maxVals  = useMemo((): PosMetrics => {
     const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
     for (const s of posStats.values()) {
@@ -500,9 +550,24 @@ export default function MatchTab() {
 
       {/* ── 포지션별 누적 비교 ── */}
       <div className="space-y-3">
-        <div className="border-l-4 border-blue-500 pl-3">
-          <h3 className="text-sm font-bold text-gray-700">포지션별 누적 비교 데이터</h3>
-          <p className="text-[11px] text-gray-400">풀 타임 {FULL_TIME}분 기준 · 레이더 수치 = 포지션 최대값 대비 % · 점선 = 최근 경기</p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="border-l-4 border-blue-500 pl-3">
+            <h3 className="text-sm font-bold text-gray-700">포지션별 누적 비교 데이터</h3>
+            <p className="text-[11px] text-gray-400">풀 타임 {FULL_TIME}분 기준 · 레이더 수치 = 포지션 최대값 대비 % · 점선 = 선택 경기</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-gray-500 font-medium">비교 경기</span>
+            <select
+              value={selectedMatchKey ?? ''}
+              onChange={e => setSelectedMatchKey(e.target.value || null)}
+              className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              <option value="">최근 경기 (자동)</option>
+              {matchKeys.map(m => (
+                <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* 5 포지션 카드 */}
@@ -518,8 +583,8 @@ export default function MatchTab() {
           })}
         </div>
 
-        {/* 전체 비교 레이더 */}
-        <OverallRadarChart posStats={posStats} maxVals={maxVals} />
+        {/* 전체 누적평균 vs 선택경기 막대 비교 */}
+        <OverallCompareChart filtered={filtered} selectedMatchKey={selectedMatchKey} />
       </div>
     </div>
   );
