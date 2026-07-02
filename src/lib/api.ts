@@ -1697,3 +1697,189 @@ export async function fetchPhysicalRawData(): Promise<PhysicalRawRow[]> {
     };
   });
 }
+
+// ── 신체 성숙도 (Maturity) ──────────────────────────────────────────────
+export interface MaturityRow {
+  id: string;
+  player_id: string;
+  player_name: string;
+  jersey_number: number | null;
+  position: string | null;
+  birth_date: string | null;
+  mother_height_cm: number | null;
+  father_height_cm: number | null;
+  test_date: string;
+  test_round: string | null;
+  height: number | null;
+  weight: number | null;
+  leg_length: number | null;
+  sitting_height: number | null;
+  age_decimal: number | null;
+  mirwald_maturity_offset: number | null;
+  mirwald_aphv_age: number | null;
+  maturity_stage: string | null;
+  predicted_adult_height_cm: number | null;
+  pah_percent: number | null;
+  maturity_zscore: number | null;
+}
+
+export async function fetchMaturityRecords(): Promise<MaturityRow[]> {
+  const client = requireSupabase();
+
+  const { data: reports, error } = await client
+    .from('physical_report')
+    .select('id, player_id, test_date, test_round, height, weight, leg_length, sitting_height, players(name, jersey_number, position, birth_date, mother_height_cm, father_height_cm)')
+    .order('test_date', { ascending: false });
+  if (error) throw error;
+
+  const { data: calc } = await client
+    .from('player_phv_khamis_roche')
+    .select('physical_report_id, age_decimal, mirwald_maturity_offset, mirwald_aphv_age, maturity_stage, predicted_adult_height_cm, pah_percent, maturity_zscore');
+  const calcMap = new Map(((calc as R[]) ?? []).map(c => [c.physical_report_id as string, c]));
+
+  return ((reports as R[]) ?? []).map(r => {
+    const c = calcMap.get(r.id as string);
+    const player = r.players as R;
+    return {
+      id: r.id as string,
+      player_id: r.player_id as string,
+      player_name: (player?.name as string) ?? '',
+      jersey_number: player?.jersey_number as number ?? null,
+      position: player?.position as string ?? null,
+      birth_date: player?.birth_date as string ?? null,
+      mother_height_cm: player?.mother_height_cm != null ? Number(player.mother_height_cm) : null,
+      father_height_cm: player?.father_height_cm != null ? Number(player.father_height_cm) : null,
+      test_date: r.test_date as string,
+      test_round: r.test_round as string ?? null,
+      height: r.height != null ? Number(r.height) : null,
+      weight: r.weight != null ? Number(r.weight) : null,
+      leg_length: r.leg_length != null ? Number(r.leg_length) : null,
+      sitting_height: r.sitting_height != null ? Number(r.sitting_height) : null,
+      age_decimal: c?.age_decimal != null ? Number(c.age_decimal) : null,
+      mirwald_maturity_offset: c?.mirwald_maturity_offset != null ? Number(c.mirwald_maturity_offset) : null,
+      mirwald_aphv_age: c?.mirwald_aphv_age != null ? Number(c.mirwald_aphv_age) : null,
+      maturity_stage: c?.maturity_stage as string ?? null,
+      predicted_adult_height_cm: c?.predicted_adult_height_cm != null ? Number(c.predicted_adult_height_cm) : null,
+      pah_percent: c?.pah_percent != null ? Number(c.pah_percent) : null,
+      maturity_zscore: c?.maturity_zscore != null ? Number(c.maturity_zscore) : null,
+    };
+  });
+}
+
+export async function upsertMaturityRecord(input: {
+  player_id: string;
+  test_round: string;
+  test_date: string;
+  height: number | null;
+  weight: number | null;
+  leg_length: number | null;
+  sitting_height: number | null;
+}) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('physical_report')
+    .upsert(input, { onConflict: 'player_id,test_round' });
+  if (error) throw error;
+}
+
+export async function updatePlayerParentHeight(playerId: string, motherHeightCm: number | null, fatherHeightCm: number | null) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('players')
+    .update({ mother_height_cm: motherHeightCm, father_height_cm: fatherHeightCm, updated_at: new Date().toISOString() })
+    .eq('id', playerId);
+  if (error) throw error;
+}
+
+// ── 피지컬 데이터 (VALD 체력 테스트) ────────────────────────────────────
+export interface PhysicalTestRow {
+  id: string;
+  player_id: string;
+  player_name: string;
+  jersey_number: number | null;
+  position: string | null;
+  test_date: string;
+  test_round: string | null;
+  nordic_curl_left: number | null;
+  nordic_curl_right: number | null;
+  hip_ab_left: number | null;
+  hip_ab_right: number | null;
+  hip_ad_left: number | null;
+  hip_ad_right: number | null;
+  sprint_5m_time: number | null;
+  sprint_10m_time: number | null;
+  sprint_30m_time: number | null;
+  cmj_height: number | null;
+  rebound_jump_height: number | null;
+  squat_jump_height: number | null;
+  cod_run: number | null;
+  cod_ball: number | null;
+  mas_value: number | null;
+  mss_value: number | null;
+}
+
+export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('physical_report')
+    .select('id, player_id, test_date, test_round, nordic_curl_left, nordic_curl_right, hip_ab_left, hip_ab_right, hip_ad_left, hip_ad_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cmj_height, rebound_jump_height, squat_jump_height, cod_run, cod_ball, mas_value, mss_value, players(name, jersey_number, position)')
+    .order('test_date', { ascending: false });
+  if (error) throw error;
+
+  return ((data as R[]) ?? []).map(r => {
+    const player = r.players as R;
+    return {
+      id: r.id as string,
+      player_id: r.player_id as string,
+      player_name: (player?.name as string) ?? '',
+      jersey_number: player?.jersey_number as number ?? null,
+      position: player?.position as string ?? null,
+      test_date: r.test_date as string,
+      test_round: r.test_round as string ?? null,
+      nordic_curl_left: r.nordic_curl_left != null ? Number(r.nordic_curl_left) : null,
+      nordic_curl_right: r.nordic_curl_right != null ? Number(r.nordic_curl_right) : null,
+      hip_ab_left: r.hip_ab_left != null ? Number(r.hip_ab_left) : null,
+      hip_ab_right: r.hip_ab_right != null ? Number(r.hip_ab_right) : null,
+      hip_ad_left: r.hip_ad_left != null ? Number(r.hip_ad_left) : null,
+      hip_ad_right: r.hip_ad_right != null ? Number(r.hip_ad_right) : null,
+      sprint_5m_time: r.sprint_5m_time != null ? Number(r.sprint_5m_time) : null,
+      sprint_10m_time: r.sprint_10m_time != null ? Number(r.sprint_10m_time) : null,
+      sprint_30m_time: r.sprint_30m_time != null ? Number(r.sprint_30m_time) : null,
+      cmj_height: r.cmj_height != null ? Number(r.cmj_height) : null,
+      rebound_jump_height: r.rebound_jump_height != null ? Number(r.rebound_jump_height) : null,
+      squat_jump_height: r.squat_jump_height != null ? Number(r.squat_jump_height) : null,
+      cod_run: r.cod_run != null ? Number(r.cod_run) : null,
+      cod_ball: r.cod_ball != null ? Number(r.cod_ball) : null,
+      mas_value: r.mas_value != null ? Number(r.mas_value) : null,
+      mss_value: r.mss_value != null ? Number(r.mss_value) : null,
+    };
+  });
+}
+
+export async function upsertPhysicalTestRecord(input: {
+  player_id: string;
+  test_round: string;
+  test_date: string;
+  nordic_curl_left: number | null;
+  nordic_curl_right: number | null;
+  hip_ab_left: number | null;
+  hip_ab_right: number | null;
+  hip_ad_left: number | null;
+  hip_ad_right: number | null;
+  sprint_5m_time: number | null;
+  sprint_10m_time: number | null;
+  sprint_30m_time: number | null;
+  cmj_height: number | null;
+  rebound_jump_height: number | null;
+  squat_jump_height: number | null;
+  cod_run: number | null;
+  cod_ball: number | null;
+  mas_value: number | null;
+  mss_value: number | null;
+}) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('physical_report')
+    .upsert(input, { onConflict: 'player_id,test_round' });
+  if (error) throw error;
+}

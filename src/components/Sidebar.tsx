@@ -5,7 +5,7 @@ export function Sidebar() {
   const location = useLocation();
   const isDashboardGroup = ['/', '/team-dashboard', '/workload'].includes(location.pathname);
   const isReportGroup = ['/daily', '/weekly', '/match'].includes(location.pathname);
-  const isDataGroup = ['/upload', '/raw-data', '/physical-raw-data'].includes(location.pathname);
+  const isDataGroup = ['/upload', '/raw-data', '/maturity-data', '/physical-data'].includes(location.pathname);
   const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
   const [reportOpen, setReportOpen] = useState(isReportGroup);
   const [dataOpen, setDataOpen] = useState(isDataGroup);
@@ -101,7 +101,10 @@ export function Sidebar() {
               <NavLink to="/raw-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
                 <span className="w-[18px] text-center text-[13px]">📋</span>로우 데이터
               </NavLink>
-              <NavLink to="/physical-raw-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <NavLink to="/maturity-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">📏</span>신체 성숙도
+              </NavLink>
+              <NavLink to="/physical-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
                 <span className="w-[18px] text-center text-[13px]">🦵</span>피지컬 데이터
               </NavLink>
             </div>
