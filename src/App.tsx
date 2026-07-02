@@ -14,7 +14,6 @@ import { RawDataPage } from './pages/RawDataPage';
 import { MatchReport } from './pages/MatchReport';
 import { TeamDashboard } from './pages/TeamDashboard';
 import { PersonalDashboard } from './pages/PersonalDashboard';
-import { MaturityDataPage } from './pages/MaturityDataPage';
 import { PhysicalDataPage } from './pages/PhysicalDataPage';
 
 function App() {
@@ -37,7 +36,6 @@ function App() {
               <Route path="/periodization" element={<WeeklyPeriodization />} />
               <Route path="/upload" element={<Upload />} />
               <Route path="/raw-data" element={<RawDataPage />} />
-              <Route path="/maturity-data" element={<MaturityDataPage />} />
               <Route path="/physical-data" element={<PhysicalDataPage />} />
               <Route path="/player/:id" element={<PlayerProfile />} />
               <Route path="/settings/players" element={<Settings />} />
