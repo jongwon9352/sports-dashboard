@@ -5,7 +5,7 @@ export function Sidebar() {
   const location = useLocation();
   const isDashboardGroup = ['/', '/team-dashboard', '/workload'].includes(location.pathname);
   const isReportGroup = ['/daily', '/weekly', '/match'].includes(location.pathname);
-  const isDataGroup = ['/upload', '/raw-data'].includes(location.pathname);
+  const isDataGroup = ['/upload', '/raw-data', '/physical-raw-data'].includes(location.pathname);
   const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
   const [reportOpen, setReportOpen] = useState(isReportGroup);
   const [dataOpen, setDataOpen] = useState(isDataGroup);
@@ -43,7 +43,7 @@ export function Sidebar() {
                 <span className="w-[18px] text-center text-[13px]">📈</span>팀 대시보드
               </NavLink>
               <NavLink to="/workload" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-                <span className="w-[18px] text-center text-[13px]">🏃</span>운동부하
+                <span className="w-[18px] text-center text-[13px]">🏃</span>개인 대시보드
               </NavLink>
             </div>
           )}
@@ -85,7 +85,7 @@ export function Sidebar() {
           <NavLink
             to="/upload"
             onClick={() => setDataOpen(true)}
-            className={({ isActive }) => `sidebar-nav-item ${isActive || location.pathname === '/raw-data' ? 'active' : ''}`}
+            className={({ isActive }) => `sidebar-nav-item ${isActive || isDataGroup ? 'active' : ''}`}
           >
             <span className="w-[18px] text-center text-[13px]">📁</span>
             데이터 관리
@@ -100,6 +100,9 @@ export function Sidebar() {
             <div className="pl-5 flex flex-col gap-0.5">
               <NavLink to="/raw-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
                 <span className="w-[18px] text-center text-[13px]">📋</span>로우 데이터
+              </NavLink>
+              <NavLink to="/physical-raw-data" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">🦵</span>피지컬 데이터
               </NavLink>
             </div>
           )}
