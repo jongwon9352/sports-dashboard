@@ -10,7 +10,7 @@ import {
   calculateMonotony,
   getAcwrZone,
 } from '../utils/calculations';
-import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow } from '../utils/csvParser';
+import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow, ParsedBodyCompositionRow } from '../utils/csvParser';
 import { parseMaturitySheetCsv, parseSheetTimestampToDate } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 
@@ -1670,26 +1670,8 @@ export async function fetchMaturityRecords(): Promise<MaturityRow[]> {
   });
 }
 
-// 신체 성숙도 고정값은 비어있는 항목만 채운다 (이미 입력된 값은 덮어쓰지 않음)
-export async function updatePlayerMaturityBaseline(playerId: string, fields: {
-  baseline_height_cm?: number | null;
-  baseline_weight_kg?: number | null;
-  chair_height_cm?: number | null;
-  baseline_sitting_height_cm?: number | null;
-  baseline_measured_at?: string | null;
-  mother_height_cm?: number | null;
-  father_height_cm?: number | null;
-}) {
-  const client = requireSupabase();
-  const { error } = await client
-    .from('players')
-    .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq('id', playerId);
-  if (error) throw error;
-}
-
 // 구글 시트(폼 응답)에서 신체 성숙도 원본값을 동기화한다.
-// "고정값" 원칙에 따라 선수별로 아직 비어있는(null) 항목만 채우고, 이미 입력된 값은 절대 덮어쓰지 않는다.
+// 값은 화면에서 수동으로 수정할 수 없는 고정값이지만, 시트에 새 응답이 올라오면 자동으로 덮어써서 반영한다.
 export interface MaturitySyncResult {
   updatedCount: number;
   unmatchedNames: string[];
@@ -1729,16 +1711,14 @@ export async function syncMaturityFromGoogleSheet(): Promise<MaturitySyncResult>
     }
 
     const fields: Record<string, number | string> = {};
-    if (player.baseline_height_cm == null && row.height != null) fields.baseline_height_cm = row.height;
-    if (player.baseline_weight_kg == null && row.weight != null) fields.baseline_weight_kg = row.weight;
-    if (player.chair_height_cm == null && row.chair_height != null) fields.chair_height_cm = row.chair_height;
-    if (player.baseline_sitting_height_cm == null && row.sitting_height != null) fields.baseline_sitting_height_cm = row.sitting_height;
-    if (player.mother_height_cm == null && row.mother_height != null) fields.mother_height_cm = row.mother_height;
-    if (player.father_height_cm == null && row.father_height != null) fields.father_height_cm = row.father_height;
-    if (player.baseline_measured_at == null) {
-      const measuredAt = parseSheetTimestampToDate(row.timestamp);
-      if (measuredAt) fields.baseline_measured_at = measuredAt;
-    }
+    if (row.height != null) fields.baseline_height_cm = row.height;
+    if (row.weight != null) fields.baseline_weight_kg = row.weight;
+    if (row.chair_height != null) fields.chair_height_cm = row.chair_height;
+    if (row.sitting_height != null) fields.baseline_sitting_height_cm = row.sitting_height;
+    if (row.mother_height != null) fields.mother_height_cm = row.mother_height;
+    if (row.father_height != null) fields.father_height_cm = row.father_height;
+    const measuredAt = parseSheetTimestampToDate(row.timestamp);
+    if (measuredAt) fields.baseline_measured_at = measuredAt;
 
     if (Object.keys(fields).length === 0) continue;
 
@@ -1877,4 +1857,98 @@ export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: str
   if (error) throw error;
 
   return physicalRows.length;
+}
+
+// ── 피지컬 데이터 / Body composition (월별 신장·체중 축적) ────────────────
+export interface BodyCompositionRow {
+  id: string;
+  player_id: string;
+  player_name: string;
+  jersey_number: number | null;
+  position: string | null;
+  year: number;
+  month: number;
+  height: number | null;
+  weight: number | null;
+}
+
+export async function fetchBodyCompositionRecords(): Promise<BodyCompositionRow[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('growth_tracking')
+    .select('id, player_id, year, month, height, weight, players(name, jersey_number, position)')
+    .order('year', { ascending: false })
+    .order('month', { ascending: false });
+  if (error) throw error;
+
+  return ((data as R[]) ?? []).map(r => {
+    const player = r.players as R;
+    return {
+      id: r.id as string,
+      player_id: r.player_id as string,
+      player_name: (player?.name as string) ?? '',
+      jersey_number: player?.jersey_number as number ?? null,
+      position: player?.position as string ?? null,
+      year: r.year as number,
+      month: r.month as number,
+      height: r.height != null ? Number(r.height) : null,
+      weight: r.weight != null ? Number(r.weight) : null,
+    };
+  });
+}
+
+export async function importBodyCompositionCsvRows(rows: ParsedBodyCompositionRow[], date: string) {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })));
+
+  const [year, month] = date.split('-').map(Number);
+
+  const growthRows = validRows.map(row => ({
+    player_id: playerMap.get(normalizeName(row.player_name)),
+    year,
+    month,
+    height: row.height,
+    weight: row.weight,
+  })).filter(row => row.player_id);
+
+  if (growthRows.length === 0) return growthRows.length;
+
+  const { error } = await client
+    .from('growth_tracking')
+    .upsert(growthRows, { onConflict: 'player_id,year,month' });
+  if (error) throw error;
+
+  return growthRows.length;
+}
+
+// ── 피지컬 데이터 / Speed custom (골격 구조, 컬럼은 CSV 형식 확정 후 추가 예정) ──
+export interface SpeedCustomRow {
+  id: string;
+  player_id: string;
+  player_name: string;
+  jersey_number: number | null;
+  position: string | null;
+  test_date: string;
+}
+
+export async function fetchSpeedCustomRecords(): Promise<SpeedCustomRow[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('speed_custom_test')
+    .select('id, player_id, test_date, players(name, jersey_number, position)')
+    .order('test_date', { ascending: false });
+  if (error) throw error;
+
+  return ((data as R[]) ?? []).map(r => {
+    const player = r.players as R;
+    return {
+      id: r.id as string,
+      player_id: r.player_id as string,
+      player_name: (player?.name as string) ?? '',
+      jersey_number: player?.jersey_number as number ?? null,
+      position: player?.position as string ?? null,
+      test_date: r.test_date as string,
+    };
+  });
 }

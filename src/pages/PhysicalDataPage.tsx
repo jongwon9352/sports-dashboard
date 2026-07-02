@@ -1,11 +1,21 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
-  fetchPhysicalTestRecords, upsertPhysicalTestRecord,
-  fetchAllPlayers, type PhysicalTestRow,
+  fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
+  fetchBodyCompositionRecords, fetchSpeedCustomRecords,
+  type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomRow,
 } from '../lib/api';
 import type { Player } from '../types';
 
-interface FormState {
+type Tab = 'vald' | 'body' | 'speed';
+
+function fmt(v: number | string | null): string {
+  if (v == null) return '—';
+  if (typeof v === 'string') return v;
+  return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
+}
+
+// ── VALD 탭 ──────────────────────────────────────────────────────────────
+interface ValdFormState {
   player_id: string;
   test_date: string;
   nordic_curl_left: string;
@@ -22,20 +32,18 @@ interface FormState {
   squat_jump_height: string;
   cod_run: string;
   cod_ball: string;
-  mas_value: string;
-  mss_value: string;
 }
 
-const EMPTY_FORM: FormState = {
+const EMPTY_VALD_FORM: ValdFormState = {
   player_id: '', test_date: '',
   nordic_curl_left: '', nordic_curl_right: '',
   hip_ab_left: '', hip_ab_right: '', hip_ad_left: '', hip_ad_right: '',
   sprint_5m_time: '', sprint_10m_time: '', sprint_30m_time: '',
   cmj_height: '', rebound_jump_height: '', squat_jump_height: '',
-  cod_run: '', cod_ball: '', mas_value: '', mss_value: '',
+  cod_run: '', cod_ball: '',
 };
 
-const FIELD_GROUPS: { title: string; fields: { key: keyof FormState; label: string }[] }[] = [
+const VALD_FIELD_GROUPS: { title: string; fields: { key: keyof ValdFormState; label: string }[] }[] = [
   { title: 'Strength', fields: [
     { key: 'nordic_curl_left', label: 'Nordic(좌)' }, { key: 'nordic_curl_right', label: 'Nordic(우)' },
     { key: 'hip_ab_left', label: '외전(좌)' }, { key: 'hip_ab_right', label: '외전(우)' },
@@ -47,9 +55,8 @@ const FIELD_GROUPS: { title: string; fields: { key: keyof FormState; label: stri
   { title: 'Power', fields: [
     { key: 'cmj_height', label: 'CMJ(cm)' }, { key: 'rebound_jump_height', label: '재점프(cm)' }, { key: 'squat_jump_height', label: 'Squat Jump(cm)' },
   ]},
-  { title: 'Agility & MAS/MSS', fields: [
+  { title: 'Agility', fields: [
     { key: 'cod_run', label: '방향전환(런)' }, { key: 'cod_ball', label: '방향전환(볼)' },
-    { key: 'mas_value', label: 'MAS' }, { key: 'mss_value', label: 'MSS' },
   ]},
 ];
 
@@ -58,21 +65,15 @@ function num(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function fmt(v: number | string | null): string {
-  if (v == null) return '—';
-  if (typeof v === 'string') return v;
-  return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
-}
-
-function RecordModal({ players, initial, onClose, onSaved }: {
+function ValdModal({ players, initial, onClose, onSaved }: {
   players: Player[];
-  initial: FormState;
+  initial: ValdFormState;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState<FormState>(initial);
+  const [form, setForm] = useState<ValdFormState>(initial);
   const [saving, setSaving] = useState(false);
-  const set = (key: keyof FormState, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+  const set = (key: keyof ValdFormState, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
   const handleSave = async () => {
     if (!form.player_id || !form.test_date) {
@@ -98,8 +99,8 @@ function RecordModal({ players, initial, onClose, onSaved }: {
         squat_jump_height: num(form.squat_jump_height),
         cod_run: num(form.cod_run),
         cod_ball: num(form.cod_ball),
-        mas_value: num(form.mas_value),
-        mss_value: num(form.mss_value),
+        mas_value: null,
+        mss_value: null,
       });
       onSaved();
       onClose();
@@ -113,7 +114,7 @@ function RecordModal({ players, initial, onClose, onSaved }: {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-surface rounded-xl p-6 w-[520px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-4">피지컬(VALD) 측정 추가/수정</h2>
+        <h2 className="text-lg font-bold mb-4">VALD 측정 추가/수정</h2>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <label className="col-span-2 text-xs text-text-secondary">
             선수
@@ -130,7 +131,7 @@ function RecordModal({ players, initial, onClose, onSaved }: {
           </label>
         </div>
 
-        {FIELD_GROUPS.map(group => (
+        {VALD_FIELD_GROUPS.map(group => (
           <div key={group.title} className="mb-3">
             <p className="text-[11px] text-text-disabled uppercase tracking-[1px] mb-1.5">{group.title}</p>
             <div className="grid grid-cols-3 gap-2">
@@ -161,12 +162,12 @@ function RecordModal({ players, initial, onClose, onSaved }: {
   );
 }
 
-export function PhysicalDataPage() {
+function ValdTab() {
   const [data, setData] = useState<PhysicalTestRow[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [modalForm, setModalForm] = useState<FormState | null>(null);
+  const [modalForm, setModalForm] = useState<ValdFormState | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -199,9 +200,211 @@ export function PhysicalDataPage() {
     squat_jump_height: row.squat_jump_height != null ? String(row.squat_jump_height) : '',
     cod_run: row.cod_run != null ? String(row.cod_run) : '',
     cod_ball: row.cod_ball != null ? String(row.cod_ball) : '',
-    mas_value: row.mas_value != null ? String(row.mas_value) : '',
-    mss_value: row.mss_value != null ? String(row.mss_value) : '',
   });
+
+  return (
+    <>
+      <div className="flex items-center gap-3 flex-wrap mb-2">
+        <input
+          type="text"
+          placeholder="이름 검색..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
+          style={{ fontFamily: 'var(--font-data)' }}
+        />
+        <button
+          onClick={() => setModalForm(EMPTY_VALD_FORM)}
+          className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors"
+        >
+          + 측정 추가
+        </button>
+      </div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 "피지컬" 포함 파일명의 CSV를 올리면 자동으로 반영됩니다.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. 측정 추가 버튼으로 입력하세요.</p>
+      ) : (
+        <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
+              <thead>
+                <tr className="border-b border-surface-secondary">
+                  {['이름', '포지션', '측정일', 'Nordic(좌)', 'Nordic(우)', '외전(좌)', '외전(우)', '내전(좌)', '내전(우)',
+                    '5m(s)', '10m(s)', '30m(s)', 'CMJ(cm)', '재점프(cm)', 'Squat Jump(cm)', '방향전환(런)', '방향전환(볼)', ''].map(h => (
+                    <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(row => (
+                  <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_left)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_right)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_left)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_right)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ad_left)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ad_right)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_5m_time)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_10m_time)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_30m_time)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cmj_height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.rebound_jump_height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.squat_jump_height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cod_run)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cod_ball)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">
+                      <button onClick={() => openEdit(row)} className="text-xs text-cyan-400 hover:underline">수정</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {modalForm && (
+        <ValdModal players={players} initial={modalForm} onClose={() => setModalForm(null)} onSaved={load} />
+      )}
+    </>
+  );
+}
+
+// ── Body composition 탭 ────────────────────────────────────────────────
+function BodyCompositionTab() {
+  const [data, setData] = useState<BodyCompositionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    fetchBodyCompositionRecords().then(setData).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(() => {
+    return data.filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+  }, [data, search]);
+
+  return (
+    <>
+      <input
+        type="text"
+        placeholder="이름 검색..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px] mb-2"
+        style={{ fontFamily: 'var(--font-data)' }}
+      />
+      <p className="text-[11px] text-text-secondary mb-3">
+        선수당 월 1건씩 누적됩니다. 데이터 관리 &gt; 업로드에서 "체성분/body" 포함 파일명의 CSV를 올리면 자동으로 반영됩니다.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. CSV 업로드로 채워주세요.</p>
+      ) : (
+        <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
+              <thead>
+                <tr className="border-b border-surface-secondary">
+                  {['이름', '포지션', '연도', '월', '신장(cm)', '체중(kg)'].map(h => (
+                    <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(row => (
+                  <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.year}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.month}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.weight)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Speed custom 탭 ────────────────────────────────────────────────────
+function SpeedCustomTab() {
+  const [data, setData] = useState<SpeedCustomRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchSpeedCustomRecords().then(setData).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <>
+      <p className="text-[11px] text-text-secondary mb-3">
+        Speed custom 측정 항목은 CSV 형식이 확정되면 추가됩니다. 현재는 선수·측정일만 저장되는 골격 구조입니다.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+      ) : data.length === 0 ? (
+        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. CSV 형식 확정 후 업로드 기능이 연결됩니다.</p>
+      ) : (
+        <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
+          <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)' }}>
+            <thead>
+              <tr className="border-b border-surface-secondary">
+                {['이름', '포지션', '측정일'].map(h => (
+                  <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map(row => (
+                <tr key={row.id} className="border-b border-surface-secondary/50">
+                  <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── 메인 컴포넌트 ──────────────────────────────────────────────────────
+export function PhysicalDataPage() {
+  const [tab, setTab] = useState<Tab>('vald');
+
+  const tabBtn = (id: Tab, label: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+        tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div className="flex flex-col h-[calc(100vh-72px)]">
@@ -209,92 +412,19 @@ export function PhysicalDataPage() {
         <h1 className="text-xl font-bold mb-4 flex items-center gap-2">
           <span className="w-1 h-5 bg-cyan-400 rounded-sm inline-block" />
           피지컬 데이터
-          <span className="text-sm font-normal text-text-secondary ml-2" style={{ fontFamily: 'var(--font-data)' }}>
-            ({filtered.length}건)
-          </span>
         </h1>
-        <div className="flex items-center gap-3 flex-wrap">
-          <input
-            type="text"
-            placeholder="이름 검색..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
-            style={{ fontFamily: 'var(--font-data)' }}
-          />
-          <button
-            onClick={() => setModalForm(EMPTY_FORM)}
-            className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors"
-          >
-            + 측정 추가
-          </button>
+        <div className="flex gap-2">
+          {tabBtn('vald', 'VALD')}
+          {tabBtn('body', 'Body composition')}
+          {tabBtn('speed', 'Speed custom')}
         </div>
-        <p className="text-[11px] text-text-secondary mt-2">
-          측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 "피지컬" 포함 파일명의 CSV를 올리면 자동으로 반영됩니다.
-        </p>
       </div>
 
       <div className="flex-1 overflow-auto px-6 pb-6">
-        {loading ? (
-          <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. 측정 추가 버튼으로 입력하세요.</p>
-        ) : (
-          <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
-                <thead>
-                  <tr className="border-b border-surface-secondary">
-                    {['이름', '포지션', '측정일', 'Nordic(좌)', 'Nordic(우)', '외전(좌)', '외전(우)', '내전(좌)', '내전(우)',
-                      '5m(s)', '10m(s)', '30m(s)', 'CMJ(cm)', '재점프(cm)', 'Squat Jump(cm)', '방향전환(런)', '방향전환(볼)', 'MAS', 'MSS', ''].map(h => (
-                      <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(row => (
-                    <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
-                      <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_left)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_right)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_left)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_right)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ad_left)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ad_right)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_5m_time)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_10m_time)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_30m_time)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cmj_height)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.rebound_jump_height)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.squat_jump_height)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cod_run)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cod_ball)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.mas_value)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.mss_value)}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">
-                        <button onClick={() => openEdit(row)} className="text-xs text-cyan-400 hover:underline">수정</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {tab === 'vald' && <ValdTab />}
+        {tab === 'body' && <BodyCompositionTab />}
+        {tab === 'speed' && <SpeedCustomTab />}
       </div>
-
-      {modalForm && (
-        <RecordModal
-          players={players}
-          initial={modalForm}
-          onClose={() => setModalForm(null)}
-          onSaved={load}
-        />
-      )}
     </div>
   );
 }

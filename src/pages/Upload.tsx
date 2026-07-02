@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect, type DragEvent } from 'react';
-import { parseSessionCsv, parseDailyCsv, parseMatchSessionCsv, parsePhysicalCsv, extractDateFromFilename, parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
+import { parseSessionCsv, parseDailyCsv, parseMatchSessionCsv, parsePhysicalCsv, parseBodyCompositionCsv, extractDateFromFilename, parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 import {
   importDailyCsvRows,
   importSessionCsvRows,
   importMatchCsvRows,
   importMatchSessionCsvRows,
   importPhysicalCsvRows,
+  importBodyCompositionCsvRows,
   saveCsvUploadRecord,
   fetchCsvUploads,
   deleteCsvUpload,
@@ -13,12 +14,13 @@ import {
   type CsvUploadRecord,
 } from '../lib/api';
 
-type FileType = 'session' | 'daily' | 'match' | 'match_session' | 'physical' | null;
+type FileType = 'session' | 'daily' | 'match' | 'match_session' | 'physical' | 'body_composition' | null;
 
 function detectFileType(filename: string): FileType {
   if (parseMatchSessionFilename(filename)) return 'match_session';
   if (parseMatchFilename(filename)) return 'match';
   const normalized = filename.normalize('NFC').toLowerCase();
+  if (normalized.includes('체성분') || normalized.includes('bodycomposition') || normalized.includes('body_composition')) return 'body_composition';
   if (normalized.includes('피지컬') || normalized.includes('vald') || normalized.includes('physical')) return 'physical';
   if (normalized.includes('리포트') || normalized.includes('report') || normalized.includes('테이블')) return 'session';
   if (normalized.includes('운동부하') || normalized.includes('모니터링') || normalized.includes('workload') || normalized.includes('trend')) return 'daily';
@@ -102,6 +104,10 @@ export function Upload() {
           const rows = parsePhysicalCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           rowCount = await importPhysicalCsvRows(rows, date);
+        } else if (type === 'body_composition') {
+          const rows = parseBodyCompositionCsv(text);
+          if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
+          rowCount = await importBodyCompositionCsvRows(rows, date);
         } else {
           const rows = parseDailyCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
@@ -120,7 +126,7 @@ export function Upload() {
           csv_content: text,
         });
 
-        const typeLabel = type === 'match_session' ? '세션별 경기' : type === 'match' ? '경기' : type === 'session' ? '세션' : type === 'physical' ? '피지컬' : '일일';
+        const typeLabel = type === 'match_session' ? '세션별 경기' : type === 'match' ? '경기' : type === 'session' ? '세션' : type === 'physical' ? '피지컬' : type === 'body_composition' ? '체성분' : '일일';
         const dateLabel = matchInfo ? `${matchInfo.date} vs ${matchInfo.opponent}` : date;
         newStatuses[newStatuses.length - 1] = {
           filename: file.name,

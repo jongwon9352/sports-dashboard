@@ -272,3 +272,22 @@ export function parseSheetTimestampToDate(timestamp: string): string | null {
   const [, y, mo, d] = m;
   return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
+
+export interface ParsedBodyCompositionRow {
+  player_name: string;
+  height: number | null;
+  weight: number | null;
+}
+
+// CSV 컬럼 순서: 이름, 신장(cm), 몸무게(kg)
+export function parseBodyCompositionCsv(csvText: string): ParsedBodyCompositionRow[] {
+  const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length < 2) return [];
+
+  return rows.slice(1).map(row => ({
+    player_name: row[0] || '',
+    height: parseNullableNumber(row[1]),
+    weight: parseNullableNumber(row[2]),
+  })).filter(r => r.player_name);
+}
