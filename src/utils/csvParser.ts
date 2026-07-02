@@ -187,3 +187,51 @@ export function parseDailyCsv(csvText: string): ParsedDailyRow[] {
     max_speed: parseNumber(row[20]),
   }));
 }
+
+export interface ParsedPhysicalRow {
+  player_name: string;
+  nordic_curl_left: number | null;
+  nordic_curl_right: number | null;
+  hip_ab_left: number | null;
+  hip_ab_right: number | null;
+  hip_ad_left: number | null;
+  hip_ad_right: number | null;
+  sprint_5m_time: number | null;
+  sprint_10m_time: number | null;
+  sprint_30m_time: number | null;
+  cmj_height: number | null;
+  rebound_jump_height: number | null;
+  squat_jump_height: number | null;
+  cod_run: number | null;
+  cod_ball: number | null;
+  mas_value: number | null;
+  mss_value: number | null;
+}
+
+// CSV 컬럼 순서: 이름, Nordic(좌), Nordic(우), 외전(좌), 외전(우), 내전(좌), 내전(우),
+// 5m(s), 10m(s), 30m(s), CMJ(cm), 재점프(cm), Squat Jump(cm), 방향전환(런), 방향전환(볼), MAS, MSS
+export function parsePhysicalCsv(csvText: string): ParsedPhysicalRow[] {
+  const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length < 2) return [];
+
+  return rows.slice(1).map(row => ({
+    player_name: row[0] || '',
+    nordic_curl_left: parseNullableNumber(row[1]),
+    nordic_curl_right: parseNullableNumber(row[2]),
+    hip_ab_left: parseNullableNumber(row[3]),
+    hip_ab_right: parseNullableNumber(row[4]),
+    hip_ad_left: parseNullableNumber(row[5]),
+    hip_ad_right: parseNullableNumber(row[6]),
+    sprint_5m_time: parseNullableNumber(row[7]),
+    sprint_10m_time: parseNullableNumber(row[8]),
+    sprint_30m_time: parseNullableNumber(row[9]),
+    cmj_height: parseNullableNumber(row[10]),
+    rebound_jump_height: parseNullableNumber(row[11]),
+    squat_jump_height: parseNullableNumber(row[12]),
+    cod_run: parseNullableNumber(row[13]),
+    cod_ball: parseNullableNumber(row[14]),
+    mas_value: parseNullableNumber(row[15]),
+    mss_value: parseNullableNumber(row[16]),
+  })).filter(r => r.player_name);
+}

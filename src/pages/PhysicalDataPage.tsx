@@ -7,7 +7,6 @@ import type { Player } from '../types';
 
 interface FormState {
   player_id: string;
-  test_round: string;
   test_date: string;
   nordic_curl_left: string;
   nordic_curl_right: string;
@@ -28,7 +27,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  player_id: '', test_round: '1', test_date: '',
+  player_id: '', test_date: '',
   nordic_curl_left: '', nordic_curl_right: '',
   hip_ab_left: '', hip_ab_right: '', hip_ad_left: '', hip_ad_right: '',
   sprint_5m_time: '', sprint_10m_time: '', sprint_30m_time: '',
@@ -76,15 +75,14 @@ function RecordModal({ players, initial, onClose, onSaved }: {
   const set = (key: keyof FormState, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
   const handleSave = async () => {
-    if (!form.player_id || !form.test_round || !form.test_date) {
-      alert('선수, 회차, 측정일은 필수입니다.');
+    if (!form.player_id || !form.test_date) {
+      alert('선수, 측정일은 필수입니다.');
       return;
     }
     setSaving(true);
     try {
       await upsertPhysicalTestRecord({
         player_id: form.player_id,
-        test_round: form.test_round,
         test_date: form.test_date,
         nordic_curl_left: num(form.nordic_curl_left),
         nordic_curl_right: num(form.nordic_curl_right),
@@ -125,12 +123,7 @@ function RecordModal({ players, initial, onClose, onSaved }: {
               {players.map(p => <option key={p.id} value={p.id}>{p.name} ({p.position})</option>)}
             </select>
           </label>
-          <label className="text-xs text-text-secondary">
-            회차
-            <input value={form.test_round} onChange={e => set('test_round', e.target.value)}
-              className="w-full mt-1 px-2 py-1.5 text-sm rounded border border-surface-secondary bg-[var(--bg)]" />
-          </label>
-          <label className="text-xs text-text-secondary">
+          <label className="col-span-2 text-xs text-text-secondary">
             측정일
             <input type="date" value={form.test_date} onChange={e => set('test_date', e.target.value)}
               className="w-full mt-1 px-2 py-1.5 text-sm rounded border border-surface-secondary bg-[var(--bg)]" />
@@ -191,7 +184,6 @@ export function PhysicalDataPage() {
 
   const openEdit = (row: PhysicalTestRow) => setModalForm({
     player_id: row.player_id,
-    test_round: row.test_round ?? '1',
     test_date: row.test_date,
     nordic_curl_left: row.nordic_curl_left != null ? String(row.nordic_curl_left) : '',
     nordic_curl_right: row.nordic_curl_right != null ? String(row.nordic_curl_right) : '',
@@ -237,6 +229,9 @@ export function PhysicalDataPage() {
             + 측정 추가
           </button>
         </div>
+        <p className="text-[11px] text-text-secondary mt-2">
+          측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 "피지컬" 포함 파일명의 CSV를 올리면 자동으로 반영됩니다.
+        </p>
       </div>
 
       <div className="flex-1 overflow-auto px-6 pb-6">
@@ -250,7 +245,7 @@ export function PhysicalDataPage() {
               <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
                 <thead>
                   <tr className="border-b border-surface-secondary">
-                    {['이름', '포지션', '측정일', '회차', 'Nordic(좌)', 'Nordic(우)', '외전(좌)', '외전(우)', '내전(좌)', '내전(우)',
+                    {['이름', '포지션', '측정일', 'Nordic(좌)', 'Nordic(우)', '외전(좌)', '외전(우)', '내전(좌)', '내전(우)',
                       '5m(s)', '10m(s)', '30m(s)', 'CMJ(cm)', '재점프(cm)', 'Squat Jump(cm)', '방향전환(런)', '방향전환(볼)', 'MAS', 'MSS', ''].map(h => (
                       <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
                         {h}
@@ -264,7 +259,6 @@ export function PhysicalDataPage() {
                       <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
                       <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
                       <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
-                      <td className="px-2.5 py-2 whitespace-nowrap">{row.test_round ?? '—'}</td>
                       <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_left)}</td>
                       <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_right)}</td>
                       <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_left)}</td>
