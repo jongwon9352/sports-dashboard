@@ -11,9 +11,11 @@ import {
   getAcwrZone,
 } from '../utils/calculations';
 import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow } from '../utils/csvParser';
+import { parseMaturitySheetCsv, parseSheetTimestampToDate } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
+const GOOGLE_SHEET_MATURITY_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqPvqKWf2mgJBub7W6ZlU4RInG4GeYF37brcZmCiO0bT7wnF3JEPp2GekynyxTARrl1IYbNJpLJ3Iy/pub?gid=1965396254&single=true&output=csv';
 
 export interface GoogleSheetRpe {
   date: string;
@@ -1684,6 +1686,71 @@ export async function updatePlayerMaturityBaseline(playerId: string, fields: {
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', playerId);
   if (error) throw error;
+}
+
+// 구글 시트(폼 응답)에서 신체 성숙도 원본값을 동기화한다.
+// "고정값" 원칙에 따라 선수별로 아직 비어있는(null) 항목만 채우고, 이미 입력된 값은 절대 덮어쓰지 않는다.
+export interface MaturitySyncResult {
+  updatedCount: number;
+  unmatchedNames: string[];
+}
+
+export async function syncMaturityFromGoogleSheet(): Promise<MaturitySyncResult> {
+  const res = await fetch(GOOGLE_SHEET_MATURITY_URL);
+  if (!res.ok) throw new Error('구글 시트를 불러올 수 없습니다.');
+  const text = await res.text();
+  const rows = parseMaturitySheetCsv(text);
+  if (rows.length === 0) return { updatedCount: 0, unmatchedNames: [] };
+
+  // 같은 선수가 여러 번 응답했다면 최신 타임스탬프만 사용
+  const latestByName = new Map<string, typeof rows[number]>();
+  for (const row of rows) {
+    const name = normalizeName(row.player_name);
+    const prev = latestByName.get(name);
+    if (!prev || row.timestamp > prev.timestamp) latestByName.set(name, row);
+  }
+
+  const client = requireSupabase();
+  const { data: players, error } = await client
+    .from('players')
+    .select('id, name, baseline_height_cm, baseline_weight_kg, chair_height_cm, baseline_sitting_height_cm, baseline_measured_at, mother_height_cm, father_height_cm');
+  if (error) throw error;
+
+  const playerMap = new Map(((players as R[]) ?? []).map(p => [normalizeName(p.name as string), p]));
+
+  let updatedCount = 0;
+  const unmatchedNames: string[] = [];
+
+  for (const [name, row] of latestByName) {
+    const player = playerMap.get(name);
+    if (!player) {
+      unmatchedNames.push(row.player_name);
+      continue;
+    }
+
+    const fields: Record<string, number | string> = {};
+    if (player.baseline_height_cm == null && row.height != null) fields.baseline_height_cm = row.height;
+    if (player.baseline_weight_kg == null && row.weight != null) fields.baseline_weight_kg = row.weight;
+    if (player.chair_height_cm == null && row.chair_height != null) fields.chair_height_cm = row.chair_height;
+    if (player.baseline_sitting_height_cm == null && row.sitting_height != null) fields.baseline_sitting_height_cm = row.sitting_height;
+    if (player.mother_height_cm == null && row.mother_height != null) fields.mother_height_cm = row.mother_height;
+    if (player.father_height_cm == null && row.father_height != null) fields.father_height_cm = row.father_height;
+    if (player.baseline_measured_at == null) {
+      const measuredAt = parseSheetTimestampToDate(row.timestamp);
+      if (measuredAt) fields.baseline_measured_at = measuredAt;
+    }
+
+    if (Object.keys(fields).length === 0) continue;
+
+    const { error: updateError } = await client
+      .from('players')
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq('id', player.id as string);
+    if (updateError) throw updateError;
+    updatedCount++;
+  }
+
+  return { updatedCount, unmatchedNames };
 }
 
 // ── 피지컬 데이터 (VALD 체력 테스트) — 측정일마다 누적 저장 ───────────────

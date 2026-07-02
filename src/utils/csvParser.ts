@@ -235,3 +235,40 @@ export function parsePhysicalCsv(csvText: string): ParsedPhysicalRow[] {
     mss_value: parseNullableNumber(row[16]),
   })).filter(r => r.player_name);
 }
+
+export interface MaturitySheetRow {
+  timestamp: string;
+  player_name: string;
+  height: number | null;
+  weight: number | null;
+  chair_height: number | null;
+  sitting_height: number | null;
+  mother_height: number | null;
+  father_height: number | null;
+}
+
+// 구글 폼 응답 시트: 타임스탬프,선수 이름,선수 신장(cm),선수 몸무게(kg),의자 높이(cm),앉은 키,엄마 신장,아빠 신장
+export function parseMaturitySheetCsv(csvText: string): MaturitySheetRow[] {
+  const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length < 2) return [];
+
+  return rows.slice(1).map(row => ({
+    timestamp: row[0] || '',
+    player_name: row[1] || '',
+    height: parseNullableNumber(row[2]),
+    weight: parseNullableNumber(row[3]),
+    chair_height: parseNullableNumber(row[4]),
+    sitting_height: parseNullableNumber(row[5]),
+    mother_height: parseNullableNumber(row[6]),
+    father_height: parseNullableNumber(row[7]),
+  })).filter(r => r.player_name);
+}
+
+// 구글 폼 타임스탬프("2024. 3. 9 오후 3:45:00")를 YYYY-MM-DD로 변환
+export function parseSheetTimestampToDate(timestamp: string): string | null {
+  const m = timestamp.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}

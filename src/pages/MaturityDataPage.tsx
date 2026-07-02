@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { fetchMaturityRecords, updatePlayerMaturityBaseline, type MaturityRow } from '../lib/api';
+import { fetchMaturityRecords, updatePlayerMaturityBaseline, syncMaturityFromGoogleSheet, type MaturityRow } from '../lib/api';
 
 function fmt(v: number | string | null): string {
   if (v == null) return '—';
@@ -79,6 +79,7 @@ export function MaturityDataPage() {
   const [data, setData] = useState<MaturityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -101,6 +102,22 @@ export function MaturityDataPage() {
     }
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncMaturityFromGoogleSheet();
+      load();
+      const msg = result.unmatchedNames.length > 0
+        ? `${result.updatedCount}명 반영 완료. 매칭 안 된 이름: ${result.unmatchedNames.join(', ')}`
+        : `${result.updatedCount}명 반영 완료.`;
+      alert(msg);
+    } catch {
+      alert('구글 시트 동기화 중 오류가 발생했습니다.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-72px)]">
       <div className="p-6 pb-4 flex-shrink-0">
@@ -111,6 +128,7 @@ export function MaturityDataPage() {
             ({filtered.length}명)
           </span>
         </h1>
+        <div className="flex items-center gap-3 flex-wrap">
         <input
           type="text"
           placeholder="이름 검색..."
@@ -119,9 +137,17 @@ export function MaturityDataPage() {
           className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
           style={{ fontFamily: 'var(--font-data)' }}
         />
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-50"
+        >
+          {syncing ? '동기화 중...' : '구글 시트 동기화'}
+        </button>
+        </div>
         <p className="text-[11px] text-text-secondary mt-2">
           선수당 최초 1회만 입력 가능하며, 입력 후에는 값이 고정되어 수정할 수 없습니다.
-          (노란 테두리 = 미입력 항목, 클릭 후 값 입력 → 포커스 아웃 시 저장)
+          (노란 테두리 = 미입력 항목, 클릭 후 값 입력 → 포커스 아웃 시 저장 / 구글 시트 동기화는 비어있는 항목만 채웁니다)
         </p>
       </div>
 
