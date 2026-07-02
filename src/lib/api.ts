@@ -1529,3 +1529,78 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
 
   return result as any;
 }
+
+// 선수 개인 ACWR/Monotony (TL/TD/HSR/Sprint/ACD Load 5개 항목, 팀 대시보드와 동일한 EWMA 프로세스)
+export async function fetchPlayerAcwrMultiMetric(playerId: string, days: number = 90): Promise<{
+  tl: TeamAcwrSeries[];
+  td: TeamAcwrSeries[];
+  hsr: TeamAcwrSeries[];
+  sprint: TeamAcwrSeries[];
+  acd: TeamAcwrSeries[];
+}> {
+  if (!supabase) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - days);
+
+  const { data: dailyData } = await supabase
+    .from('training_daily')
+    .select('training_date, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+    .eq('player_id', playerId)
+    .gte('training_date', startDate.toISOString().split('T')[0])
+    .lte('training_date', today.toISOString().split('T')[0])
+    .order('training_date', { ascending: true });
+
+  if (!dailyData || dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+
+  const byDate = new Map<string, any>((dailyData as any[]).map(r => [r.training_date as string, r]));
+
+  const allDates: string[] = [];
+  for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+    allDates.push(d.toISOString().split('T')[0]);
+  }
+
+  const dateMap = new Map<string, TeamAcwrDayData>();
+  for (const date of allDates) {
+    const r = byDate.get(date);
+    const tlVal = r ? (Number(r.daily_training_load) || (Number(r.duration_min) || 0) * (Number(r.rpe) || 0)) : 0;
+    dateMap.set(date, {
+      date,
+      tl: tlVal,
+      td: r ? Number(r.total_distance) || 0 : 0,
+      hsr: r ? Number(r.hsr_distance) || 0 : 0,
+      sprint: r ? Number(r.sprint_distance) || 0 : 0,
+      acd: r ? Number(r.acd_load) || 0 : 0,
+    });
+  }
+
+  function computeEwma(dailyValues: { date: string; value: number }[]): TeamAcwrSeries[] {
+    let acute: number | null = null;
+    let chronic: number | null = null;
+    return dailyValues.map(({ date, value }) => {
+      if (acute === null) {
+        acute = value;
+        chronic = value;
+      } else {
+        acute = acute * 0.25 + value * 0.75;
+        chronic = value * 0.069 + chronic! * 0.931;
+      }
+      const acwr = (acute > 0 && chronic! > 0) ? acute / chronic! : 0;
+      return { date, daily: value, acute, chronic: chronic!, acwr };
+    });
+  }
+
+  const metrics: (keyof TeamAcwrDayData)[] = ['tl', 'td', 'hsr', 'sprint', 'acd'];
+  const result: Record<string, TeamAcwrSeries[]> = {};
+
+  for (const metric of metrics) {
+    const dailyValues = allDates.map(d => ({
+      date: d,
+      value: dateMap.get(d)?.[metric] as number ?? 0,
+    }));
+    result[metric] = computeEwma(dailyValues);
+  }
+
+  return result as any;
+}

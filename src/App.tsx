@@ -13,6 +13,7 @@ import { WeeklyPeriodization } from './pages/WeeklyPeriodization';
 import { RawDataPage } from './pages/RawDataPage';
 import { MatchReport } from './pages/MatchReport';
 import { TeamDashboard } from './pages/TeamDashboard';
+import { PersonalDashboard } from './pages/PersonalDashboard';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/team-dashboard" element={<TeamDashboard />} />
+              <Route path="/workload" element={<PersonalDashboard />} />
               <Route path="/daily" element={<DailyReport />} />
               <Route path="/weekly" element={<WeeklyReport />} />
               <Route path="/match" element={<MatchReport />} />

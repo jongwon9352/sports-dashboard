@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 
 export function Sidebar() {
   const location = useLocation();
-  const isDashboardGroup = ['/', '/team-dashboard'].includes(location.pathname);
+  const isDashboardGroup = ['/', '/team-dashboard', '/workload'].includes(location.pathname);
   const isReportGroup = ['/daily', '/weekly', '/match'].includes(location.pathname);
   const isDataGroup = ['/upload', '/raw-data'].includes(location.pathname);
   const [dashboardOpen, setDashboardOpen] = useState(isDashboardGroup);
@@ -41,6 +41,9 @@ export function Sidebar() {
             <div className="pl-5 flex flex-col gap-0.5">
               <NavLink to="/team-dashboard" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
                 <span className="w-[18px] text-center text-[13px]">📈</span>팀 대시보드
+              </NavLink>
+              <NavLink to="/workload" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <span className="w-[18px] text-center text-[13px]">🏃</span>운동부하
               </NavLink>
             </div>
           )}
