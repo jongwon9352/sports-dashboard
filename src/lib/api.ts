@@ -2071,34 +2071,47 @@ export async function importBodyCompositionCsvRows(rows: ParsedBodyCompositionRo
 }
 
 // ── 피지컬 데이터 / Speed custom (골격 구조, 컬럼은 CSV 형식 확정 후 추가 예정) ──
+// 선수별 역대 최고 MAS/MSS 기준 커스텀 속도 Zone (VAMEVAL MAS 60/80/100%, ASR 20%, MSS 80%)
 export interface SpeedCustomRow {
-  id: string;
   player_id: string;
   player_name: string;
   jersey_number: number | null;
   position: string | null;
-  test_date: string;
+  mss: number;
+  mas: number;
+  zone1_mas60: number;
+  zone2_mas80: number;
+  zone3_mas100: number;
+  zone4_asr20: number;
+  zone5_mss80: number;
 }
 
 export async function fetchSpeedCustomRecords(): Promise<SpeedCustomRow[]> {
   const client = requireSupabase();
+  const { data: players } = await client.from('players').select('id, name, jersey_number, position');
+  const playerMap = new Map(((players as R[]) ?? []).map(p => [p.id as string, p]));
+
   const { data, error } = await client
-    .from('speed_custom_test')
-    .select('id, player_id, test_date, players(name, jersey_number, position)')
-    .order('test_date', { ascending: false });
+    .from('player_speed_zones')
+    .select('player_id, mss, mas, zone1_mas60, zone2_mas80, zone3_mas100, zone4_asr20, zone5_mss80');
   if (error) throw error;
 
   return ((data as R[]) ?? []).map(r => {
-    const player = r.players as R;
+    const player = playerMap.get(r.player_id as string);
     return {
-      id: r.id as string,
       player_id: r.player_id as string,
       player_name: (player?.name as string) ?? '',
       jersey_number: player?.jersey_number as number ?? null,
       position: player?.position as string ?? null,
-      test_date: r.test_date as string,
+      mss: Number(r.mss),
+      mas: Number(r.mas),
+      zone1_mas60: Number(r.zone1_mas60),
+      zone2_mas80: Number(r.zone2_mas80),
+      zone3_mas100: Number(r.zone3_mas100),
+      zone4_asr20: Number(r.zone4_asr20),
+      zone5_mss80: Number(r.zone5_mss80),
     };
-  });
+  }).sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
 }
 
 // ── VALD 계측기 CSV 업로드 (ForceDecks / NordBord / ForceFrame / SmartSpeed) ──

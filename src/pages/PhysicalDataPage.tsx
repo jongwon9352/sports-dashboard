@@ -383,41 +383,64 @@ function BodyCompositionTab() {
 function SpeedCustomTab() {
   const [data, setData] = useState<SpeedCustomRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     fetchSpeedCustomRecords().then(setData).finally(() => setLoading(false));
   }, []);
 
+  const filtered = useMemo(() => {
+    return data.filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()));
+  }, [data, search]);
+
   return (
     <>
+      <input
+        type="text"
+        placeholder="이름 검색..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px] mb-2"
+        style={{ fontFamily: 'var(--font-data)' }}
+      />
       <p className="text-[11px] text-text-secondary mb-3">
-        Speed custom 측정 항목은 CSV 형식이 확정되면 추가됩니다. 현재는 선수·측정일만 저장되는 골격 구조입니다.
+        역대 최고 MAS·MSS 기록 기준 커스텀 속도 Zone (Zone1 MAS60% · Zone2 MAS80% · Zone3 MAS100% · Zone4 ASR20% · Zone5 MSS80%)
       </p>
 
       {loading ? (
         <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
-      ) : data.length === 0 ? (
-        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. CSV 형식 확정 후 업로드 기능이 연결됩니다.</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. MAS/Sprint 테스트 기록이 필요합니다.</p>
       ) : (
         <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
-          <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)' }}>
-            <thead>
-              <tr className="border-b border-surface-secondary">
-                {['이름', '포지션', '측정일'].map(h => (
-                  <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(row => (
-                <tr key={row.id} className="border-b border-surface-secondary/50">
-                  <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
+              <thead>
+                <tr className="border-b border-surface-secondary">
+                  {['이름', '포지션', '최고속도', '1구간', '2구간', '3구간', '4구간', '5구간', '6구간', 'MAS', 'MSS'].map(h => (
+                    <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map(row => (
+                  <tr key={row.player_id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.mss.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">0 ~ {row.zone1_mas60.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone1_mas60.toFixed(1)} ~ {row.zone2_mas80.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone2_mas80.toFixed(1)} ~ {row.zone3_mas100.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone3_mas100.toFixed(1)} ~ {row.zone4_asr20.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone4_asr20.toFixed(1)} ~ {row.zone5_mss80.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone5_mss80.toFixed(1)} ~</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.mas.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.mss.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </>
