@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  fetchAllPlayers,
+  fetchPlayersBySeason,
+  fetchSeasonYears,
   addPlayer,
   updatePlayer,
   deletePlayer,
@@ -8,6 +9,8 @@ import {
   uploadPlayerPhoto,
 } from '../lib/api';
 import type { Player, Position, Grade } from '../types';
+
+const CURRENT_YEAR = new Date().getFullYear();
 
 const POSITIONS: Position[] = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF', 'CAM', 'CDM', 'CM', 'FW', 'ST', 'RW', 'LW', 'RB', 'LB', 'DF'];
 const GRADES: Grade[] = ['3학년', '2학년', '1학년'];
@@ -195,6 +198,8 @@ function PlayerModal({
 
 export function Settings() {
   const [players, setPlayers] = useState<Player[]>([]);
+  const [seasonYears, setSeasonYears] = useState<number[]>([CURRENT_YEAR]);
+  const [seasonYear, setSeasonYear] = useState(CURRENT_YEAR);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<TabFilter>('전체');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -205,10 +210,21 @@ export function Settings() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
 
-  const load = useCallback(async () => {
-    try { setPlayers(await fetchAllPlayers()); } catch { /* */ }
+  const loadYears = useCallback(async () => {
+    try {
+      const years = await fetchSeasonYears();
+      if (years.length > 0) {
+        setSeasonYears(years);
+        setSeasonYear(prev => (years.includes(prev) ? prev : years[0]));
+      }
+    } catch { /* */ }
   }, []);
 
+  const load = useCallback(async () => {
+    try { setPlayers(await fetchPlayersBySeason(seasonYear)); } catch { /* */ }
+  }, [seasonYear]);
+
+  useEffect(() => { loadYears(); }, [loadYears]);
   useEffect(() => { load(); }, [load]);
 
   const filtered = players.filter(p => {
@@ -257,8 +273,8 @@ export function Settings() {
   const handleAdd = async () => {
     if (!newName.trim() || !newNumber) return;
     try {
-      await addPlayer({ name: newName.trim(), jersey_number: parseInt(newNumber), position: newPosition, grade: newGrade });
-      setNewName(''); setNewNumber(''); setShowAddForm(false); await load();
+      await addPlayer({ name: newName.trim(), jersey_number: parseInt(newNumber), position: newPosition, grade: newGrade }, seasonYear);
+      setNewName(''); setNewNumber(''); setShowAddForm(false); await loadYears(); await load();
     } catch { /* */ }
   };
 
@@ -285,10 +301,22 @@ export function Settings() {
   return (
     <div className="p-8 max-w-[1200px] mx-auto">
       <p className="text-sm text-text-secondary mb-2">설정 / 선수</p>
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+      <h1 className="text-2xl font-bold mb-4 flex items-center gap-2">
         <span className="w-1 h-6 bg-cyan-400 rounded-sm inline-block" />
         선수 관리
       </h1>
+
+      {/* 연도(시즌) 탭 */}
+      <div className="flex items-center gap-1 mb-4">
+        {seasonYears.map(year => (
+          <button key={year} onClick={() => setSeasonYear(year)}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              seasonYear === year ? 'bg-purple text-white' : 'bg-surface-secondary text-text-secondary hover:text-text-primary'
+            }`}>
+            {year}
+          </button>
+        ))}
+      </div>
 
       <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
         {/* Tabs */}

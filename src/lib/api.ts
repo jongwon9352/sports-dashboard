@@ -88,7 +88,11 @@ function defaultPlayer(name: string, jerseyNumber: number) {
   };
 }
 
-async function getOrCreatePlayers(rows: { player_name: string; jersey_number: number }[]) {
+async function getOrCreatePlayers(
+  rows: { player_name: string; jersey_number: number }[],
+  seasonYear: number,
+  overrides?: Map<string, string>,
+) {
   const client = requireSupabase();
   const requested = new Map<string, number>();
 
@@ -99,41 +103,138 @@ async function getOrCreatePlayers(rows: { player_name: string; jersey_number: nu
 
   if (requested.size === 0) return new Map<string, string>();
 
-  const names = [...requested.keys()];
-  const { data: existing, error: fetchError } = await client
-    .from('players')
-    .select('id, name')
-    .in('name', names);
-  if (fetchError) throw fetchError;
-
   const playerMap = new Map<string, string>();
-  for (const player of (existing as R[]) ?? []) {
-    playerMap.set(normalizeName(player.name), player.id);
-  }
+  for (const [name, id] of overrides ?? []) playerMap.set(name, id);
 
-  const missing = names
-    .filter(name => !playerMap.has(name))
-    .map(name => defaultPlayer(name, requested.get(name) ?? 0));
+  // overrides에 없는 이름은 players 테이블에도 전혀 없는 완전 신규 이름만 남는다
+  // (기존에 존재하는 이름은 analyzePlayerNamesForSeason + resolveAmbiguousPlayerName을 거쳐 이미 overrides에 들어있어야 함)
+  const names = [...requested.keys()].filter(name => !playerMap.has(name));
+  if (names.length === 0) return playerMap;
 
-  if (missing.length > 0) {
-    const { data: inserted, error: insertError } = await client
-      .from('players')
-      .insert(missing)
-      .select('id, name');
-    if (insertError) throw insertError;
+  const missing = names.map(name => defaultPlayer(name, requested.get(name) ?? 0));
 
-    for (const player of (inserted as R[]) ?? []) {
-      playerMap.set(normalizeName(player.name), player.id);
-    }
+  const { data: inserted, error: insertError } = await client
+    .from('players')
+    .insert(missing)
+    .select('id, name');
+  if (insertError) throw insertError;
+
+  const seasonRows = ((inserted as R[]) ?? []).map(player => {
+    const name = normalizeName(player.name as string);
+    playerMap.set(name, player.id as string);
+    return { player_id: player.id as string, season_year: seasonYear, jersey_number: requested.get(name) ?? 0 };
+  });
+
+  if (seasonRows.length > 0) {
+    const { error: seasonError } = await client
+      .from('player_seasons')
+      .upsert(seasonRows, { onConflict: 'player_id,season_year' });
+    if (seasonError) throw seasonError;
   }
 
   return playerMap;
 }
 
-export async function importSessionCsvRows(rows: ParsedSessionRow[], date: string) {
+// ── 시즌별 선수 매칭 (동명이인 구분) ──────────────────────────────────────
+export interface PlayerNameAnalysis {
+  // 이번 시즌에 이미 등록되어 있거나, 완전히 새 이름이라 자동 생성해도 안전한 경우
+  autoMap: Map<string, string>;
+  // 다른 시즌에는 존재하지만 이번 시즌엔 없는 이름 — 동일 인물 진급인지 동명이인 신입인지 확인 필요
+  ambiguous: { name: string; existingPlayerId: string; existingSeasons: number[] }[];
+}
+
+export async function analyzePlayerNamesForSeason(rows: { player_name: string }[], seasonYear: number): Promise<PlayerNameAnalysis> {
+  const client = requireSupabase();
+  const names = [...new Set(rows.map(r => normalizeName(r.player_name)).filter(Boolean))];
+  if (names.length === 0) return { autoMap: new Map(), ambiguous: [] };
+
+  const { data: matchedPlayers, error } = await client.from('players').select('id, name').in('name', names);
+  if (error) throw error;
+  const playerIdByName = new Map(((matchedPlayers as R[]) ?? []).map(p => [normalizeName(p.name as string), p.id as string]));
+
+  const matchedIds = [...playerIdByName.values()];
+  const { data: seasons } = matchedIds.length > 0
+    ? await client.from('player_seasons').select('player_id, season_year').in('player_id', matchedIds)
+    : { data: [] as R[] };
+  const seasonsByPlayerId = new Map<string, number[]>();
+  for (const s of (seasons as R[]) ?? []) {
+    const pid = s.player_id as string;
+    if (!seasonsByPlayerId.has(pid)) seasonsByPlayerId.set(pid, []);
+    seasonsByPlayerId.get(pid)!.push(s.season_year as number);
+  }
+
+  const autoMap = new Map<string, string>();
+  const ambiguous: PlayerNameAnalysis['ambiguous'] = [];
+
+  for (const name of names) {
+    const playerId = playerIdByName.get(name);
+    if (!playerId) continue; // 완전히 새 이름 — getOrCreatePlayers가 알아서 생성, 시즌 등록은 아래에서 처리
+    const existingSeasons = seasonsByPlayerId.get(playerId) ?? [];
+    if (existingSeasons.includes(seasonYear)) {
+      autoMap.set(name, playerId);
+    } else {
+      ambiguous.push({ name, existingPlayerId: playerId, existingSeasons });
+    }
+  }
+
+  return { autoMap, ambiguous };
+}
+
+// 동명이인 확인 결과를 반영: 기존 인물 재사용(진급) 또는 신규 인물 생성
+export async function resolveAmbiguousPlayerName(
+  name: string,
+  seasonYear: number,
+  jerseyNumber: number,
+  decision: { reuseExisting: true; existingPlayerId: string } | { reuseExisting: false }
+): Promise<string> {
+  const client = requireSupabase();
+
+  if (decision.reuseExisting) {
+    const { error } = await client
+      .from('player_seasons')
+      .upsert(
+        { player_id: decision.existingPlayerId, season_year: seasonYear, jersey_number: jerseyNumber },
+        { onConflict: 'player_id,season_year' }
+      );
+    if (error) throw error;
+    return decision.existingPlayerId;
+  }
+
+  const { data: inserted, error: insertError } = await client
+    .from('players')
+    .insert(defaultPlayer(normalizeName(name), jerseyNumber))
+    .select('id')
+    .single();
+  if (insertError) throw insertError;
+  const playerId = (inserted as R).id as string;
+
+  const { error: seasonError } = await client
+    .from('player_seasons')
+    .insert({ player_id: playerId, season_year: seasonYear, jersey_number: jerseyNumber, grade: '1학년', position: 'MF' });
+  if (seasonError) throw seasonError;
+
+  return playerId;
+}
+
+// 시즌 스코프에서 신규 등록되는(동명이인 이슈 없는) 선수의 시즌 소속 레코드 보장
+export async function ensurePlayerSeasonRecords(playerIds: string[], seasonYear: number, jerseyByPlayerId: Map<string, number>) {
+  if (playerIds.length === 0) return;
+  const client = requireSupabase();
+  const rows = playerIds.map(id => ({
+    player_id: id,
+    season_year: seasonYear,
+    jersey_number: jerseyByPlayerId.get(id) ?? 0,
+  }));
+  const { error } = await client
+    .from('player_seasons')
+    .upsert(rows, { onConflict: 'player_id,season_year' });
+  if (error) throw error;
+}
+
+export async function importSessionCsvRows(rows: ParsedSessionRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
-  const playerMap = await getOrCreatePlayers(validRows);
+  const playerMap = await getOrCreatePlayers(validRows, seasonYear, overrides);
   const now = new Date().toISOString();
 
   const sessionRows = validRows.map(row => ({
@@ -171,10 +272,10 @@ const GRADE_TO_GROUP: Record<string, string> = {
   '3학년': 'U15',
 };
 
-export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
+export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
-  const playerMap = await getOrCreatePlayers(validRows);
+  const playerMap = await getOrCreatePlayers(validRows, seasonYear, overrides);
   const now = new Date().toISOString();
   const parsedDate = new Date(date);
   const dayOfWeek = dayNames[parsedDate.getDay()] ?? '';
@@ -249,14 +350,14 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string) {
   await recalculatePlayerAcwr(playerIds);
 }
 
-export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: string) {
+export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: string, seasonYear: number, overrides?: Map<string, string>) {
   const matchInfo = parseMatchFilename(filename);
   if (!matchInfo) throw new Error('파일명에서 경기 정보를 추출할 수 없습니다. (형식: 날짜-대회-상대.csv)');
 
   const { date, event_type, opponent } = matchInfo;
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
-  const playerMap = await getOrCreatePlayers(validRows);
+  const playerMap = await getOrCreatePlayers(validRows, seasonYear, overrides);
   const now = new Date().toISOString();
 
   const allPlayerIds = [...new Set([...playerMap.values()])] as string[];
@@ -307,7 +408,7 @@ export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: strin
   if (matchError) throw matchError;
 
   // training_daily에도 저장 (데일리/위클리 리포트 반영)
-  await importDailyCsvRows(rows, date);
+  await importDailyCsvRows(rows, date, seasonYear, overrides);
 
   return matchRows.length;
 }
@@ -863,16 +964,49 @@ export async function fetchAllPlayers(): Promise<Player[]> {
   return (data ?? []) as Player[];
 }
 
+export async function fetchSeasonYears(): Promise<number[]> {
+  const client = requireSupabase();
+  const { data, error } = await client.from('player_seasons').select('season_year');
+  if (error) throw error;
+  const years = [...new Set(((data as R[]) ?? []).map(r => r.season_year as number))];
+  return years.sort((a, b) => b - a);
+}
+
+// 특정 시즌 소속 선수만 반환. 등번호/포지션/학년은 해당 시즌 기준 값으로 덮어씀
+export async function fetchPlayersBySeason(seasonYear: number): Promise<Player[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('player_seasons')
+    .select('jersey_number, grade, position, players(*)')
+    .eq('season_year', seasonYear);
+  if (error) throw error;
+
+  return ((data as R[]) ?? [])
+    .map(row => {
+      const player = row.players as R;
+      if (!player) return null;
+      return {
+        ...player,
+        jersey_number: row.jersey_number ?? player.jersey_number,
+        grade: row.grade ?? player.grade,
+        position: row.position ?? player.position,
+      } as Player;
+    })
+    .filter((p): p is Player => p !== null)
+    .sort((a, b) => a.jersey_number - b.jersey_number);
+}
+
 export async function addPlayer(player: {
   name: string;
   jersey_number: number;
   position: string;
   grade: string;
-}) {
+}, seasonYear: number) {
   const client = requireSupabase();
   const now = new Date().toISOString();
+  const id = crypto.randomUUID();
   const { error } = await client.from('players').insert({
-    id: crypto.randomUUID(),
+    id,
     name: player.name,
     jersey_number: player.jersey_number,
     position: player.position,
@@ -881,6 +1015,15 @@ export async function addPlayer(player: {
     updated_at: now,
   });
   if (error) throw error;
+
+  const { error: seasonError } = await client.from('player_seasons').insert({
+    player_id: id,
+    season_year: seasonYear,
+    jersey_number: player.jersey_number,
+    grade: player.grade,
+    position: player.position,
+  });
+  if (seasonError) throw seasonError;
 }
 
 export async function uploadPlayerPhoto(playerId: string, file: File): Promise<string> {
@@ -1311,7 +1454,7 @@ export async function saveMatchPositions(ids: string[], positions: Record<string
   await Promise.all(updates);
 }
 
-export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], filename: string): Promise<number> {
+export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], filename: string, seasonYear: number, overrides?: Map<string, string>): Promise<number> {
   const matchInfo = parseMatchSessionFilename(filename);
   if (!matchInfo) throw new Error('파일명에서 경기 정보를 추출할 수 없습니다. (형식: 날짜-타입-세션별.csv)');
 
@@ -1330,7 +1473,7 @@ export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], f
   }
 
   const validRows = rows.filter(row => normalizeName(row.player_name));
-  const playerMap = await getOrCreatePlayers(validRows);
+  const playerMap = await getOrCreatePlayers(validRows, seasonYear, overrides);
   const now = new Date().toISOString();
 
   const sessionRows = validRows.map(row => {
@@ -1823,10 +1966,10 @@ export async function upsertPhysicalTestRecord(input: {
   if (error) throw error;
 }
 
-export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: string) {
+export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
-  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
 
   const physicalRows = validRows.map(row => ({
     player_id: playerMap.get(normalizeName(row.player_name)),
@@ -1897,10 +2040,10 @@ export async function fetchBodyCompositionRecords(): Promise<BodyCompositionRow[
   });
 }
 
-export async function importBodyCompositionCsvRows(rows: ParsedBodyCompositionRow[], date: string) {
+export async function importBodyCompositionCsvRows(rows: ParsedBodyCompositionRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
-  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
 
   const [year, month] = date.split('-').map(Number);
 

@@ -7,12 +7,17 @@ import {
   importMatchSessionCsvRows,
   importPhysicalCsvRows,
   importBodyCompositionCsvRows,
+  analyzePlayerNamesForSeason,
+  resolveAmbiguousPlayerName,
   saveCsvUploadRecord,
   fetchCsvUploads,
   deleteCsvUpload,
   fetchDataSummary,
   type CsvUploadRecord,
 } from '../lib/api';
+
+const CURRENT_YEAR = new Date().getFullYear();
+const SEASON_YEARS = [CURRENT_YEAR + 1, CURRENT_YEAR, CURRENT_YEAR - 1];
 
 type FileType = 'session' | 'daily' | 'match' | 'match_session' | 'physical' | 'body_composition' | null;
 
@@ -47,6 +52,67 @@ interface UploadStatus {
   message?: string;
 }
 
+interface AmbiguousDialogState {
+  fileName: string;
+  items: { name: string; existingSeasons: number[] }[];
+  resolve: (decisions: Map<string, boolean>) => void;
+}
+
+function AmbiguousNameDialog({ state, onSubmit }: { state: AmbiguousDialogState; onSubmit: (decisions: Map<string, boolean>) => void }) {
+  const [answers, setAnswers] = useState<Map<string, boolean>>(new Map());
+
+  const allAnswered = state.items.every(item => answers.has(item.name));
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-surface rounded-xl p-6 w-[480px] max-h-[85vh] overflow-y-auto">
+        <h2 className="text-lg font-bold mb-2">동명이인 확인</h2>
+        <p className="text-xs text-text-secondary mb-4">
+          "{state.fileName}" 파일에 있는 아래 이름은 다른 시즌({state.items.map(i => i.existingSeasons.join('/')).join(', ')})에만 등록되어 있습니다.
+          기존 선수와 동일 인물인지 확인해주세요.
+        </p>
+        <div className="space-y-3">
+          {state.items.map(item => (
+            <div key={item.name} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[var(--bg)]">
+              <div>
+                <p className="text-sm font-medium">{item.name}</p>
+                <p className="text-[11px] text-text-secondary">기존 등록 시즌: {item.existingSeasons.join(', ')}</p>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={() => setAnswers(prev => new Map(prev).set(item.name, true))}
+                  className={`px-3 py-1 text-xs rounded border transition-colors ${
+                    answers.get(item.name) === true ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                  }`}
+                >
+                  동일 인물
+                </button>
+                <button
+                  onClick={() => setAnswers(prev => new Map(prev).set(item.name, false))}
+                  className={`px-3 py-1 text-xs rounded border transition-colors ${
+                    answers.get(item.name) === false ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                  }`}
+                >
+                  신규 선수
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end mt-5">
+          <button
+            onClick={() => onSubmit(answers)}
+            disabled={!allAnswered}
+            className="px-4 py-1.5 text-sm rounded bg-purple text-white disabled:opacity-50"
+          >
+            확인하고 계속 업로드
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Upload() {
   const [dragging, setDragging] = useState(false);
   const [uploads, setUploads] = useState<CsvUploadRecord[]>([]);
@@ -54,6 +120,8 @@ export function Upload() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<UploadStatus[]>([]);
+  const [seasonYear, setSeasonYear] = useState(CURRENT_YEAR);
+  const [ambiguousDialog, setAmbiguousDialog] = useState<AmbiguousDialogState | null>(null);
   const loadData = useCallback(async () => {
     try {
       const [files, sum] = await Promise.all([fetchCsvUploads(), fetchDataSummary()]);
@@ -67,6 +135,32 @@ export function Upload() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // 이름이 다른 시즌에만 등록되어 있으면 사용자에게 동일 인물인지 확인받고,
+  // 확정된 이름→player_id 매핑(overrides)을 반환한다.
+  const resolvePlayersForNames = useCallback(async (
+    rows: { player_name: string }[], fileName: string,
+  ): Promise<Map<string, string>> => {
+    const { autoMap, ambiguous } = await analyzePlayerNamesForSeason(rows, seasonYear);
+    if (ambiguous.length === 0) return autoMap;
+
+    const decisions = await new Promise<Map<string, boolean>>(resolve => {
+      setAmbiguousDialog({
+        fileName,
+        items: ambiguous.map(a => ({ name: a.name, existingSeasons: a.existingSeasons })),
+        resolve,
+      });
+    });
+    setAmbiguousDialog(null);
+
+    for (const item of ambiguous) {
+      const reuse = decisions.get(item.name) ?? false;
+      const playerId = await resolveAmbiguousPlayerName(item.name, seasonYear, 0,
+        reuse ? { reuseExisting: true, existingPlayerId: item.existingPlayerId } : { reuseExisting: false });
+      autoMap.set(item.name, playerId);
+    }
+    return autoMap;
+  }, [seasonYear]);
 
   const handleFiles = useCallback(async (files: FileList) => {
     const newStatuses: UploadStatus[] = [];
@@ -90,28 +184,34 @@ export function Upload() {
         if (type === 'match_session') {
           const rows = parseMatchSessionCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
-          rowCount = await importMatchSessionCsvRows(rows, file.name);
+          const overrides = await resolvePlayersForNames(rows, file.name);
+          rowCount = await importMatchSessionCsvRows(rows, file.name, seasonYear, overrides);
         } else if (type === 'match') {
           const rows = parseDailyCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
-          rowCount = await importMatchCsvRows(rows, file.name);
+          const overrides = await resolvePlayersForNames(rows, file.name);
+          rowCount = await importMatchCsvRows(rows, file.name, seasonYear, overrides);
         } else if (type === 'session') {
           const rows = parseSessionCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
-          await importSessionCsvRows(rows, date);
+          const overrides = await resolvePlayersForNames(rows, file.name);
+          await importSessionCsvRows(rows, date, seasonYear, overrides);
           rowCount = rows.length;
         } else if (type === 'physical') {
           const rows = parsePhysicalCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
-          rowCount = await importPhysicalCsvRows(rows, date);
+          const overrides = await resolvePlayersForNames(rows, file.name);
+          rowCount = await importPhysicalCsvRows(rows, date, seasonYear, overrides);
         } else if (type === 'body_composition') {
           const rows = parseBodyCompositionCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
-          rowCount = await importBodyCompositionCsvRows(rows, date);
+          const overrides = await resolvePlayersForNames(rows, file.name);
+          rowCount = await importBodyCompositionCsvRows(rows, date, seasonYear, overrides);
         } else {
           const rows = parseDailyCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
-          await importDailyCsvRows(rows, date);
+          const overrides = await resolvePlayersForNames(rows, file.name);
+          await importDailyCsvRows(rows, date, seasonYear, overrides);
           rowCount = rows.length;
         }
 
@@ -144,7 +244,7 @@ export function Upload() {
     }
 
     await loadData();
-  }, [loadData]);
+  }, [loadData, resolvePlayersForNames, seasonYear]);
 
   const handleDownload = (record: CsvUploadRecord) => {
     const blob = new Blob([record.csv_content], { type: 'text/csv;charset=utf-8;' });
@@ -188,9 +288,21 @@ export function Upload() {
 
       {/* CSV 파일 업로드 */}
       <div className="bg-surface rounded-xl p-6 shadow-[var(--shadow-1)] mb-6">
-        <p className="text-sm text-text-secondary mb-4 flex items-center gap-2">
-          📁 CSV 파일 업로드
-        </p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-text-secondary flex items-center gap-2">
+            📁 CSV 파일 업로드
+          </p>
+          <label className="text-xs text-text-secondary flex items-center gap-2">
+            시즌
+            <select
+              value={seasonYear}
+              onChange={e => setSeasonYear(Number(e.target.value))}
+              className="px-2 py-1 text-xs rounded border border-surface-secondary bg-[var(--bg)]"
+            >
+              {SEASON_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </label>
+        </div>
         <div
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
@@ -304,6 +416,10 @@ export function Upload() {
           </div>
         )}
       </div>
+
+      {ambiguousDialog && (
+        <AmbiguousNameDialog state={ambiguousDialog} onSubmit={decisions => ambiguousDialog.resolve(decisions)} />
+      )}
     </div>
   );
 }
