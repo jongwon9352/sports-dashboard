@@ -51,9 +51,9 @@ const SECTIONS: { title: string; metrics: MetricDef[] }[] = [
 ];
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
-  const w = 140;
+  const w = 100;
   const h = 40;
-  const pad = 4;
+  const pad = 3;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
@@ -64,10 +64,10 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <path d={path} fill="none" stroke={color} strokeWidth={1.5} />
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <path d={path} fill="none" stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke" />
       {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={2.5} fill={color} />
+        <circle key={i} cx={p.x} cy={p.y} r={1.8} fill={color} />
       ))}
     </svg>
   );
