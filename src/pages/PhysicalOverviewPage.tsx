@@ -50,26 +50,91 @@ const SECTIONS: { title: string; metrics: MetricDef[] }[] = [
   },
 ];
 
-function Sparkline({ values, color }: { values: number[]; color: string }) {
+function axisLabel(v: number, range: number): string {
+  const decimals = range < 3 ? 2 : range < 30 ? 1 : 0;
+  return v.toFixed(decimals);
+}
+
+function TrendChart({ points, color, unit }: { points: { date: string; value: number }[]; color: string; unit: string }) {
+  const [hover, setHover] = useState<number | null>(null);
   const w = 100;
-  const h = 40;
-  const pad = 3;
+  const h = 100;
+  const padX = 6;
+  const padY = 14;
+  const values = points.map(p => p.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
-  const points = values.map((v, i) => ({
-    x: pad + (i / (values.length - 1 || 1)) * (w - pad * 2),
-    y: h - pad - ((v - min) / range) * (h - pad * 2),
-  }));
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+  const xAt = (i: number) => padX + (i / (points.length - 1 || 1)) * (w - padX * 2);
+  const yAt = (v: number) => h - padY - ((v - min) / range) * (h - padY * 2);
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(p.value).toFixed(1)}`).join(' ');
+  const gridVals = range === 0 ? [min] : [max, (min + max) / 2, min];
 
   return (
-    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
-      <path d={path} fill="none" stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={1.8} fill={color} />
-      ))}
-    </svg>
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex' }}>
+        <div style={{ position: 'relative', width: 28, flexShrink: 0 }}>
+          {gridVals.map((gv, i) => (
+            <span
+              key={i}
+              style={{ position: 'absolute', top: `${yAt(gv)}%`, right: 4, transform: 'translateY(-50%)', fontSize: 11, color: 'var(--text-muted)' }}
+            >
+              {axisLabel(gv, range)}
+            </span>
+          ))}
+        </div>
+        <div style={{ position: 'relative', flex: 1, height: 90 }}>
+          <svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+            {gridVals.map((gv, i) => (
+              <line key={i} x1={padX} x2={w - padX} y1={yAt(gv)} y2={yAt(gv)} stroke="var(--border)" strokeWidth={0.5} strokeDasharray="2,2" />
+            ))}
+            <path d={path} fill="none" stroke={color} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+            {points.map((p, i) => (
+              <circle
+                key={i}
+                cx={xAt(i)}
+                cy={yAt(p.value)}
+                r={hover === i ? 3 : 2}
+                fill="var(--surface-2)"
+                stroke={color}
+                strokeWidth={1.2}
+                vectorEffect="non-scaling-stroke"
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                style={{ cursor: 'pointer' }}
+              />
+            ))}
+          </svg>
+          {hover != null && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${xAt(hover)}%`,
+                top: `${yAt(points[hover].value)}%`,
+                transform: 'translate(-50%, -130%)',
+                background: 'var(--surface-2)',
+                border: '0.5px solid var(--border-strong)',
+                borderRadius: 6,
+                padding: '3px 8px',
+                fontSize: 12,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                zIndex: 10,
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>{points[hover].value.toFixed(2)} {unit}</span>
+              <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{points[hover].date}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex justify-between text-[11px] text-text-disabled mt-1" style={{ paddingLeft: 28 }}>
+        {points.map(p => (
+          <span key={p.date}>{p.date}</span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -96,12 +161,7 @@ function MetricCard({ metric, rows }: { metric: MetricDef; rows: PhysicalTestRow
       <p className="text-xl font-medium mb-2">
         {latest.toFixed(2)} <span className="text-xs font-normal text-text-disabled">{metric.unit}</span>
       </p>
-      <Sparkline values={points.map(p => p.value)} color={color} />
-      <div className="flex justify-between text-[11px] text-text-disabled mt-0.5">
-        {points.map(p => (
-          <span key={p.date}>{p.date}</span>
-        ))}
-      </div>
+      <TrendChart points={points} color={color} unit={metric.unit} />
     </div>
   );
 }
