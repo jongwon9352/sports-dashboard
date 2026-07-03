@@ -18,13 +18,6 @@ function avg(a: number | null, b: number | null): number | null {
 
 const SECTIONS: { title: string; metrics: MetricDef[] }[] = [
   {
-    title: 'Body profile',
-    metrics: [
-      { label: '신장 Height', unit: 'cm', getValue: r => r.height },
-      { label: '체중 Weight', unit: 'kg', getValue: r => r.weight },
-    ],
-  },
-  {
     title: 'Strength',
     metrics: [
       { label: '햄스트링 근력 Hamstring Ecc', unit: 'N', getValue: r => avg(r.nordic_curl_left, r.nordic_curl_right) },
@@ -82,7 +75,7 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 
 function MetricCard({ metric, rows }: { metric: MetricDef; rows: PhysicalTestRow[] }) {
   const points = rows
-    .map(r => ({ date: r.test_date, value: metric.getValue(r) }))
+    .map(r => ({ date: `${r.test_round}차`, value: metric.getValue(r) }))
     .filter((p): p is { date: string; value: number } => p.value != null);
 
   if (points.length === 0) {
@@ -106,14 +99,17 @@ function MetricCard({ metric, rows }: { metric: MetricDef; rows: PhysicalTestRow
       <Sparkline values={points.map(p => p.value)} color={color} />
       <div className="flex justify-between text-[11px] text-text-disabled mt-0.5">
         {points.map(p => (
-          <span key={p.date}>{p.date.slice(5)}</span>
+          <span key={p.date}>{p.date}</span>
         ))}
       </div>
     </div>
   );
 }
 
+type Tab = 'vald' | 'body' | 'speed' | 'maturity';
+
 export function PhysicalOverviewPage() {
+  const [tab, setTab] = useState<Tab>('vald');
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [allRecords, setAllRecords] = useState<PhysicalTestRow[]>([]);
@@ -130,50 +126,74 @@ export function PhysicalOverviewPage() {
 
   const rows = useMemo(() => {
     return allRecords
-      .filter(r => r.player_id === selectedId)
+      .filter(r => r.player_id === selectedId && r.test_round)
       .sort((a, b) => a.test_date.localeCompare(b.test_date));
   }, [allRecords, selectedId]);
 
   const player = players.find(p => p.id === selectedId) ?? null;
 
+  const tabBtn = (id: Tab, label: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+        tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="p-6">
       <div className="sec-title">피지컬</div>
 
-      <div className="chart-card mb-4">
-        <div className="flex items-center gap-4">
-          <label className="text-xs text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>
-            선수 선택
-          </label>
-          <select
-            value={selectedId}
-            onChange={e => setSelectedId(e.target.value)}
-            className="flex-1 max-w-xs border border-surface-secondary rounded px-3 py-1.5 text-sm"
-          >
-            {players.map(p => (
-              <option key={p.id} value={p.id}>{p.name} · {p.position} · {p.grade}</option>
-            ))}
-          </select>
-        </div>
+      <div className="flex gap-2 mb-4">
+        {tabBtn('vald', 'VALD')}
+        {tabBtn('body', 'Body composition')}
+        {tabBtn('speed', 'Speed custom')}
+        {tabBtn('maturity', '신체 성숙도')}
       </div>
 
-      {loading ? (
-        <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-text-secondary text-center py-16">{player?.name ?? '선수'}의 VALD 측정 기록이 없습니다.</p>
+      {tab !== 'vald' ? (
+        <p className="text-sm text-text-secondary text-center py-16">준비 중입니다.</p>
       ) : (
-        SECTIONS.map(section => (
-          <div key={section.title} className="mb-5">
-            <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
-              {section.title}
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {section.metrics.map(metric => (
-                <MetricCard key={metric.label} metric={metric} rows={rows} />
-              ))}
+        <>
+          <div className="chart-card mb-4">
+            <div className="flex items-center gap-4">
+              <label className="text-xs text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>
+                선수 선택
+              </label>
+              <select
+                value={selectedId}
+                onChange={e => setSelectedId(e.target.value)}
+                className="flex-1 max-w-xs border border-surface-secondary rounded px-3 py-1.5 text-sm"
+              >
+                {players.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} · {p.position} · {p.grade}</option>
+                ))}
+              </select>
             </div>
           </div>
-        ))
+
+          {loading ? (
+            <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-text-secondary text-center py-16">{player?.name ?? '선수'}의 VALD 측정 기록이 없습니다.</p>
+          ) : (
+            SECTIONS.map(section => (
+              <div key={section.title} className="mb-5">
+                <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+                  {section.title}
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {section.metrics.map(metric => (
+                    <MetricCard key={metric.label} metric={metric} rows={rows} />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </>
       )}
     </div>
   );
