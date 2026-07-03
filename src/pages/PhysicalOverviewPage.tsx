@@ -181,17 +181,18 @@ const GRADE_ORDER = ['1학년', '2학년', '3학년'];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function HeightOverlayBar(props: any) {
   const { x, y, width, height, payload } = props;
-  if (!width) return null;
+  if (!height) return null;
   const predicted = payload?.predicted_adult_height_cm ?? 0;
   const current = payload?.baseline_height_cm ?? 0;
   if (!predicted) return null;
-  const scale = width / predicted;
-  const currentW = Math.min(width, current > 0 ? current * scale : 0);
+  const scale = height / predicted;
+  const currentH = Math.min(height, current > 0 ? current * scale : 0);
+  const baseY = y + height;
 
   return (
     <g>
       <rect x={x} y={y} width={width} height={height} fill="transparent" stroke={colors.navy} strokeWidth={2} rx={3} />
-      <rect x={x} y={y + 2} width={currentW} height={height - 4} fill={colors.navy} rx={2} />
+      <rect x={x + 2} y={baseY - currentH} width={width - 4} height={currentH} fill={colors.navy} rx={2} />
     </g>
   );
 }
@@ -257,8 +258,6 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
     return <p className="text-sm text-text-secondary text-center py-16">신체 성숙도 계산에 필요한 데이터(신장/앉은키/부모 신장 등)가 입력된 선수가 없습니다.</p>;
   }
 
-  const chartHeight = Math.max(280, data.length * 26);
-
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -274,11 +273,11 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
               <span className="w-3 h-3 rounded-sm inline-block border-2" style={{ borderColor: colors.navy }} /> 예측 최대 키(테두리)
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
-              <CartesianGrid stroke={colors.grid} horizontal={false} />
-              <XAxis type="number" unit="cm" tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
+          <ResponsiveContainer width="100%" height={420}>
+            <BarChart data={data} margin={{ bottom: 70 }}>
+              <CartesianGrid stroke={colors.grid} vertical={false} />
+              <XAxis dataKey="player_name" interval={0} angle={-60} textAnchor="end" height={80} tick={{ fontSize: 11 }} />
+              <YAxis unit="cm" tick={{ fontSize: 11 }} />
               <Tooltip content={<HeightTooltip />} />
               <Bar dataKey="predicted_adult_height_cm" shape={HeightOverlayBar} />
             </BarChart>
@@ -291,13 +290,13 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
           선수별 PHV(성장 급증 정점) 예측 나이
         </p>
         <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
-              <CartesianGrid stroke={colors.grid} horizontal={false} />
-              <XAxis type="number" unit="세" tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
+          <ResponsiveContainer width="100%" height={420}>
+            <BarChart data={data} margin={{ bottom: 70 }}>
+              <CartesianGrid stroke={colors.grid} vertical={false} />
+              <XAxis dataKey="player_name" interval={0} angle={-60} textAnchor="end" height={80} tick={{ fontSize: 11 }} />
+              <YAxis unit="세" tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v, _n, p) => [`${v}세`, p?.payload?.maturity_stage]} />
-              <Bar dataKey="mirwald_aphv_age" name="APHV(세)" radius={[0, 3, 3, 0]}>
+              <Bar dataKey="mirwald_aphv_age" name="APHV(세)" radius={[3, 3, 0, 0]}>
                 {data.map(r => (
                   <Cell key={r.player_id} fill={STAGE_COLOR[r.maturity_stage ?? ''] ?? colors.muted} />
                 ))}
@@ -369,23 +368,6 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
               ))}
             </div>
           </div>
-        </div>
-      </div>
-
-      <div>
-        <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
-          선수별 최대 성장 키 예측 도달률(%PAH)
-        </p>
-        <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
-              <CartesianGrid stroke={colors.grid} horizontal={false} />
-              <XAxis type="number" unit="%" domain={[0, 100]} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={v => `${v}%`} />
-              <Bar dataKey="pah_percent" name="도달률" fill={colors.green} radius={[0, 3, 3, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
         </div>
       </div>
     </div>
