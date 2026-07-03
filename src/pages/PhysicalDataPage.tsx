@@ -174,6 +174,7 @@ function ValdTab() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedRound, setSelectedRound] = useState('전체');
   const [modalForm, setModalForm] = useState<ValdFormState | null>(null);
 
   const load = () => {
@@ -185,27 +186,19 @@ function ValdTab() {
 
   useEffect(load, []);
 
-  const filtered = useMemo(() => {
-    return data.filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
-  }, [data, search]);
-
-  // 선수별 회차 번호(연도 뒤 2자리_순번) — TEST_ID 표시용
-  const testIdByRowId = useMemo(() => {
-    const byPlayer = new Map<string, PhysicalTestRow[]>();
-    for (const row of data) {
-      if (!byPlayer.has(row.player_id)) byPlayer.set(row.player_id, []);
-      byPlayer.get(row.player_id)!.push(row);
-    }
-    const ids = new Map<string, string>();
-    for (const rows of byPlayer.values()) {
-      const sorted = [...rows].sort((a, b) => a.test_date.localeCompare(b.test_date));
-      sorted.forEach((row, i) => {
-        ids.set(row.id, `${row.test_date.slice(2, 4)}_${i + 1}`);
-      });
-    }
-    return ids;
+  // 회차(test_round) 목록: 최신순, "전체" 포함
+  const roundOptions = useMemo(() => {
+    const rounds = [...new Set(data.map(r => r.test_round).filter((r): r is string => r != null))];
+    rounds.sort((a, b) => b.localeCompare(a));
+    return ['전체', ...rounds];
   }, [data]);
+
+  const filtered = useMemo(() => {
+    return data
+      .filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()))
+      .filter(row => selectedRound === '전체' || row.test_round === selectedRound)
+      .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+  }, [data, search, selectedRound]);
 
   const openEdit = (row: PhysicalTestRow) => setModalForm({
     player_id: row.player_id,
@@ -240,6 +233,13 @@ function ValdTab() {
           className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
           style={{ fontFamily: 'var(--font-data)' }}
         />
+        <select
+          value={selectedRound}
+          onChange={e => setSelectedRound(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
+        >
+          {roundOptions.map(r => <option key={r} value={r}>{r === '전체' ? '전체' : `${r}차`}</option>)}
+        </select>
         <button
           onClick={() => setModalForm(EMPTY_VALD_FORM)}
           className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors"
@@ -274,7 +274,7 @@ function ValdTab() {
               <tbody>
                 {filtered.map(row => (
                   <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
-                    <td className="px-2.5 py-2 whitespace-nowrap font-medium text-cyan-400">{testIdByRowId.get(row.id)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium text-cyan-400">{row.test_round ?? '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>

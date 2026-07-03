@@ -1884,6 +1884,7 @@ export interface PhysicalTestRow {
   jersey_number: number | null;
   position: string | null;
   test_date: string;
+  test_round: string | null;
   height: number | null;
   weight: number | null;
   cmj_height: number | null;
@@ -1907,7 +1908,7 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
   const client = requireSupabase();
   const { data, error } = await client
     .from('physical_report')
-    .select('id, player_id, test_date, height, weight, cmj_height, squat_jump_height, nordic_curl_left, nordic_curl_right, ham_iso_left, ham_iso_right, hip_ad_left, hip_ad_right, hip_ab_left, hip_ab_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cod_run, cod_ball, players(name, jersey_number, position)')
+    .select('id, player_id, test_date, test_round, height, weight, cmj_height, squat_jump_height, nordic_curl_left, nordic_curl_right, ham_iso_left, ham_iso_right, hip_ad_left, hip_ad_right, hip_ab_left, hip_ab_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cod_run, cod_ball, players(name, jersey_number, position)')
     .order('test_date', { ascending: false });
   if (error) throw error;
 
@@ -1920,6 +1921,7 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
       jersey_number: player?.jersey_number as number ?? null,
       position: player?.position as string ?? null,
       test_date: r.test_date as string,
+      test_round: r.test_round as string ?? null,
       height: r.height != null ? Number(r.height) : null,
       weight: r.weight != null ? Number(r.weight) : null,
       cmj_height: r.cmj_height != null ? Number(r.cmj_height) : null,
