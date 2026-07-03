@@ -2114,6 +2114,15 @@ export async function fetchSpeedCustomRecords(): Promise<SpeedCustomRow[]> {
   }).sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
 }
 
+// 선수의 MAS/MSS를 직접 수정 (player_speed_zones 뷰가 override 값을 우선 반영해 속도 구간에 즉시 반영됨)
+export async function updateSpeedCustomOverride(playerId: string, masValue: number, maxSpeed: number): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('player_speed_override')
+    .upsert({ player_id: playerId, mas_value: masValue, max_speed: maxSpeed, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
 // ── VALD 계측기 CSV 업로드 (ForceDecks / NordBord / ForceFrame / SmartSpeed) ──
 // 모두 physical_report에 (player_id, test_date) 기준으로 부분 upsert된다.
 // 같은 날짜에 여러 계측기 파일을 순서대로 올려도 서로 다른 컬럼만 채워지므로 값이 덮어써지지 않는다.

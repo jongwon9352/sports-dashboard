@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
-  fetchBodyCompositionRecords, fetchSpeedCustomRecords,
+  fetchBodyCompositionRecords, fetchSpeedCustomRecords, updateSpeedCustomOverride,
   fetchMaturityRecords, syncMaturityFromGoogleSheet,
   type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomRow, type MaturityRow,
 } from '../lib/api';
@@ -380,10 +380,22 @@ function BodyCompositionTab() {
 }
 
 // ── Speed custom 탭 ────────────────────────────────────────────────────
+function recomputeZones(mas: number, mss: number) {
+  const asr = mss - mas;
+  return {
+    zone1_mas60: mas * 0.6,
+    zone2_mas80: mas * 0.8,
+    zone3_mas100: mas,
+    zone4_asr20: mas + asr * 0.2,
+    zone5_mss80: mss * 0.8,
+  };
+}
+
 function SpeedCustomTab() {
   const [data, setData] = useState<SpeedCustomRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSpeedCustomRecords().then(setData).finally(() => setLoading(false));
@@ -392,6 +404,21 @@ function SpeedCustomTab() {
   const filtered = useMemo(() => {
     return data.filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()));
   }, [data, search]);
+
+  const handleSave = async (playerId: string, mas: number, mss: number) => {
+    if (!Number.isFinite(mas) || !Number.isFinite(mss) || mas <= 0 || mss <= 0) return;
+    setSavingId(playerId);
+    try {
+      await updateSpeedCustomOverride(playerId, mas, mss);
+      setData(prev => prev.map(row => row.player_id === playerId
+        ? { ...row, mas, mss, ...recomputeZones(mas, mss) }
+        : row));
+    } catch {
+      alert('MAS/MSS 저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   return (
     <>
@@ -404,7 +431,7 @@ function SpeedCustomTab() {
         style={{ fontFamily: 'var(--font-data)' }}
       />
       <p className="text-[11px] text-text-secondary mb-3">
-        역대 최고 MAS·MSS 기록 기준 커스텀 속도 Zone (Zone1 MAS60% · Zone2 MAS80% · Zone3 MAS100% · Zone4 ASR20% · Zone5 MSS80%)
+        역대 최고 MAS·MSS 기록 기준 커스텀 속도 Zone (Zone1 MAS60% · Zone2 MAS80% · Zone3 MAS100% · Zone4 ASR20% · Zone5 MSS80%). MAS/MSS 값을 직접 수정하면 속도 구간이 자동으로 재계산됩니다.
       </p>
 
       {loading ? (
@@ -434,8 +461,36 @@ function SpeedCustomTab() {
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.zone3_mas100.toFixed(1)} ~ {row.zone4_asr20.toFixed(1)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.zone4_asr20.toFixed(1)} ~ {row.zone5_mss80.toFixed(1)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.zone5_mss80.toFixed(1)} ~</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.mas.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.mss.toFixed(1)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">
+                      <input
+                        type="number"
+                        step="0.1"
+                        defaultValue={row.mas}
+                        disabled={savingId === row.player_id}
+                        onBlur={e => {
+                          const v = parseFloat(e.target.value);
+                          if (v !== row.mas) handleSave(row.player_id, v, row.mss);
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                        className="w-16 px-1.5 py-1 text-sm rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
+                        style={{ fontFamily: 'var(--font-data)' }}
+                      />
+                    </td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">
+                      <input
+                        type="number"
+                        step="0.1"
+                        defaultValue={row.mss}
+                        disabled={savingId === row.player_id}
+                        onBlur={e => {
+                          const v = parseFloat(e.target.value);
+                          if (v !== row.mss) handleSave(row.player_id, row.mas, v);
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                        className="w-16 px-1.5 py-1 text-sm rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
+                        style={{ fontFamily: 'var(--font-data)' }}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
