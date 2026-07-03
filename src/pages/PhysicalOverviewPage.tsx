@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
 } from 'recharts';
 import { fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, type PhysicalTestRow, type MaturityRow } from '../lib/api';
 import type { Player } from '../types';
@@ -175,13 +175,83 @@ const STAGE_COLOR: Record<string, string> = {
   '성장 급증기': colors.green,
   '성장 급증기 후': colors.wine,
 };
+const STAGE_ORDER = ['성장 급증기 전', '성장 급증기', '성장 급증기 후'];
+const GRADE_ORDER = ['1학년', '2학년', '3학년'];
 
-function MaturityCharts({ rows }: { rows: MaturityRow[] }) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function HeightOverlayBar(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!width) return null;
+  const predicted = payload?.predicted_adult_height_cm ?? 0;
+  const current = payload?.baseline_height_cm ?? 0;
+  if (!predicted) return null;
+  const scale = width / predicted;
+  const currentW = Math.min(width, current > 0 ? current * scale : 0);
+
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill="transparent" stroke={colors.navy} strokeWidth={2} rx={3} />
+      <rect x={x} y={y + 2} width={currentW} height={height - 4} fill={colors.navy} rx={2} />
+    </g>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function HeightTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
+      <div style={{ fontWeight: 500, marginBottom: 2 }}>{d.player_name}</div>
+      <div>현재 키: {d.baseline_height_cm} cm</div>
+      <div>예측 최대 키: {d.predicted_adult_height_cm} cm</div>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function StageTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 12, maxHeight: 220, overflowY: 'auto' }}>
+      <div style={{ fontWeight: 500, marginBottom: 4 }}>{d.stage} ({d.count}명)</div>
+      {d.players.map((p: { name: string; offset: number }) => (
+        <div key={p.name}>{p.name}: {p.offset > 0 ? '+' : ''}{p.offset}년</div>
+      ))}
+    </div>
+  );
+}
+
+function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Player[] }) {
   const data = useMemo(() => {
     return rows
       .filter(r => r.predicted_adult_height_cm != null && r.mirwald_aphv_age != null && r.pah_percent != null)
       .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
   }, [rows]);
+
+  const stageData = useMemo(() => {
+    return STAGE_ORDER.map(stage => {
+      const players = data.filter(r => r.maturity_stage === stage);
+      return {
+        stage,
+        count: players.length,
+        players: players.map(p => ({ name: p.player_name, offset: p.mirwald_maturity_offset ?? 0 })),
+      };
+    }).filter(s => s.count > 0);
+  }, [data]);
+
+  const gradeStageData = useMemo(() => {
+    const gradeMap = new Map(players.map(p => [p.id, p.grade]));
+    return GRADE_ORDER.map(grade => {
+      const inGrade = data.filter(r => gradeMap.get(r.player_id) === grade);
+      const row: Record<string, string | number> = { grade };
+      STAGE_ORDER.forEach(stage => {
+        row[stage] = inGrade.filter(r => r.maturity_stage === stage).length;
+      });
+      return row;
+    }).filter(row => STAGE_ORDER.some(stage => Number(row[stage]) > 0));
+  }, [data, players]);
 
   if (data.length === 0) {
     return <p className="text-sm text-text-secondary text-center py-16">신체 성숙도 계산에 필요한 데이터(신장/앉은키/부모 신장 등)가 입력된 선수가 없습니다.</p>;
@@ -196,15 +266,21 @@ function MaturityCharts({ rows }: { rows: MaturityRow[] }) {
           선수별 현재 키 · 최대 성장 키 예측(Khamis-Roche)
         </p>
         <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+          <div className="flex items-center justify-center gap-4 mb-2 text-[11px]">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ background: colors.navy }} /> 현재 키(채움)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm inline-block border-2" style={{ borderColor: colors.navy }} /> 예측 최대 키(테두리)
+            </span>
+          </div>
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
               <CartesianGrid stroke={colors.grid} horizontal={false} />
               <XAxis type="number" unit="cm" tick={{ fontSize: 11 }} />
               <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={v => `${v} cm`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="baseline_height_cm" name="현재 키" fill={colors.muted} radius={[0, 3, 3, 0]} />
-              <Bar dataKey="predicted_adult_height_cm" name="예측 최대 키" fill={colors.navy} radius={[0, 3, 3, 0]} />
+              <Tooltip content={<HeightTooltip />} />
+              <Bar dataKey="predicted_adult_height_cm" shape={HeightOverlayBar} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -235,6 +311,63 @@ function MaturityCharts({ rows }: { rows: MaturityRow[] }) {
                 {stage}
               </span>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+            성장 단계 비율
+          </p>
+          <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={stageData}
+                  dataKey="count"
+                  nameKey="stage"
+                  innerRadius="55%"
+                  outerRadius="85%"
+                  paddingAngle={2}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  label={(p: any) => `${p.stage} ${((p.percent ?? 0) * 100).toFixed(0)}%`}
+                  labelLine={false}
+                >
+                  {stageData.map(s => (
+                    <Cell key={s.stage} fill={STAGE_COLOR[s.stage] ?? colors.muted} />
+                  ))}
+                </Pie>
+                <Tooltip content={<StageTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+            학년별 성장 단계 분포
+          </p>
+          <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={gradeStageData} margin={{ top: 10 }}>
+                <CartesianGrid stroke={colors.grid} vertical={false} />
+                <XAxis dataKey="grade" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={v => `${v}명`} />
+                {STAGE_ORDER.map(stage => (
+                  <Bar key={stage} dataKey={stage} stackId="a" fill={STAGE_COLOR[stage]} name={stage} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 mt-2 text-[11px] text-text-secondary justify-center">
+              {Object.entries(STAGE_COLOR).map(([stage, color]) => (
+                <span key={stage} className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: color }} />
+                  {stage}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -351,7 +484,7 @@ export function PhysicalOverviewPage() {
         loading ? (
           <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
         ) : (
-          <MaturityCharts rows={maturityRows} />
+          <MaturityCharts rows={maturityRows} players={players} />
         )
       ) : (
         <p className="text-sm text-text-secondary text-center py-16">준비 중입니다.</p>
