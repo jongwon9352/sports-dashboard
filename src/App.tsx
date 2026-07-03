@@ -15,6 +15,7 @@ import { MatchReport } from './pages/MatchReport';
 import { TeamDashboard } from './pages/TeamDashboard';
 import { PersonalDashboard } from './pages/PersonalDashboard';
 import { PhysicalDataPage } from './pages/PhysicalDataPage';
+import { PhysicalOverviewPage } from './pages/PhysicalOverviewPage';
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/team-dashboard" element={<TeamDashboard />} />
               <Route path="/workload" element={<PersonalDashboard />} />
+              <Route path="/physical" element={<PhysicalOverviewPage />} />
               <Route path="/daily" element={<DailyReport />} />
               <Route path="/weekly" element={<WeeklyReport />} />
               <Route path="/match" element={<MatchReport />} />
