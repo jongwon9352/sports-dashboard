@@ -82,7 +82,7 @@ function TrendChart({ points, color, unit }: { points: { date: string; value: nu
           {gridVals.map((gv, i) => (
             <span
               key={i}
-              style={{ position: 'absolute', top: `${yAt(gv)}%`, right: 4, transform: 'translateY(-50%)', fontSize: 11, color: 'var(--text-muted)' }}
+              style={{ position: 'absolute', top: `${yAt(gv)}%`, right: 4, transform: 'translateY(-50%)', fontSize: 11, color: 'var(--color-text-disabled)' }}
             >
               {axisLabel(gv, range)}
             </span>
@@ -91,7 +91,7 @@ function TrendChart({ points, color, unit }: { points: { date: string; value: nu
         <div style={{ position: 'relative', flex: 1, height: 90 }}>
           <svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
             {gridVals.map((gv, i) => (
-              <line key={i} x1={padX} x2={w - padX} y1={yAt(gv)} y2={yAt(gv)} stroke="var(--border)" strokeWidth={0.5} strokeDasharray="2,2" />
+              <line key={i} x1={padX} x2={w - padX} y1={yAt(gv)} y2={yAt(gv)} stroke="var(--color-surface-secondary)" strokeWidth={0.5} strokeDasharray="2,2" />
             ))}
             <path d={path} fill="none" stroke={color} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
             {points.map((p, i) => (
@@ -100,7 +100,7 @@ function TrendChart({ points, color, unit }: { points: { date: string; value: nu
                 cx={xAt(i)}
                 cy={yAt(p.value)}
                 r={hover === i ? 3 : 2}
-                fill="var(--surface-2)"
+                fill="var(--color-surface)"
                 stroke={color}
                 strokeWidth={1.2}
                 vectorEffect="non-scaling-stroke"
@@ -117,8 +117,8 @@ function TrendChart({ points, color, unit }: { points: { date: string; value: nu
                 left: `${xAt(hover)}%`,
                 top: `${yAt(points[hover].value)}%`,
                 transform: 'translate(-50%, -130%)',
-                background: 'var(--surface-2)',
-                border: '0.5px solid var(--border-strong)',
+                background: 'var(--color-surface)',
+                border: '0.5px solid var(--color-surface-secondary)',
                 borderRadius: 6,
                 padding: '3px 8px',
                 fontSize: 12,
@@ -128,7 +128,7 @@ function TrendChart({ points, color, unit }: { points: { date: string; value: nu
               }}
             >
               <span style={{ fontWeight: 500 }}>{points[hover].value.toFixed(2)} {unit}</span>
-              <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{points[hover].date}</span>
+              <span style={{ color: 'var(--color-text-disabled)', marginLeft: 6 }}>{points[hover].date}</span>
             </div>
           )}
         </div>
@@ -202,7 +202,7 @@ function HeightTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
+    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-surface-secondary)', borderRadius: 6, padding: '6px 10px', fontSize: 12, boxShadow: 'var(--shadow-2)' }}>
       <div style={{ fontWeight: 500, marginBottom: 2 }}>{d.player_name}</div>
       <div>현재 키: {d.baseline_height_cm} cm</div>
       <div>예측 최대 키: {d.predicted_adult_height_cm} cm</div>
@@ -215,7 +215,7 @@ function StageTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 12, maxHeight: 220, overflowY: 'auto' }}>
+    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-surface-secondary)', borderRadius: 6, padding: '6px 10px', fontSize: 12, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-2)' }}>
       <div style={{ fontWeight: 500, marginBottom: 4 }}>{d.stage} ({d.count}명)</div>
       {d.players.map((p: { name: string; offset: number }) => (
         <div key={p.name}>{p.name}: {p.offset > 0 ? '+' : ''}{p.offset}년</div>
