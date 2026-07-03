@@ -10,7 +10,7 @@ import {
   calculateMonotony,
   getAcwrZone,
 } from '../utils/calculations';
-import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow, ParsedBodyCompositionRow } from '../utils/csvParser';
+import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow, ParsedBodyCompositionRow, ForcedecksRow, NordbordRow, ForceframeRow, SmartspeedRow } from '../utils/csvParser';
 import { parseMaturitySheetCsv, parseSheetTimestampToDate } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 
@@ -75,7 +75,7 @@ function defaultPlayer(name: string, jerseyNumber: number) {
     jersey_number: jerseyNumber,
     position: 'MF',
     grade: '1학년',
-    birth_date: '',
+    birth_date: null,
     maturity_status: 'Mid',
     maturity_offset: 0,
     predicted_adult_height: 0,
@@ -1884,29 +1884,30 @@ export interface PhysicalTestRow {
   jersey_number: number | null;
   position: string | null;
   test_date: string;
+  height: number | null;
+  weight: number | null;
+  cmj_height: number | null;
+  squat_jump_height: number | null;
   nordic_curl_left: number | null;
   nordic_curl_right: number | null;
-  hip_ab_left: number | null;
-  hip_ab_right: number | null;
+  ham_iso_left: number | null;
+  ham_iso_right: number | null;
   hip_ad_left: number | null;
   hip_ad_right: number | null;
+  hip_ab_left: number | null;
+  hip_ab_right: number | null;
   sprint_5m_time: number | null;
   sprint_10m_time: number | null;
   sprint_30m_time: number | null;
-  cmj_height: number | null;
-  rebound_jump_height: number | null;
-  squat_jump_height: number | null;
   cod_run: number | null;
   cod_ball: number | null;
-  mas_value: number | null;
-  mss_value: number | null;
 }
 
 export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
   const client = requireSupabase();
   const { data, error } = await client
     .from('physical_report')
-    .select('id, player_id, test_date, nordic_curl_left, nordic_curl_right, hip_ab_left, hip_ab_right, hip_ad_left, hip_ad_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cmj_height, rebound_jump_height, squat_jump_height, cod_run, cod_ball, mas_value, mss_value, players(name, jersey_number, position)')
+    .select('id, player_id, test_date, height, weight, cmj_height, squat_jump_height, nordic_curl_left, nordic_curl_right, ham_iso_left, ham_iso_right, hip_ad_left, hip_ad_right, hip_ab_left, hip_ab_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cod_run, cod_ball, players(name, jersey_number, position)')
     .order('test_date', { ascending: false });
   if (error) throw error;
 
@@ -1919,22 +1920,23 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
       jersey_number: player?.jersey_number as number ?? null,
       position: player?.position as string ?? null,
       test_date: r.test_date as string,
+      height: r.height != null ? Number(r.height) : null,
+      weight: r.weight != null ? Number(r.weight) : null,
+      cmj_height: r.cmj_height != null ? Number(r.cmj_height) : null,
+      squat_jump_height: r.squat_jump_height != null ? Number(r.squat_jump_height) : null,
       nordic_curl_left: r.nordic_curl_left != null ? Number(r.nordic_curl_left) : null,
       nordic_curl_right: r.nordic_curl_right != null ? Number(r.nordic_curl_right) : null,
-      hip_ab_left: r.hip_ab_left != null ? Number(r.hip_ab_left) : null,
-      hip_ab_right: r.hip_ab_right != null ? Number(r.hip_ab_right) : null,
+      ham_iso_left: r.ham_iso_left != null ? Number(r.ham_iso_left) : null,
+      ham_iso_right: r.ham_iso_right != null ? Number(r.ham_iso_right) : null,
       hip_ad_left: r.hip_ad_left != null ? Number(r.hip_ad_left) : null,
       hip_ad_right: r.hip_ad_right != null ? Number(r.hip_ad_right) : null,
+      hip_ab_left: r.hip_ab_left != null ? Number(r.hip_ab_left) : null,
+      hip_ab_right: r.hip_ab_right != null ? Number(r.hip_ab_right) : null,
       sprint_5m_time: r.sprint_5m_time != null ? Number(r.sprint_5m_time) : null,
       sprint_10m_time: r.sprint_10m_time != null ? Number(r.sprint_10m_time) : null,
       sprint_30m_time: r.sprint_30m_time != null ? Number(r.sprint_30m_time) : null,
-      cmj_height: r.cmj_height != null ? Number(r.cmj_height) : null,
-      rebound_jump_height: r.rebound_jump_height != null ? Number(r.rebound_jump_height) : null,
-      squat_jump_height: r.squat_jump_height != null ? Number(r.squat_jump_height) : null,
       cod_run: r.cod_run != null ? Number(r.cod_run) : null,
       cod_ball: r.cod_ball != null ? Number(r.cod_ball) : null,
-      mas_value: r.mas_value != null ? Number(r.mas_value) : null,
-      mss_value: r.mss_value != null ? Number(r.mss_value) : null,
     };
   });
 }
@@ -1942,22 +1944,23 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
 export async function upsertPhysicalTestRecord(input: {
   player_id: string;
   test_date: string;
+  height: number | null;
+  weight: number | null;
+  cmj_height: number | null;
+  squat_jump_height: number | null;
   nordic_curl_left: number | null;
   nordic_curl_right: number | null;
-  hip_ab_left: number | null;
-  hip_ab_right: number | null;
+  ham_iso_left: number | null;
+  ham_iso_right: number | null;
   hip_ad_left: number | null;
   hip_ad_right: number | null;
+  hip_ab_left: number | null;
+  hip_ab_right: number | null;
   sprint_5m_time: number | null;
   sprint_10m_time: number | null;
   sprint_30m_time: number | null;
-  cmj_height: number | null;
-  rebound_jump_height: number | null;
-  squat_jump_height: number | null;
   cod_run: number | null;
   cod_ball: number | null;
-  mas_value: number | null;
-  mss_value: number | null;
 }) {
   const client = requireSupabase();
   const { error } = await client
@@ -2094,4 +2097,126 @@ export async function fetchSpeedCustomRecords(): Promise<SpeedCustomRow[]> {
       test_date: r.test_date as string,
     };
   });
+}
+
+// ── VALD 계측기 CSV 업로드 (ForceDecks / NordBord / ForceFrame / SmartSpeed) ──
+// 모두 physical_report에 (player_id, test_date) 기준으로 부분 upsert된다.
+// 같은 날짜에 여러 계측기 파일을 순서대로 올려도 서로 다른 컬럼만 채워지므로 값이 덮어써지지 않는다.
+
+export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
+
+  const physicalRows = validRows.map(row => {
+    const base: Record<string, unknown> = {
+      player_id: playerMap.get(normalizeName(row.player_name)),
+      test_date: row.test_date,
+      weight: row.bodyWeight,
+    };
+    if (row.metric === 'cmj') base.cmj_height = row.jumpHeight;
+    else base.squat_jump_height = row.jumpHeight;
+    return base;
+  }).filter(row => row.player_id);
+
+  if (physicalRows.length === 0) return 0;
+  const { error } = await client.from('physical_report').upsert(physicalRows, { onConflict: 'player_id,test_date' });
+  if (error) throw error;
+  return physicalRows.length;
+}
+
+export async function importNordbordCsvRows(rows: NordbordRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
+
+  // 같은 선수·날짜에 Nordic/ISO Prone이 각각 나올 수 있으므로 (player,date) 단위로 병합
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const row of validRows) {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    if (!playerId) continue;
+    const key = `${playerId}__${row.test_date}`;
+    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date };
+    if (row.test === 'Nordic') {
+      entry.nordic_curl_left = row.leftForce;
+      entry.nordic_curl_right = row.rightForce;
+    } else if (row.test === 'ISO Prone') {
+      entry.ham_iso_left = row.leftForce;
+      entry.ham_iso_right = row.rightForce;
+    }
+    merged.set(key, entry);
+  }
+
+  const physicalRows = [...merged.values()];
+  if (physicalRows.length === 0) return 0;
+  const { error } = await client.from('physical_report').upsert(physicalRows, { onConflict: 'player_id,test_date' });
+  if (error) throw error;
+  return physicalRows.length;
+}
+
+export async function importForceframeCsvRows(rows: ForceframeRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
+
+  // Squeeze(내전/ADD) + Pull(외전/ABD)을 (player,date) 단위로 병합
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const row of validRows) {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    if (!playerId) continue;
+    const key = `${playerId}__${row.test_date}`;
+    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date };
+    if (row.direction === 'Squeeze') {
+      entry.hip_ad_left = row.leftForce;
+      entry.hip_ad_right = row.rightForce;
+    } else if (row.direction === 'Pull') {
+      entry.hip_ab_left = row.leftForce;
+      entry.hip_ab_right = row.rightForce;
+    }
+    merged.set(key, entry);
+  }
+
+  const physicalRows = [...merged.values()];
+  if (physicalRows.length === 0) return 0;
+  const { error } = await client.from('physical_report').upsert(physicalRows, { onConflict: 'player_id,test_date' });
+  if (error) throw error;
+  return physicalRows.length;
+}
+
+export async function importSmartspeedCsvRows(rows: SmartspeedRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+  const client = requireSupabase();
+  const validRows = rows.filter(row => normalizeName(row.player_name));
+  const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
+
+  // 선수·날짜·테스트별로 여러 트라이얼 중 최고 기록(최소 시간)만 사용
+  const best = new Map<string, SmartspeedRow>();
+  for (const row of validRows) {
+    const key = `${normalizeName(row.player_name)}__${row.test_date}__${row.testName}`;
+    const prev = best.get(key);
+    if (!prev || row.total < prev.total) best.set(key, row);
+  }
+
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const row of best.values()) {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    if (!playerId) continue;
+    const key = `${playerId}__${row.test_date}`;
+    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date };
+    if (row.testName === '30m Sprint') {
+      entry.sprint_5m_time = row.split5m;
+      entry.sprint_10m_time = row.split10m;
+      entry.sprint_30m_time = row.total;
+    } else if (row.testName === 'COD(With Ball)') {
+      entry.cod_ball = row.total;
+    } else if (row.testName === 'COD(Without Ball)') {
+      entry.cod_run = row.total;
+    }
+    merged.set(key, entry);
+  }
+
+  const physicalRows = [...merged.values()];
+  if (physicalRows.length === 0) return 0;
+  const { error } = await client.from('physical_report').upsert(physicalRows, { onConflict: 'player_id,test_date' });
+  if (error) throw error;
+  return physicalRows.length;
 }

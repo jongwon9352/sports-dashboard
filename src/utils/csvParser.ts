@@ -291,3 +291,114 @@ export function parseBodyCompositionCsv(csvText: string): ParsedBodyCompositionR
     weight: parseNullableNumber(row[2]),
   })).filter(r => r.player_name);
 }
+
+// ── VALD 계측기 CSV 파서 (ForceDecks / NordBord / ForceFrame / SmartSpeed) ──
+function stripTeamPrefix(name: string): string {
+  return name.replace(/^대전U?\d*\s*/, '').trim();
+}
+
+// "2026/06/08" -> "2026-06-08"
+function parseSlashDate(d: string): string {
+  return d.replace(/\//g, '-');
+}
+
+// SmartSpeed 날짜는 DD/MM/YYYY: "08/06/2026" -> "2026-06-08"
+function parseSmartspeedDate(d: string): string {
+  const [dd, mm, yyyy] = d.split('/');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export interface ForcedecksRow {
+  player_name: string;
+  test_date: string;
+  metric: 'cmj' | 'sj';
+  jumpHeight: number;
+  bodyWeight: number;
+}
+
+// forcedecks-test-export: Test Type 컬럼으로 SJ/CMJ 판별
+export function parseForcedecksCsv(csvText: string): ForcedecksRow[] {
+  const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length === 0) return [];
+
+  const heightKeyCmj = 'Jump Height (Flight Time) [cm] ';
+  const heightKeySj = 'Jump Height (Imp-Mom) [cm] ';
+  const isCmj = heightKeyCmj in rows[0];
+  const heightKey = isCmj ? heightKeyCmj : heightKeySj;
+  const metric: 'cmj' | 'sj' = isCmj ? 'cmj' : 'sj';
+
+  return rows.filter(r => r['Name']).map(r => ({
+    player_name: stripTeamPrefix(r['Name']),
+    test_date: parseSlashDate(r['Date']),
+    metric,
+    jumpHeight: parseFloat(r[heightKey]) || 0,
+    bodyWeight: parseFloat(r['BW [KG]']) || 0,
+  }));
+}
+
+export interface NordbordRow {
+  player_name: string;
+  test_date: string;
+  test: 'Nordic' | 'ISO Prone' | string;
+  leftForce: number;
+  rightForce: number;
+}
+
+// nordbord-test-export: Test 컬럼으로 Nordic(HAM ECC)/ISO Prone(HAM ISO) 판별
+export function parseNordbordCsv(csvText: string): NordbordRow[] {
+  const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
+  return result.data.filter(r => r['Name']).map(r => ({
+    player_name: stripTeamPrefix(r['Name']),
+    test_date: parseSlashDate(r['Date UTC']),
+    test: r['Test'],
+    leftForce: parseFloat(r['L Max Force (N)']) || 0,
+    rightForce: parseFloat(r['R Max Force (N)']) || 0,
+  }));
+}
+
+export interface ForceframeRow {
+  player_name: string;
+  test_date: string;
+  direction: 'Pull' | 'Squeeze' | string;
+  leftForce: number;
+  rightForce: number;
+}
+
+// forceframe-test-export: Test="Hip AD/AB" 행만 사용, Direction="Squeeze"=내전(ADD), "Pull"=외전(ABD)
+export function parseForceframeCsv(csvText: string): ForceframeRow[] {
+  const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
+  return result.data
+    .filter(r => r['Name'] && r['Test'] === 'Hip AD/AB')
+    .map(r => ({
+      player_name: stripTeamPrefix(r['Name']),
+      test_date: parseSlashDate(r['Date']),
+      direction: r['Direction'],
+      leftForce: parseFloat(r['L Max Force (N)']) || 0,
+      rightForce: parseFloat(r['R Max Force (N)']) || 0,
+    }));
+}
+
+export interface SmartspeedRow {
+  player_name: string;
+  test_date: string;
+  testName: '30m Sprint' | 'COD(With Ball)' | 'COD(Without Ball)' | string;
+  split5m: number | null;
+  split10m: number | null;
+  total: number;
+}
+
+// smartspeed-test-export: Name 컬럼으로 30m Sprint/COD(With·Without Ball) 판별
+export function parseSmartspeedCsv(csvText: string): SmartspeedRow[] {
+  const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
+  return result.data
+    .filter(r => r['FamilyName'])
+    .map(r => ({
+      player_name: stripTeamPrefix(r['FamilyName']),
+      test_date: parseSmartspeedDate(r['Date']),
+      testName: r['Name'],
+      split5m: r['Cumulative1'] ? parseFloat(r['Cumulative1']) : null,
+      split10m: r['Cumulative2'] ? parseFloat(r['Cumulative2']) : null,
+      total: parseFloat(r['Total']) || 0,
+    }));
+}

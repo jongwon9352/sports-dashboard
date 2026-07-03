@@ -19,45 +19,50 @@ function fmt(v: number | string | null): string {
 interface ValdFormState {
   player_id: string;
   test_date: string;
+  height: string;
+  weight: string;
+  cmj_height: string;
+  squat_jump_height: string;
   nordic_curl_left: string;
   nordic_curl_right: string;
-  hip_ab_left: string;
-  hip_ab_right: string;
+  ham_iso_left: string;
+  ham_iso_right: string;
   hip_ad_left: string;
   hip_ad_right: string;
+  hip_ab_left: string;
+  hip_ab_right: string;
   sprint_5m_time: string;
   sprint_10m_time: string;
   sprint_30m_time: string;
-  cmj_height: string;
-  rebound_jump_height: string;
-  squat_jump_height: string;
   cod_run: string;
   cod_ball: string;
 }
 
 const EMPTY_VALD_FORM: ValdFormState = {
-  player_id: '', test_date: '',
-  nordic_curl_left: '', nordic_curl_right: '',
-  hip_ab_left: '', hip_ab_right: '', hip_ad_left: '', hip_ad_right: '',
+  player_id: '', test_date: '', height: '', weight: '',
+  cmj_height: '', squat_jump_height: '',
+  nordic_curl_left: '', nordic_curl_right: '', ham_iso_left: '', ham_iso_right: '',
+  hip_ad_left: '', hip_ad_right: '', hip_ab_left: '', hip_ab_right: '',
   sprint_5m_time: '', sprint_10m_time: '', sprint_30m_time: '',
-  cmj_height: '', rebound_jump_height: '', squat_jump_height: '',
   cod_run: '', cod_ball: '',
 };
 
 const VALD_FIELD_GROUPS: { title: string; fields: { key: keyof ValdFormState; label: string }[] }[] = [
-  { title: 'Strength', fields: [
-    { key: 'nordic_curl_left', label: 'Nordic(좌)' }, { key: 'nordic_curl_right', label: 'Nordic(우)' },
-    { key: 'hip_ab_left', label: '외전(좌)' }, { key: 'hip_ab_right', label: '외전(우)' },
-    { key: 'hip_ad_left', label: '내전(좌)' }, { key: 'hip_ad_right', label: '내전(우)' },
+  { title: '체성분', fields: [
+    { key: 'height', label: '키(cm)' }, { key: 'weight', label: '체중(kg)' },
   ]},
-  { title: 'Speed', fields: [
-    { key: 'sprint_5m_time', label: '5m(s)' }, { key: 'sprint_10m_time', label: '10m(s)' }, { key: 'sprint_30m_time', label: '30m(s)' },
+  { title: 'Power (ForceDecks)', fields: [
+    { key: 'cmj_height', label: 'CMJ' }, { key: 'squat_jump_height', label: 'SJ' },
   ]},
-  { title: 'Power', fields: [
-    { key: 'cmj_height', label: 'CMJ(cm)' }, { key: 'rebound_jump_height', label: '재점프(cm)' }, { key: 'squat_jump_height', label: 'Squat Jump(cm)' },
+  { title: 'Strength (NordBord / ForceFrame)', fields: [
+    { key: 'nordic_curl_left', label: 'HAM ECC(L)' }, { key: 'nordic_curl_right', label: 'HAM ECC(R)' },
+    { key: 'ham_iso_left', label: 'HAM ISO(L)' }, { key: 'ham_iso_right', label: 'HAM ISO(R)' },
+    { key: 'hip_ad_left', label: 'HIP ADD(L)' }, { key: 'hip_ad_right', label: 'HIP ADD(R)' },
+    { key: 'hip_ab_left', label: 'HIP ABD(L)' }, { key: 'hip_ab_right', label: 'HIP ABD(R)' },
   ]},
-  { title: 'Agility', fields: [
-    { key: 'cod_run', label: '방향전환(런)' }, { key: 'cod_ball', label: '방향전환(볼)' },
+  { title: 'Speed (SmartSpeed)', fields: [
+    { key: 'sprint_5m_time', label: '5M' }, { key: 'sprint_10m_time', label: '10M' }, { key: 'sprint_30m_time', label: '30M' },
+    { key: 'cod_run', label: 'COD' }, { key: 'cod_ball', label: 'COD(BALL)' },
   ]},
 ];
 
@@ -86,22 +91,23 @@ function ValdModal({ players, initial, onClose, onSaved }: {
       await upsertPhysicalTestRecord({
         player_id: form.player_id,
         test_date: form.test_date,
+        height: num(form.height),
+        weight: num(form.weight),
+        cmj_height: num(form.cmj_height),
+        squat_jump_height: num(form.squat_jump_height),
         nordic_curl_left: num(form.nordic_curl_left),
         nordic_curl_right: num(form.nordic_curl_right),
-        hip_ab_left: num(form.hip_ab_left),
-        hip_ab_right: num(form.hip_ab_right),
+        ham_iso_left: num(form.ham_iso_left),
+        ham_iso_right: num(form.ham_iso_right),
         hip_ad_left: num(form.hip_ad_left),
         hip_ad_right: num(form.hip_ad_right),
+        hip_ab_left: num(form.hip_ab_left),
+        hip_ab_right: num(form.hip_ab_right),
         sprint_5m_time: num(form.sprint_5m_time),
         sprint_10m_time: num(form.sprint_10m_time),
         sprint_30m_time: num(form.sprint_30m_time),
-        cmj_height: num(form.cmj_height),
-        rebound_jump_height: num(form.rebound_jump_height),
-        squat_jump_height: num(form.squat_jump_height),
         cod_run: num(form.cod_run),
         cod_ball: num(form.cod_ball),
-        mas_value: null,
-        mss_value: null,
       });
       onSaved();
       onClose();
@@ -184,21 +190,41 @@ function ValdTab() {
       .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
   }, [data, search]);
 
+  // 선수별 회차 번호(연도 뒤 2자리_순번) — TEST_ID 표시용
+  const testIdByRowId = useMemo(() => {
+    const byPlayer = new Map<string, PhysicalTestRow[]>();
+    for (const row of data) {
+      if (!byPlayer.has(row.player_id)) byPlayer.set(row.player_id, []);
+      byPlayer.get(row.player_id)!.push(row);
+    }
+    const ids = new Map<string, string>();
+    for (const rows of byPlayer.values()) {
+      const sorted = [...rows].sort((a, b) => a.test_date.localeCompare(b.test_date));
+      sorted.forEach((row, i) => {
+        ids.set(row.id, `${row.test_date.slice(2, 4)}_${i + 1}`);
+      });
+    }
+    return ids;
+  }, [data]);
+
   const openEdit = (row: PhysicalTestRow) => setModalForm({
     player_id: row.player_id,
     test_date: row.test_date,
+    height: row.height != null ? String(row.height) : '',
+    weight: row.weight != null ? String(row.weight) : '',
+    cmj_height: row.cmj_height != null ? String(row.cmj_height) : '',
+    squat_jump_height: row.squat_jump_height != null ? String(row.squat_jump_height) : '',
     nordic_curl_left: row.nordic_curl_left != null ? String(row.nordic_curl_left) : '',
     nordic_curl_right: row.nordic_curl_right != null ? String(row.nordic_curl_right) : '',
-    hip_ab_left: row.hip_ab_left != null ? String(row.hip_ab_left) : '',
-    hip_ab_right: row.hip_ab_right != null ? String(row.hip_ab_right) : '',
+    ham_iso_left: row.ham_iso_left != null ? String(row.ham_iso_left) : '',
+    ham_iso_right: row.ham_iso_right != null ? String(row.ham_iso_right) : '',
     hip_ad_left: row.hip_ad_left != null ? String(row.hip_ad_left) : '',
     hip_ad_right: row.hip_ad_right != null ? String(row.hip_ad_right) : '',
+    hip_ab_left: row.hip_ab_left != null ? String(row.hip_ab_left) : '',
+    hip_ab_right: row.hip_ab_right != null ? String(row.hip_ab_right) : '',
     sprint_5m_time: row.sprint_5m_time != null ? String(row.sprint_5m_time) : '',
     sprint_10m_time: row.sprint_10m_time != null ? String(row.sprint_10m_time) : '',
     sprint_30m_time: row.sprint_30m_time != null ? String(row.sprint_30m_time) : '',
-    cmj_height: row.cmj_height != null ? String(row.cmj_height) : '',
-    rebound_jump_height: row.rebound_jump_height != null ? String(row.rebound_jump_height) : '',
-    squat_jump_height: row.squat_jump_height != null ? String(row.squat_jump_height) : '',
     cod_run: row.cod_run != null ? String(row.cod_run) : '',
     cod_ball: row.cod_ball != null ? String(row.cod_ball) : '',
   });
@@ -222,7 +248,7 @@ function ValdTab() {
         </button>
       </div>
       <p className="text-[11px] text-text-secondary mb-3">
-        측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 "피지컬" 포함 파일명의 CSV를 올리면 자동으로 반영됩니다.
+        측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 ForceDecks/NordBord/ForceFrame/SmartSpeed CSV를 올리면 자동으로 반영됩니다.
       </p>
 
       {loading ? (
@@ -235,8 +261,10 @@ function ValdTab() {
             <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
               <thead>
                 <tr className="border-b border-surface-secondary">
-                  {['이름', '포지션', '측정일', 'Nordic(좌)', 'Nordic(우)', '외전(좌)', '외전(우)', '내전(좌)', '내전(우)',
-                    '5m(s)', '10m(s)', '30m(s)', 'CMJ(cm)', '재점프(cm)', 'Squat Jump(cm)', '방향전환(런)', '방향전환(볼)', ''].map(h => (
+                  {['TEST_ID', '이름', '포지션', '측정일', '키', '체중', 'CMJ', 'SJ',
+                    'HAM ECC(L)', 'HAM ECC(R)', 'HAM ISO(L)', 'HAM ISO(R)',
+                    'HIP ADD(L)', 'HIP ADD(R)', 'HIP ABD(L)', 'HIP ABD(R)',
+                    '5M', '10M', '30M', 'COD', 'COD(BALL)', ''].map(h => (
                     <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
                       {h}
                     </th>
@@ -246,21 +274,25 @@ function ValdTab() {
               <tbody>
                 {filtered.map(row => (
                   <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium text-cyan-400">{testIdByRowId.get(row.id)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.weight)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cmj_height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.squat_jump_height)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_left)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_right)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_left)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_right)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.ham_iso_left)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.ham_iso_right)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ad_left)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ad_right)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_left)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.hip_ab_right)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_5m_time)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_10m_time)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.sprint_30m_time)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cmj_height)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.rebound_jump_height)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.squat_jump_height)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cod_run)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cod_ball)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">
