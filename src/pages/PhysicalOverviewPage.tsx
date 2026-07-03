@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchAllPlayers, fetchPhysicalTestRecords, type PhysicalTestRow } from '../lib/api';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
+} from 'recharts';
+import { fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, type PhysicalTestRow, type MaturityRow } from '../lib/api';
 import type { Player } from '../types';
+import { colors } from '../styles/colors';
 
 interface MetricDef {
   label: string;
@@ -166,6 +170,95 @@ function MetricCard({ metric, rows }: { metric: MetricDef; rows: PhysicalTestRow
   );
 }
 
+const STAGE_COLOR: Record<string, string> = {
+  '성장 급증기 전': colors.navy,
+  '성장 급증기': colors.green,
+  '성장 급증기 후': colors.wine,
+};
+
+function MaturityCharts({ rows }: { rows: MaturityRow[] }) {
+  const data = useMemo(() => {
+    return rows
+      .filter(r => r.predicted_adult_height_cm != null && r.mirwald_aphv_age != null && r.pah_percent != null)
+      .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+  }, [rows]);
+
+  if (data.length === 0) {
+    return <p className="text-sm text-text-secondary text-center py-16">신체 성숙도 계산에 필요한 데이터(신장/앉은키/부모 신장 등)가 입력된 선수가 없습니다.</p>;
+  }
+
+  const chartHeight = Math.max(280, data.length * 26);
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+          선수별 현재 키 · 최대 성장 키 예측(Khamis-Roche)
+        </p>
+        <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
+              <CartesianGrid stroke={colors.grid} horizontal={false} />
+              <XAxis type="number" unit="cm" tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={v => `${v} cm`} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="baseline_height_cm" name="현재 키" fill={colors.muted} radius={[0, 3, 3, 0]} />
+              <Bar dataKey="predicted_adult_height_cm" name="예측 최대 키" fill={colors.navy} radius={[0, 3, 3, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+          선수별 PHV(성장 급증 정점) 예측 나이
+        </p>
+        <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
+              <CartesianGrid stroke={colors.grid} horizontal={false} />
+              <XAxis type="number" unit="세" tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(v, _n, p) => [`${v}세`, p?.payload?.maturity_stage]} />
+              <Bar dataKey="mirwald_aphv_age" name="APHV(세)" radius={[0, 3, 3, 0]}>
+                {data.map(r => (
+                  <Cell key={r.player_id} fill={STAGE_COLOR[r.maturity_stage ?? ''] ?? colors.muted} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="flex gap-4 mt-2 text-[11px] text-text-secondary">
+            {Object.entries(STAGE_COLOR).map(([stage, color]) => (
+              <span key={stage} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: color }} />
+                {stage}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+          선수별 최대 성장 키 예측 도달률(%PAH)
+        </p>
+        <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
+              <CartesianGrid stroke={colors.grid} horizontal={false} />
+              <XAxis type="number" unit="%" domain={[0, 100]} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="player_name" width={70} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={v => `${v}%`} />
+              <Bar dataKey="pah_percent" name="도달률" fill={colors.green} radius={[0, 3, 3, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Tab = 'vald' | 'body' | 'speed' | 'maturity';
 
 export function PhysicalOverviewPage() {
@@ -173,13 +266,15 @@ export function PhysicalOverviewPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [allRecords, setAllRecords] = useState<PhysicalTestRow[]>([]);
+  const [maturityRows, setMaturityRows] = useState<MaturityRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords()]).then(([p, records]) => {
+    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords()]).then(([p, records, maturity]) => {
       setPlayers(p);
       if (p.length > 0) setSelectedId(p[0].id);
       setAllRecords(records);
+      setMaturityRows(maturity);
       setLoading(false);
     });
   }, []);
@@ -214,9 +309,7 @@ export function PhysicalOverviewPage() {
         {tabBtn('maturity', '신체 성숙도')}
       </div>
 
-      {tab !== 'vald' ? (
-        <p className="text-sm text-text-secondary text-center py-16">준비 중입니다.</p>
-      ) : (
+      {tab === 'vald' ? (
         <>
           <div className="chart-card mb-4">
             <div className="flex items-center gap-4">
@@ -254,6 +347,14 @@ export function PhysicalOverviewPage() {
             ))
           )}
         </>
+      ) : tab === 'maturity' ? (
+        loading ? (
+          <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+        ) : (
+          <MaturityCharts rows={maturityRows} />
+        )
+      ) : (
+        <p className="text-sm text-text-secondary text-center py-16">준비 중입니다.</p>
       )}
     </div>
   );
