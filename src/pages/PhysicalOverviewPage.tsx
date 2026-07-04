@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine,
 } from 'recharts';
-import { fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, type PhysicalTestRow, type MaturityRow } from '../lib/api';
+import { fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, type PhysicalTestRow, type MaturityRow, type SpeedCustomRow } from '../lib/api';
 import type { Player, Grade } from '../types';
 import { colors } from '../styles/colors';
 
@@ -480,6 +480,115 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
   );
 }
 
+type GroupMode = '전체' | '학년' | '포지션' | '성숙도';
+const GROUP_MODES: GroupMode[] = ['전체', '학년', '포지션', '성숙도'];
+const POSITION_ORDER = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'];
+
+function groupKey(mode: GroupMode, r: SpeedCustomRow, gradeMap: Map<string, string>, stageMap: Map<string, string | null>): string | null {
+  if (mode === '학년') return gradeMap.get(r.player_id) ?? null;
+  if (mode === '포지션') return r.position;
+  if (mode === '성숙도') return stageMap.get(r.player_id) ?? null;
+  return null;
+}
+
+function SpeedMetricChart({ data, dataKey, unit, color, avg }: { data: SpeedCustomRow[]; dataKey: 'mas' | 'mss'; unit: string; color: string; avg: number }) {
+  const sorted = useMemo(() => [...data].sort((a, b) => b[dataKey] - a[dataKey]), [data, dataKey]);
+
+  return (
+    <ResponsiveContainer width="100%" height={420}>
+      <BarChart data={sorted} margin={{ bottom: 70 }}>
+        <CartesianGrid stroke={colors.grid} vertical={false} />
+        <XAxis dataKey="player_name" interval={0} angle={-60} textAnchor="end" height={80} tick={{ fontSize: 11 }} />
+        <YAxis unit={unit} tick={{ fontSize: 11 }} domain={['dataMin - 1', 'dataMax + 1']} />
+        <Tooltip formatter={v => `${v} ${unit}`} />
+        <ReferenceLine y={avg} stroke={color} strokeDasharray="4 3" strokeWidth={1.5}
+          label={{ value: `평균 ${avg.toFixed(1)}${unit}`, position: 'insideTopRight', fontSize: 11, fill: color }} />
+        <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomRow[]; players: Player[]; maturityRows: MaturityRow[] }) {
+  const [mode, setMode] = useState<GroupMode>('전체');
+  const [subValue, setSubValue] = useState<string>('');
+
+  const gradeMap = useMemo(() => new Map(players.map(p => [p.id, p.grade as string])), [players]);
+  const stageMap = useMemo(() => new Map(maturityRows.map(r => [r.player_id, r.maturity_stage])), [maturityRows]);
+
+  const subOptions = useMemo(() => {
+    if (mode === '학년') return GRADE_ORDER.filter(g => rows.some(r => gradeMap.get(r.player_id) === g));
+    if (mode === '포지션') return POSITION_ORDER.filter(pos => rows.some(r => r.position === pos));
+    if (mode === '성숙도') return STAGE_ORDER.filter(s => rows.some(r => stageMap.get(r.player_id) === s));
+    return [];
+  }, [mode, rows, gradeMap, stageMap]);
+
+  const activeSubValue = subOptions.includes(subValue) ? subValue : (subOptions[0] ?? '');
+
+  const filtered = useMemo(() => {
+    if (mode === '전체') return rows;
+    return rows.filter(r => groupKey(mode, r, gradeMap, stageMap) === activeSubValue);
+  }, [mode, activeSubValue, rows, gradeMap, stageMap]);
+
+  const masAvg = filtered.length ? filtered.reduce((s, r) => s + r.mas, 0) / filtered.length : 0;
+  const mssAvg = filtered.length ? filtered.reduce((s, r) => s + r.mss, 0) / filtered.length : 0;
+
+  const groupTabBtn = (label: string, active: boolean, onClick: () => void) => (
+    <button
+      key={label}
+      onClick={onClick}
+      className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+        active ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-text-secondary text-center py-16">MAS/MSS 데이터가 입력된 선수가 없습니다.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          {GROUP_MODES.map(m => groupTabBtn(m, mode === m, () => setMode(m)))}
+        </div>
+        {mode !== '전체' && (
+          <div className="flex gap-2 flex-wrap">
+            {subOptions.map(v => groupTabBtn(v, activeSubValue === v, () => setSubValue(v)))}
+          </div>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm text-text-secondary text-center py-16">해당 그룹에 데이터가 없습니다.</p>
+      ) : (
+        <>
+          <div>
+            <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+              MAS (Vameval Test) · {filtered.length}명
+            </p>
+            <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+              <SpeedMetricChart data={filtered} dataKey="mas" unit="km/h" color={colors.green} avg={masAvg} />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+              MSS (40m Sprint Test) · {filtered.length}명
+            </p>
+            <div className="bg-surface rounded-xl border border-surface-secondary p-3.5">
+              <SpeedMetricChart data={filtered} dataKey="mss" unit="km/h" color={colors.navy} avg={mssAvg} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 type Tab = 'vald' | 'body' | 'speed' | 'maturity';
 
 export function PhysicalOverviewPage() {
@@ -488,14 +597,16 @@ export function PhysicalOverviewPage() {
   const [selectedId, setSelectedId] = useState('');
   const [allRecords, setAllRecords] = useState<PhysicalTestRow[]>([]);
   const [maturityRows, setMaturityRows] = useState<MaturityRow[]>([]);
+  const [speedCustomRows, setSpeedCustomRows] = useState<SpeedCustomRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords()]).then(([p, records, maturity]) => {
+    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords(), fetchSpeedCustomRecords()]).then(([p, records, maturity, speed]) => {
       setPlayers(p);
       if (p.length > 0) setSelectedId(p[0].id);
       setAllRecords(records);
       setMaturityRows(maturity);
+      setSpeedCustomRows(speed);
       setLoading(false);
     });
   }, []);
@@ -573,6 +684,12 @@ export function PhysicalOverviewPage() {
           <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
         ) : (
           <MaturityCharts rows={maturityRows} players={players} />
+        )
+      ) : tab === 'speed' ? (
+        loading ? (
+          <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+        ) : (
+          <SpeedCustomCharts rows={speedCustomRows} players={players} maturityRows={maturityRows} />
         )
       ) : (
         <p className="text-sm text-text-secondary text-center py-16">준비 중입니다.</p>
