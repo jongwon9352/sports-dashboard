@@ -62,7 +62,7 @@ export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
   const rows = result.data;
   if (rows.length < 2) return [];
 
-  return rows.slice(1).map(row => ({
+  const parsed = rows.slice(1).map(row => ({
     session_name: row[0] || '',
     player_name: row[1] || '',
     jersey_number: parseNumber(row[2]),
@@ -80,6 +80,33 @@ export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
     acd_load: parseNumber(row[14]),
     max_speed: parseNumber(row[15]),
   })).filter(r => r.session_name && r.player_name);
+
+  // 같은 선수가 같은 세션(전반/후반)에 교체 출전 등으로 여러 줄에 나뉘어 기록된 경우 합산
+  // (player_id, match_date, opponent, session_name) 유니크 제약 위반으로 upsert가 실패하는 것을 방지
+  const merged = new Map<string, ParsedMatchSessionRow>();
+  for (const row of parsed) {
+    const key = `${row.player_name}__${row.session_name}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...row });
+      continue;
+    }
+    existing.duration_min += row.duration_min;
+    existing.total_distance += row.total_distance;
+    existing.hsr_distance += row.hsr_distance;
+    existing.hsr_custom += row.hsr_custom;
+    existing.sprint_distance += row.sprint_distance;
+    existing.sprint_custom += row.sprint_custom;
+    existing.sprint_count += row.sprint_count;
+    existing.sprint_count_custom += row.sprint_count_custom;
+    existing.acc_count += row.acc_count;
+    existing.dec_count += row.dec_count;
+    existing.acd_load += row.acd_load;
+    existing.max_speed = Math.max(existing.max_speed, row.max_speed);
+    existing.m_per_min = existing.duration_min > 0 ? existing.total_distance / existing.duration_min : 0;
+  }
+
+  return [...merged.values()];
 }
 
 export function extractDateFromFilename(filename: string): string {
