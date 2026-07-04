@@ -509,6 +509,85 @@ function SpeedMetricChart({ data, dataKey, unit, color, avg }: { data: SpeedCust
   );
 }
 
+const MAS_TIERS: { label: string; max: number }[] = [
+  { label: '매우 낮음', max: 11.5 },
+  { label: '낮음', max: 12.5 },
+  { label: '보통', max: 13.5 },
+  { label: '우수', max: 15.0 },
+  { label: '매우 우수', max: 16.5 },
+  { label: '엘리트', max: Infinity },
+];
+
+function classifyMAS(v: number): string {
+  return (MAS_TIERS.find(t => v <= t.max) ?? MAS_TIERS[MAS_TIERS.length - 1]).label;
+}
+
+function SpeedInsightBox({ rows, gradeMap, stageMap }: { rows: SpeedCustomRow[]; gradeMap: Map<string, string>; stageMap: Map<string, string | null> }) {
+  const masInsight = useMemo(() => {
+    const tierCounts = new Map<string, number>();
+    rows.forEach(r => tierCounts.set(classifyMAS(r.mas), (tierCounts.get(classifyMAS(r.mas)) ?? 0) + 1));
+    const elite = tierCounts.get('엘리트') ?? 0;
+    const low = rows.filter(r => r.mas < 15.0).sort((a, b) => a.mas - b.mas).slice(0, 2);
+    return { tierCounts, elite, low };
+  }, [rows]);
+
+  const mssStageInsight = useMemo(() => {
+    const byStage = new Map<string, number[]>();
+    rows.forEach(r => {
+      const stage = stageMap.get(r.player_id);
+      if (!stage) return;
+      if (!byStage.has(stage)) byStage.set(stage, []);
+      byStage.get(stage)!.push(r.mss);
+    });
+    const avgByStage = STAGE_ORDER.map(stage => {
+      const vals = byStage.get(stage) ?? [];
+      return { stage, avg: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null, count: vals.length };
+    });
+    const postAvg = avgByStage.find(s => s.stage === '성장 급증기 후')?.avg ?? null;
+    const lagging = postAvg != null
+      ? rows.filter(r => stageMap.get(r.player_id) === '성장 급증기 후' && r.mss < postAvg)
+          .sort((a, b) => a.mss - b.mss).slice(0, 2)
+      : [];
+    return { avgByStage, lagging };
+  }, [rows, stageMap]);
+
+  if (rows.length === 0) return null;
+
+  const total = rows.length;
+  const elitePct = Math.round((masInsight.elite / total) * 100);
+
+  return (
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4">
+      <p className="text-sm font-medium mb-2.5">MAS · MSS 인사이트</p>
+
+      <p className="text-[13px] leading-relaxed text-text-secondary mb-2">
+        전체 {total}명 중 <span style={{ color: colors.navy, fontWeight: 500 }}>{elitePct}%({masInsight.elite}명)</span>가 MAS 엘리트(≥17km/h) 등급이며,
+        전원이 우수 등급 이상으로 팀 전체 유산소 능력은 매우 양호한 수준입니다.
+        {masInsight.low.length > 0 && (
+          <> 다만 <span style={{ color: colors.wine, fontWeight: 500 }}>{masInsight.low.map(r => `${r.player_name}(${gradeMap.get(r.player_id) ?? ''} ${r.mas}km/h)`).join(', ')}</span>는
+          상대적으로 낮아 보완이 필요합니다. 다만 저학년일수록 발달 여지가 남아있어 학년을 함께 고려해 우선순위를 정하는 것이 좋습니다(MAS는 고학년일수록 경기력과의 상관관계가 강해짐).</>
+        )}
+      </p>
+
+      <p className="text-[13px] leading-relaxed text-text-secondary mb-3.5">
+        MSS는 성장 단계와 뚜렷한 관련을 보입니다: {mssStageInsight.avgByStage.filter(s => s.avg != null).map(s => (
+          <span key={s.stage}> <span style={{ color: STAGE_COLOR[s.stage], fontWeight: 500 }}>{s.stage} 평균 {s.avg!.toFixed(1)}km/h</span></span>
+        ))} 로 성숙도가 진행될수록 스피드도 함께 증가하는 양상입니다.
+        {mssStageInsight.lagging.length > 0 && (
+          <> 이 중 <span style={{ color: colors.wine, fontWeight: 500 }}>{mssStageInsight.lagging.map(r => `${r.player_name}(${r.mss}km/h)`).join(', ')}</span>는
+          이미 급증기 후 단계임에도 같은 단계 평균보다 스피드가 낮아, 스프린트 훈련 비중을 늘려볼 만합니다.</>
+        )}
+      </p>
+
+      <p className="text-[11px] text-text-disabled">
+        Zone1~5(MAS 60/80/100%·ASR 20%·MSS 80%) 기준은 개인화 속도 존 방법론(Application of Individualized Speed Zones to Quantify External Training Load in Soccer)을 따릅니다.
+        MSS-성숙도 연관성은 청소년 스프린트 발달 연구(성숙도 변화에 따른 스프린트 능력 결정 요인)를 참고했습니다. 논문상 MSS는 대부분 레이더/타이밍 게이트 측정치라
+        본 데이터(GPS 순간 최고속도)와 절대값 비교는 어려워 팀 내부 추세 비교 중심으로 구성했습니다.
+      </p>
+    </div>
+  );
+}
+
 function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomRow[]; players: Player[]; maturityRows: MaturityRow[] }) {
   const [mode, setMode] = useState<GroupMode>('전체');
   const [subValue, setSubValue] = useState<string>('');
@@ -551,6 +630,8 @@ function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomR
 
   return (
     <div className="flex flex-col gap-5">
+      <SpeedInsightBox rows={rows} gradeMap={gradeMap} stageMap={stageMap} />
+
       <div className="flex flex-col gap-2">
         <div className="flex gap-2">
           {GROUP_MODES.map(m => groupTabBtn(m, mode === m, () => setMode(m)))}
