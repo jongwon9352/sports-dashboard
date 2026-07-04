@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
 } from 'recharts';
 import { fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, type PhysicalTestRow, type MaturityRow } from '../lib/api';
-import type { Player } from '../types';
+import type { Player, Grade } from '../types';
 import { colors } from '../styles/colors';
 
 interface MetricDef {
@@ -224,6 +224,110 @@ function StageTooltip({ active, payload }: any) {
   );
 }
 
+const STAGE_TRAINING_FOCUS: Record<string, string[]> = {
+  '성장 급증기 전': ['기본 움직임(FMS) 숙달', '신경계 기반 근력·스피드', '민첩성 기초 훈련'],
+  '성장 급증기': ['근력 발달 지속', '착지·코어 안정화 훈련', '협응력 저하 모니터링'],
+  '성장 급증기 후': ['근비대·파워 훈련 도입', '종목 특화 기술(SSS) 비중 확대', '고강도 저항 훈련 가능'],
+};
+const MATURITY_OUTLIER_THRESHOLD = 1.0; // 학년 평균 대비 PHV Offset 편차(년) 기준
+
+function MaturityInsightBox({ data, players }: { data: MaturityRow[]; players: Player[] }) {
+  const gradeMap = useMemo(() => new Map(players.map(p => [p.id, p.grade])), [players]);
+
+  const stageCounts = useMemo(() => {
+    const total = data.length;
+    return STAGE_ORDER.map(stage => {
+      const count = data.filter(r => r.maturity_stage === stage).length;
+      return { stage, count, pct: total ? Math.round((count / total) * 100) : 0 };
+    });
+  }, [data]);
+
+  const outliers = useMemo(() => {
+    const byGrade = new Map<string, number[]>();
+    data.forEach(r => {
+      const grade = gradeMap.get(r.player_id);
+      if (!grade || r.mirwald_maturity_offset == null) return;
+      if (!byGrade.has(grade)) byGrade.set(grade, []);
+      byGrade.get(grade)!.push(r.mirwald_maturity_offset);
+    });
+    const gradeAvg = new Map<string, number>();
+    byGrade.forEach((vals, grade) => gradeAvg.set(grade, vals.reduce((a, b) => a + b, 0) / vals.length));
+
+    return data
+      .map(r => {
+        const grade = gradeMap.get(r.player_id);
+        if (!grade || r.mirwald_maturity_offset == null) return null;
+        const diff = r.mirwald_maturity_offset - (gradeAvg.get(grade) ?? 0);
+        return { name: r.player_name, grade, diff };
+      })
+      .filter((x): x is { name: string; grade: Grade; diff: number } => x != null && Math.abs(x.diff) >= MATURITY_OUTLIER_THRESHOLD)
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+      .slice(0, 4);
+  }, [data, gradeMap]);
+
+  if (data.length === 0) return null;
+
+  const [preS, circaS, postS] = stageCounts;
+
+  return (
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4">
+      <p className="text-sm font-medium mb-2.5">성장 단계 인사이트</p>
+      <p className="text-[13px] leading-relaxed text-text-secondary mb-3.5">
+        스쿼드 {data.length}명 중 <span style={{ color: colors.navy, fontWeight: 500 }}>{preS.pct}%({preS.count}명)</span>가 급증기 전,{' '}
+        <span style={{ color: colors.green, fontWeight: 500 }}>{circaS.pct}%({circaS.count}명)</span>가 급증기,{' '}
+        <span style={{ color: colors.wine, fontWeight: 500 }}>{postS.pct}%({postS.count}명)</span>가 급증기 후입니다.
+        급증기 구간 선수는 사지 성장으로 일시적 협응력 저하가 나타날 수 있어 기술 훈련 난이도 조절이 필요합니다.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-3.5">
+        {STAGE_ORDER.map(stage => {
+          const s = stageCounts.find(x => x.stage === stage)!;
+          return (
+            <div key={stage} className="bg-bg p-2.5" style={{ borderLeft: `3px solid ${STAGE_COLOR[stage]}` }}>
+              <div className="flex justify-between items-baseline mb-1.5">
+                <span className="text-xs font-medium">{stage}</span>
+                <span className="text-[11px] text-text-disabled">{s.count}명</span>
+              </div>
+              <ul className="text-[11.5px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
+                {STAGE_TRAINING_FOCUS[stage].map(item => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+
+      {outliers.length > 0 && (
+        <div className="border-t border-surface-secondary pt-3">
+          <p className="text-xs font-medium mb-2">개인별 주의 선수</p>
+          <div className="flex flex-col gap-1.5">
+            {outliers.map(o => {
+              const early = o.diff > 0;
+              const badgeColor = early ? colors.wine : colors.navy;
+              return (
+                <div key={o.name} className="flex items-start gap-2">
+                  <span
+                    className="flex-shrink-0 text-[11px] font-medium px-2 py-0.5 rounded"
+                    style={{ background: `${badgeColor}1a`, color: badgeColor }}
+                  >
+                    {early ? '조숙' : '만숙'}
+                  </span>
+                  <span className="text-xs leading-relaxed">
+                    <span className="font-medium">{o.name}</span>({o.grade}) · 학년 평균보다 {Math.abs(o.diff).toFixed(1)}년{' '}
+                    {early ? '빠른 성장 진행. 학년 대비 높은 훈련 강도 적용을 고려하세요.' : '느린 성장 진행. 근비대보다 신경계 기반 근력·스피드·민첩성에 집중하세요.'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-text-disabled mt-2.5">
+            최종 성인 키는 조숙·만숙 여부와 무관합니다. 생활 나이가 아닌 개인별 생물학적 성숙도 기준으로 훈련 강도를 조정하세요.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Player[] }) {
   const data = useMemo(() => {
     return rows
@@ -260,6 +364,8 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
 
   return (
     <div className="flex flex-col gap-5">
+      <MaturityInsightBox data={data} players={players} />
+
       <div>
         <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
           선수별 현재 키 · 최대 성장 키 예측(Khamis-Roche)
