@@ -556,33 +556,52 @@ function SpeedInsightBox({ rows, gradeMap, stageMap }: { rows: SpeedCustomRow[];
   const total = rows.length;
   const elitePct = Math.round((masInsight.elite / total) * 100);
 
+  const attentionPlayers = [
+    ...masInsight.low.map(r => ({ key: `mas-${r.player_id}`, badge: 'MAS 낮음', color: colors.wine,
+      text: `${r.player_name}(${gradeMap.get(r.player_id) ?? ''}) · ${r.mas}km/h — 저학년일수록 발달 여지가 있어 고학년부터 우선순위를 정하세요.` })),
+    ...mssStageInsight.lagging.map(r => ({ key: `mss-${r.player_id}`, badge: 'MSS 정체', color: colors.navy,
+      text: `${r.player_name} · ${r.mss}km/h — 급증기 후 단계 평균보다 낮아 스프린트 훈련 비중을 늘려볼 만합니다.` })),
+  ];
+
   return (
     <div className="bg-surface rounded-xl border border-surface-secondary p-4">
       <p className="text-sm font-medium mb-2.5">MAS · MSS 인사이트</p>
 
-      <p className="text-[13px] leading-relaxed text-text-secondary mb-2">
-        전체 {total}명 중 <span style={{ color: colors.navy, fontWeight: 500 }}>{elitePct}%({masInsight.elite}명)</span>가 MAS 엘리트(≥17km/h) 등급이며,
-        전원이 우수 등급 이상으로 팀 전체 유산소 능력은 매우 양호한 수준입니다.
-        {masInsight.low.length > 0 && (
-          <> 다만 <span style={{ color: colors.wine, fontWeight: 500 }}>{masInsight.low.map(r => `${r.player_name}(${gradeMap.get(r.player_id) ?? ''} ${r.mas}km/h)`).join(', ')}</span>는
-          상대적으로 낮아 보완이 필요합니다. 다만 저학년일수록 발달 여지가 남아있어 학년을 함께 고려해 우선순위를 정하는 것이 좋습니다(MAS는 고학년일수록 경기력과의 상관관계가 강해짐).</>
-        )}
-      </p>
-
       <p className="text-[13px] leading-relaxed text-text-secondary mb-3.5">
-        MSS는 성장 단계와 뚜렷한 관련을 보입니다: {mssStageInsight.avgByStage.filter(s => s.avg != null).map(s => (
-          <span key={s.stage}> <span style={{ color: STAGE_COLOR[s.stage], fontWeight: 500 }}>{s.stage} 평균 {s.avg!.toFixed(1)}km/h</span></span>
-        ))} 로 성숙도가 진행될수록 스피드도 함께 증가하는 양상입니다.
-        {mssStageInsight.lagging.length > 0 && (
-          <> 이 중 <span style={{ color: colors.wine, fontWeight: 500 }}>{mssStageInsight.lagging.map(r => `${r.player_name}(${r.mss}km/h)`).join(', ')}</span>는
-          이미 급증기 후 단계임에도 같은 단계 평균보다 스피드가 낮아, 스프린트 훈련 비중을 늘려볼 만합니다.</>
-        )}
+        전체 {total}명 중 <span style={{ color: colors.navy, fontWeight: 500 }}>{elitePct}%({masInsight.elite}명)</span>가 MAS 엘리트(≥17km/h) 등급이며,
+        MSS는 성장 단계가 진행될수록 함께 증가하는 양상입니다.
       </p>
 
-      <p className="text-[11px] text-text-disabled">
-        Zone1~5(MAS 60/80/100%·ASR 20%·MSS 80%) 기준은 개인화 속도 존 방법론(Application of Individualized Speed Zones to Quantify External Training Load in Soccer)을 따릅니다.
-        MSS-성숙도 연관성은 청소년 스프린트 발달 연구(성숙도 변화에 따른 스프린트 능력 결정 요인)를 참고했습니다. 논문상 MSS는 대부분 레이더/타이밍 게이트 측정치라
-        본 데이터(GPS 순간 최고속도)와 절대값 비교는 어려워 팀 내부 추세 비교 중심으로 구성했습니다.
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-3.5">
+        {mssStageInsight.avgByStage.filter(s => s.avg != null).map(s => (
+          <div key={s.stage} className="bg-bg p-2.5" style={{ borderLeft: `3px solid ${STAGE_COLOR[s.stage]}` }}>
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-xs font-medium">{s.stage}</span>
+              <span className="text-[11px] text-text-disabled">{s.count}명</span>
+            </div>
+            <p className="text-lg font-medium">{s.avg!.toFixed(1)}<span className="text-[11px] font-normal text-text-disabled"> km/h MSS 평균</span></p>
+          </div>
+        ))}
+      </div>
+
+      {attentionPlayers.length > 0 && (
+        <div className="border-t border-surface-secondary pt-3">
+          <p className="text-xs font-medium mb-2">개인별 주의 선수</p>
+          <div className="flex flex-col gap-1.5">
+            {attentionPlayers.map(p => (
+              <div key={p.key} className="flex items-start gap-2">
+                <span className="flex-shrink-0 text-[11px] font-medium px-2 py-0.5 rounded" style={{ background: `${p.color}1a`, color: p.color }}>
+                  {p.badge}
+                </span>
+                <span className="text-xs leading-relaxed">{p.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-text-disabled mt-2.5">
+        출처: 개인화 속도 존 방법론(Individualized Speed Zones, Soccer) · 청소년 스프린트-성숙도 연구. 논문 MSS는 레이더/타이밍 게이트 측정치라 본 데이터(GPS 순간 최고속도)와 절대값 비교 대신 팀 내부 추세 중심으로 구성했습니다.
       </p>
     </div>
   );
