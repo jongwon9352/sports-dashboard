@@ -1278,9 +1278,6 @@ export async function fetchWeeklyGradeAvg(weekStart: string, grades: string[]): 
   return results;
 }
 
-// 위클리 리포트 화면과 동일한 팀 기준(학년 목록)으로 집계해 두 화면의 수치가 일치하도록 함
-const WEEKLY_ANALYSIS_GRADES = ['U15', 'U14', '3학년', '2학년'];
-
 export interface WeeklyGpsTotals {
   week_start: string;
   week_label: string;
@@ -1294,28 +1291,85 @@ export interface WeeklyGpsTotals {
   max_speed: number;
 }
 
-// 저장된 모든 주차의 실측 GPS 데이터(주간 리포트와 동일한 팀 평균 기준)를 주간 합계로 집계
+function mondayOfDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const day = d.getDay();
+  d.setDate(d.getDate() - ((day + 6) % 7));
+  return d.toISOString().split('T')[0];
+}
+
+// 로우 데이터(training_daily)에 group_type이 U15 또는 U14로 기입된 모든 기록을 주 단위로 집계
+// (선수 현재 학년이 아니라 GPS 업로드 당시 실제 태깅된 그룹 기준 · 주기화표 저장 여부와 무관하게 전체 활용)
 export async function fetchWeeklyGpsTotals(): Promise<WeeklyGpsTotals[]> {
-  const weeks = await fetchSavedWeeks();
-  const results: WeeklyGpsTotals[] = [];
+  const client = requireSupabase();
+  const allRows: R[] = [];
+  let offset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: chunk } = await client
+      .from('training_daily')
+      .select('training_date, total_distance, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, rpe, duration_min')
+      .in('group_type', ['U15', 'U14'])
+      .range(offset, offset + PAGE - 1);
+    if (!chunk || chunk.length === 0) break;
+    allRows.push(...(chunk as R[]));
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  if (allRows.length === 0) return [];
 
-  for (const week of weeks) {
-    const days = await fetchWeeklyGradeAvg(week.week_start, WEEKLY_ANALYSIS_GRADES);
-    if (days.every(d => d.td === 0 && d.hsr === 0 && d.sprint === 0)) continue;
+  const byDate = new Map<string, R[]>();
+  for (const row of allRows) {
+    const d = row.training_date as string;
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d)!.push(row);
+  }
 
-    results.push({
-      week_start: week.week_start,
-      week_label: week.week_label,
-      td: Math.round(days.reduce((s, d) => s + d.td, 0)),
-      hsr: Math.round(days.reduce((s, d) => s + d.hsr, 0)),
-      sprint: Math.round(days.reduce((s, d) => s + d.sprint, 0)),
-      acc: Math.round(days.reduce((s, d) => s + d.acc, 0) * 10) / 10,
-      dec: Math.round(days.reduce((s, d) => s + d.dec, 0) * 10) / 10,
-      acd_load: Math.round(days.reduce((s, d) => s + d.acd_load, 0)),
-      training_load: Math.round(days.reduce((s, d) => s + d.training_load, 0)),
-      max_speed: Math.round(Math.max(...days.map(d => d.max_speed)) * 10) / 10,
+  const avg = (rows: R[], key: string) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0) / rows.length;
+
+  const dayStats = new Map<string, { td: number; hsr: number; sprint: number; acc: number; dec: number; acd_load: number; max_speed: number; training_load: number }>();
+  for (const [date, rows] of byDate) {
+    const tlRows = rows.filter(r => Number(r.rpe) > 0);
+    const tl = tlRows.length > 0 ? tlRows.reduce((s, r) => s + Number(r.rpe) * Number(r.duration_min), 0) / tlRows.length : 0;
+    dayStats.set(date, {
+      td: avg(rows, 'total_distance'),
+      hsr: avg(rows, 'hsr_distance'),
+      sprint: avg(rows, 'sprint_distance'),
+      acc: avg(rows, 'acc_count'),
+      dec: avg(rows, 'dec_count'),
+      acd_load: avg(rows, 'acd_load'),
+      max_speed: avg(rows, 'max_speed'),
+      training_load: tl,
     });
   }
+
+  const weekMap = new Map<string, string[]>();
+  for (const date of dayStats.keys()) {
+    const wk = mondayOfDate(date);
+    if (!weekMap.has(wk)) weekMap.set(wk, []);
+    weekMap.get(wk)!.push(date);
+  }
+
+  const savedWeeks = await fetchSavedWeeks();
+  const labelMap = new Map(savedWeeks.map(w => [w.week_start, w.week_label]));
+
+  const results: WeeklyGpsTotals[] = [];
+  for (const [weekStart, dates] of weekMap) {
+    const stats = dates.map(d => dayStats.get(d)!);
+    results.push({
+      week_start: weekStart,
+      week_label: labelMap.get(weekStart) || weekStart,
+      td: Math.round(stats.reduce((s, d) => s + d.td, 0)),
+      hsr: Math.round(stats.reduce((s, d) => s + d.hsr, 0)),
+      sprint: Math.round(stats.reduce((s, d) => s + d.sprint, 0)),
+      acc: Math.round(stats.reduce((s, d) => s + d.acc, 0) * 10) / 10,
+      dec: Math.round(stats.reduce((s, d) => s + d.dec, 0) * 10) / 10,
+      acd_load: Math.round(stats.reduce((s, d) => s + d.acd_load, 0)),
+      training_load: Math.round(stats.reduce((s, d) => s + d.training_load, 0)),
+      max_speed: Math.round(Math.max(...stats.map(d => d.max_speed)) * 10) / 10,
+    });
+  }
+  results.sort((a, b) => a.week_start.localeCompare(b.week_start));
 
   return results;
 }
