@@ -1278,7 +1278,8 @@ export async function fetchWeeklyGradeAvg(weekStart: string, grades: string[]): 
   return results;
 }
 
-const WEEKLY_ANALYSIS_GRADES = ['U15', 'U14', '3학년', '2학년', '1학년'];
+// 위클리 리포트 화면과 동일한 팀 기준(학년 목록)으로 집계해 두 화면의 수치가 일치하도록 함
+const WEEKLY_ANALYSIS_GRADES = ['U15', 'U14', '3학년', '2학년'];
 
 export interface WeeklyGpsTotals {
   week_start: string;
