@@ -5,8 +5,10 @@ import {
   fetchWeeklyPeriodization,
   upsertWeeklyPeriodization,
   fetchSavedWeeks,
+  fetchWeeklyGpsTotals,
   emptyDayPlan,
   type DayPlan,
+  type WeeklyGpsTotals,
 } from '../lib/api';
 
 function AutoCell({
@@ -158,7 +160,110 @@ function PitchDiagram({
   );
 }
 
+const METRIC_DEFS: { key: keyof WeeklyGpsTotals; label: string; unit: string }[] = [
+  { key: 'training_load', label: '훈련 부하(TL)', unit: '' },
+  { key: 'td', label: '총 이동거리(TD)', unit: 'm' },
+  { key: 'hsr', label: '고강도 이동거리(HSR)', unit: 'm' },
+  { key: 'sprint', label: '스프린트 거리', unit: 'm' },
+  { key: 'acc', label: '가속 횟수(ACC)', unit: '회' },
+  { key: 'dec', label: '감속 횟수(DEC)', unit: '회' },
+  { key: 'acd_load', label: 'ACD LOAD', unit: '' },
+  { key: 'max_speed', label: '최고 속도', unit: 'km/h' },
+];
+
+function WeeklyDataAnalysis() {
+  const [weeks, setWeeks] = useState<WeeklyGpsTotals[] | null>(null);
+
+  useEffect(() => {
+    fetchWeeklyGpsTotals().then(setWeeks);
+  }, []);
+
+  if (weeks === null) {
+    return <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>;
+  }
+  if (weeks.length === 0) {
+    return <p className="text-sm text-text-secondary text-center py-16">분석할 주간 데이터가 없습니다.</p>;
+  }
+
+  const stats = METRIC_DEFS.map(m => {
+    const vals = weeks.map(w => w[m.key] as number);
+    const max = Math.max(...vals);
+    const min = Math.min(...vals);
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const maxWeek = weeks.find(w => w[m.key] === max)?.week_label;
+    const minWeek = weeks.find(w => w[m.key] === min)?.week_label;
+    return { ...m, max, min, avg, maxWeek, minWeek };
+  });
+
+  const tdStat = stats.find(s => s.key === 'td')!;
+  const tlStat = stats.find(s => s.key === 'training_load')!;
+
+  const thC = 'px-3 py-2 text-[11px] font-semibold whitespace-nowrap border border-surface-secondary text-center';
+  const tdC = 'px-3 py-2 text-[11px] whitespace-nowrap border border-surface-secondary text-center';
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-surface rounded-xl border border-surface-secondary p-4">
+        <p className="text-sm font-medium mb-2.5">주간 GPS 스케일 인사이트</p>
+        <p className="text-[13px] leading-relaxed text-text-secondary">
+          지금까지 축적된 {weeks.length}개 주차 기준, 주간 총 이동거리(TD)는 평균 <span className="font-medium text-cyan-500">{Math.round(tdStat.avg).toLocaleString()}m</span>이며
+          {' '}{tdStat.minWeek}({tdStat.min.toLocaleString()}m) ~ {tdStat.maxWeek}({tdStat.max.toLocaleString()}m) 사이에서 형성됐습니다.
+          훈련 부하(TL)는 평균 {Math.round(tlStat.avg).toLocaleString()}로, 앞으로 주간 목표(Plan)를 설정할 때 이 범위를 우리 팀 고유의 기준선으로 참고할 수 있습니다.
+          {weeks.length < 4 && ' 다만 누적 주차 수가 아직 적어 표본이 늘어날수록 기준값의 신뢰도가 높아집니다.'}
+        </p>
+      </div>
+
+      <div className="bg-surface rounded-xl border border-surface-secondary p-4 overflow-x-auto">
+        <p className="text-sm font-medium mb-2.5">항목별 Max · Average · Min</p>
+        <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 11 }}>
+          <thead>
+            <tr>
+              <th className={`${thC} text-left`}>항목</th>
+              <th className={thC}>Max</th>
+              <th className={thC}>Average</th>
+              <th className={thC}>Min</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map(s => (
+              <tr key={s.key}>
+                <td className={`${tdC} text-left font-medium`}>{s.label}</td>
+                <td className={tdC}>{s.max.toLocaleString()}{s.unit} <span className="text-text-disabled">({s.maxWeek})</span></td>
+                <td className={tdC}>{Math.round(s.avg * 10) / 10 > 0 ? (Math.round(s.avg * 10) / 10).toLocaleString() : 0}{s.unit}</td>
+                <td className={tdC}>{s.min.toLocaleString()}{s.unit} <span className="text-text-disabled">({s.minWeek})</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="bg-surface rounded-xl border border-surface-secondary p-4 overflow-x-auto">
+        <p className="text-sm font-medium mb-2.5">주차별 합계</p>
+        <table className="w-full border-collapse" style={{ fontFamily: 'var(--font-data)', fontSize: 11 }}>
+          <thead>
+            <tr>
+              <th className={`${thC} text-left`}>주차</th>
+              {METRIC_DEFS.map(m => <th key={m.key} className={thC}>{m.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map(w => (
+              <tr key={w.week_start}>
+                <td className={`${tdC} text-left font-medium`}>{w.week_label || w.week_start}</td>
+                {METRIC_DEFS.map(m => (
+                  <td key={m.key} className={tdC}>{(w[m.key] as number).toLocaleString()}{m.unit}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function WeeklyPeriodization() {
+  const [tab, setTab] = useState<'plan' | 'analysis'>('plan');
   const [weekStart, setWeekStart] = useState(() => fmt(getMonday(new Date())));
   const [topic, setTopic] = useState('');
   const [weekLabel, setWeekLabel] = useState('');
@@ -319,6 +424,23 @@ export function WeeklyPeriodization() {
         주간 주기화
       </h1>
 
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setTab('plan')}
+          className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+            tab === 'plan' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+          }`}>
+          주기화표
+        </button>
+        <button onClick={() => setTab('analysis')}
+          className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+            tab === 'analysis' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+          }`}>
+          주간 데이터 분석
+        </button>
+      </div>
+
+      {tab === 'analysis' ? <WeeklyDataAnalysis /> : (
+      <>
       {/* 주차 + 날짜 네비게이션 */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         {/* 저장된 주차 바로가기 */}
@@ -460,6 +582,8 @@ export function WeeklyPeriodization() {
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </div>
   );
 }

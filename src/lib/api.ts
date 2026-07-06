@@ -1278,6 +1278,47 @@ export async function fetchWeeklyGradeAvg(weekStart: string, grades: string[]): 
   return results;
 }
 
+const WEEKLY_ANALYSIS_GRADES = ['U15', 'U14', '3학년', '2학년', '1학년'];
+
+export interface WeeklyGpsTotals {
+  week_start: string;
+  week_label: string;
+  td: number;
+  hsr: number;
+  sprint: number;
+  acc: number;
+  dec: number;
+  acd_load: number;
+  training_load: number;
+  max_speed: number;
+}
+
+// 저장된 모든 주차의 실측 GPS 데이터(주간 리포트와 동일한 팀 평균 기준)를 주간 합계로 집계
+export async function fetchWeeklyGpsTotals(): Promise<WeeklyGpsTotals[]> {
+  const weeks = await fetchSavedWeeks();
+  const results: WeeklyGpsTotals[] = [];
+
+  for (const week of weeks) {
+    const days = await fetchWeeklyGradeAvg(week.week_start, WEEKLY_ANALYSIS_GRADES);
+    if (days.every(d => d.td === 0 && d.hsr === 0 && d.sprint === 0)) continue;
+
+    results.push({
+      week_start: week.week_start,
+      week_label: week.week_label,
+      td: Math.round(days.reduce((s, d) => s + d.td, 0)),
+      hsr: Math.round(days.reduce((s, d) => s + d.hsr, 0)),
+      sprint: Math.round(days.reduce((s, d) => s + d.sprint, 0)),
+      acc: Math.round(days.reduce((s, d) => s + d.acc, 0) * 10) / 10,
+      dec: Math.round(days.reduce((s, d) => s + d.dec, 0) * 10) / 10,
+      acd_load: Math.round(days.reduce((s, d) => s + d.acd_load, 0)),
+      training_load: Math.round(days.reduce((s, d) => s + d.training_load, 0)),
+      max_speed: Math.round(Math.max(...days.map(d => d.max_speed)) * 10) / 10,
+    });
+  }
+
+  return results;
+}
+
 export async function saveDailyReportConfig(date: string, playerTypes: Record<string, string>, location: string) {
   const client = requireSupabase();
   const { error } = await client
