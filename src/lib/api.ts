@@ -1675,6 +1675,9 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
 }> {
   if (!supabase) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
 
+  const toLocalDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
   const today = new Date();
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - days);
@@ -1692,8 +1695,8 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     const { data: chunk } = await supabase
       .from('training_daily')
       .select('training_date, player_id, group_type, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
-      .gte('training_date', cStart.toISOString().split('T')[0])
-      .lte('training_date', cEnd.toISOString().split('T')[0])
+      .gte('training_date', toLocalDateStr(cStart))
+      .lte('training_date', toLocalDateStr(cEnd))
       .order('training_date', { ascending: true });
     if (chunk) dailyData.push(...chunk);
   }
@@ -1709,7 +1712,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
 
   const allDates: string[] = [];
   for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
-    allDates.push(d.toISOString().split('T')[0]);
+    allDates.push(toLocalDateStr(d));
   }
 
   const dateMap = new Map<string, TeamAcwrDayData>();
