@@ -1972,6 +1972,50 @@ export async function syncMaturityFromGoogleSheet(): Promise<MaturitySyncResult>
   return { updatedCount, unmatchedNames };
 }
 
+// 선택한 선수들의 신체 성숙도 입력값을 초기화(명단에서 제외 효과)
+export async function clearMaturityData(playerIds: string[]): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('players')
+    .update({
+      baseline_height_cm: null,
+      baseline_weight_kg: null,
+      chair_height_cm: null,
+      baseline_sitting_height_cm: null,
+      baseline_measured_at: null,
+      mother_height_cm: null,
+      father_height_cm: null,
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', playerIds);
+  if (error) throw error;
+}
+
+// 임시 계산기(선수 명단 외 인원)용 Khamis-Roche 계수 테이블 전체 조회
+export interface KhamisRocheCoefficient {
+  age_decimal: number;
+  bo: number;
+  coef_stature: number;
+  coef_weight: number;
+  coef_midparent_stature: number;
+}
+
+export async function fetchKhamisRocheCoefficients(): Promise<KhamisRocheCoefficient[]> {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('khamis_roche_coefficients')
+    .select('age_decimal, bo, coef_stature, coef_weight, coef_midparent_stature')
+    .order('age_decimal', { ascending: true });
+  if (error) throw error;
+  return ((data as R[]) ?? []).map(r => ({
+    age_decimal: Number(r.age_decimal),
+    bo: Number(r.bo),
+    coef_stature: Number(r.coef_stature),
+    coef_weight: Number(r.coef_weight),
+    coef_midparent_stature: Number(r.coef_midparent_stature),
+  }));
+}
+
 // ── 피지컬 데이터 (VALD 체력 테스트) — 측정일마다 누적 저장 ───────────────
 export interface PhysicalTestRow {
   id: string;

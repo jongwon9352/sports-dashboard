@@ -2,8 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
   fetchBodyCompositionRecords, fetchSpeedCustomRecords, updateSpeedCustomOverride,
-  fetchMaturityRecords, syncMaturityFromGoogleSheet,
+  fetchMaturityRecords, syncMaturityFromGoogleSheet, clearMaturityData,
+  fetchKhamisRocheCoefficients,
   type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomRow, type MaturityRow,
+  type KhamisRocheCoefficient,
 } from '../lib/api';
 import type { Player } from '../types';
 
@@ -509,12 +511,185 @@ function maturityFmt(v: number | string | null): string {
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
 }
 
-function MaturityTab() {
+// 신체 성숙도 계산 로직(player_phv_khamis_roche 뷰와 동일한 방식)
+function calcAgeDecimal(birthDate: string, onDate: Date): number {
+  const b = new Date(birthDate);
+  return +(((onDate.getTime() - b.getTime()) / (1000 * 60 * 60 * 24 * 365.25))).toFixed(3);
+}
+
+// 앉은 키가 의자 높이를 포함해 입력된 경우(신장 대비 65% 초과) 보정
+function calcSittingHeight(height: number, sittingRaw: number, chairHeight: number): number {
+  return sittingRaw / height > 0.65 ? sittingRaw - chairHeight : sittingRaw;
+}
+
+function adjMotherHeight(cm: number): number { return (cm * 0.3937 * 0.953 + 2.803) * 2.54; }
+function adjFatherHeight(cm: number): number { return (cm * 0.3937 * 0.955 + 2.316) * 2.54; }
+
+function findKhamisRocheCoef(coefs: KhamisRocheCoefficient[], age: number): KhamisRocheCoefficient | null {
+  const sorted = [...coefs].sort((a, b) => a.age_decimal - b.age_decimal);
+  let match: KhamisRocheCoefficient | null = null;
+  for (const c of sorted) {
+    if (c.age_decimal <= age) match = c;
+    else break;
+  }
+  return match ?? sorted[0] ?? null;
+}
+
+interface ScratchResult {
+  ageDecimal: number;
+  legLength: number;
+  sittingHeight: number;
+  offset: number;
+  aphv: number;
+  stage: string;
+  predictedHeight: number;
+  pahPercent: number;
+}
+
+function calcMaturityScratch(input: {
+  height: number; weight: number; chairHeight: number; sittingRaw: number;
+  motherHeight: number; fatherHeight: number; birthDate: string;
+}, coefs: KhamisRocheCoefficient[]): ScratchResult | null {
+  const { height, weight, chairHeight, sittingRaw, motherHeight, fatherHeight, birthDate } = input;
+  if (!height || !weight || !chairHeight || !sittingRaw || !motherHeight || !fatherHeight || !birthDate) return null;
+
+  const ageDecimal = calcAgeDecimal(birthDate, new Date());
+  const sittingHeight = calcSittingHeight(height, sittingRaw, chairHeight);
+  const legLength = height - sittingHeight;
+  const coef = findKhamisRocheCoef(coefs, ageDecimal);
+  if (!coef) return null;
+
+  const midparentStature = (adjMotherHeight(motherHeight) + adjFatherHeight(fatherHeight)) / 2;
+  const predictedHeight = coef.bo + coef.coef_stature * height + coef.coef_weight * weight + coef.coef_midparent_stature * midparentStature;
+  const pahPercent = (height / predictedHeight) * 100;
+
+  const offset = -9.236
+    + 0.0002708 * (legLength * sittingHeight)
+    - 0.001663 * (ageDecimal * legLength)
+    + 0.007216 * (ageDecimal * sittingHeight)
+    + 0.02292 * ((weight / height) * 100);
+  const aphv = ageDecimal - offset;
+  const stage = offset < -1 ? '성장 급증기 전' : offset <= 1 ? '성장 급증기' : '성장 급증기 후';
+
+  return {
+    ageDecimal, legLength, sittingHeight,
+    offset: +offset.toFixed(2), aphv: +aphv.toFixed(2), stage,
+    predictedHeight: +predictedHeight.toFixed(1), pahPercent: +pahPercent.toFixed(1),
+  };
+}
+
+function MaturityScratchCalculator() {
+  const [coefs, setCoefs] = useState<KhamisRocheCoefficient[]>([]);
+  const [name, setName] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState('');
+  const [chairHeight, setChairHeight] = useState('');
+  const [sittingHeight, setSittingHeight] = useState('');
+  const [motherHeight, setMotherHeight] = useState('');
+  const [fatherHeight, setFatherHeight] = useState('');
+
+  useEffect(() => {
+    fetchKhamisRocheCoefficients().then(setCoefs);
+  }, []);
+
+  const age = birthDate ? calcAgeDecimal(birthDate, new Date()) : null;
+
+  const result = useMemo(() => {
+    const h = parseFloat(height), w = parseFloat(weight), ch = parseFloat(chairHeight),
+      sh = parseFloat(sittingHeight), mh = parseFloat(motherHeight), fh = parseFloat(fatherHeight);
+    if (!birthDate || [h, w, ch, sh, mh, fh].some(v => isNaN(v) || v <= 0) || coefs.length === 0) return null;
+    return calcMaturityScratch({ height: h, weight: w, chairHeight: ch, sittingRaw: sh, motherHeight: mh, fatherHeight: fh, birthDate }, coefs);
+  }, [height, weight, chairHeight, sittingHeight, motherHeight, fatherHeight, birthDate, coefs]);
+
+  const inputC = 'px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-full';
+  const labelC = 'text-[11px] text-text-secondary mb-1 block';
+
+  return (
+    <div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        선수 명단에 없는 인원을 대상으로 신체 성숙도(PHV Offset·APHV·Khamis-Roche 예측키·%PAH)를 임시로 계산합니다.
+        여기서 입력한 값은 저장되지 않으며 선수 명단에도 추가되지 않습니다.
+      </p>
+
+      <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] p-4 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <label className={labelC}>이름</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} className={inputC} placeholder="이름" />
+          </div>
+          <div>
+            <label className={labelC}>생년월일 {age != null && <span className="text-cyan-500">(만 {age.toFixed(1)}세)</span>}</label>
+            <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} className={inputC} />
+          </div>
+          <div>
+            <label className={labelC}>신장(cm)</label>
+            <input type="number" value={height} onChange={e => setHeight(e.target.value)} className={inputC} placeholder="예: 165" />
+          </div>
+          <div>
+            <label className={labelC}>몸무게(kg)</label>
+            <input type="number" value={weight} onChange={e => setWeight(e.target.value)} className={inputC} placeholder="예: 52" />
+          </div>
+          <div>
+            <label className={labelC}>의자 높이(cm)</label>
+            <input type="number" value={chairHeight} onChange={e => setChairHeight(e.target.value)} className={inputC} placeholder="예: 45" />
+          </div>
+          <div>
+            <label className={labelC}>앉은 키(cm)</label>
+            <input type="number" value={sittingHeight} onChange={e => setSittingHeight(e.target.value)} className={inputC} placeholder="예: 86" />
+          </div>
+          <div>
+            <label className={labelC}>엄마 신장(cm)</label>
+            <input type="number" value={motherHeight} onChange={e => setMotherHeight(e.target.value)} className={inputC} placeholder="예: 163" />
+          </div>
+          <div>
+            <label className={labelC}>아빠 신장(cm)</label>
+            <input type="number" value={fatherHeight} onChange={e => setFatherHeight(e.target.value)} className={inputC} placeholder="예: 178" />
+          </div>
+        </div>
+      </div>
+
+      {result ? (
+        <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] p-5">
+          {name && <p className="text-sm font-medium mb-3">{name}</p>}
+          <div className="grid grid-cols-5 gap-4" style={{ fontFamily: 'var(--font-data)' }}>
+            <div>
+              <p className="text-[11px] text-text-secondary mb-1">PHV Offset</p>
+              <p className="text-xl font-medium">{result.offset}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-text-secondary mb-1">APHV</p>
+              <p className="text-xl font-medium">{result.aphv}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-text-secondary mb-1">성숙 단계</p>
+              <p className="text-xl font-medium">{result.stage}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-text-secondary mb-1">Khamis-Roche 예측키(cm)</p>
+              <p className="text-xl font-medium">{result.predictedHeight}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-text-secondary mb-1">%PAH</p>
+              <p className="text-xl font-medium">{result.pahPercent}</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-text-secondary text-center py-10">모든 값을 입력하면 결과가 표시됩니다.</p>
+      )}
+    </div>
+  );
+}
+
+function MaturityRosterTab() {
   const [data, setData] = useState<MaturityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [lastSyncMsg, setLastSyncMsg] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -549,6 +724,33 @@ function MaturityTab() {
       .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
   }, [data, search]);
 
+  const toggleOne = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected(prev => prev.size === filtered.length ? new Set() : new Set(filtered.map(r => r.player_id)));
+  };
+
+  const handleDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`선택한 ${selected.size}명의 신체 성숙도 값을 삭제할까요? (선수 명단 자체는 유지되고, 입력된 성숙도 값만 초기화됩니다)`)) return;
+    setDeleting(true);
+    try {
+      await clearMaturityData([...selected]);
+      setSelected(new Set());
+      load();
+    } catch {
+      alert('삭제 중 오류가 발생했습니다.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="flex items-center gap-3 flex-wrap mb-2">
@@ -567,6 +769,15 @@ function MaturityTab() {
         >
           {syncing ? '동기화 중...' : '지금 다시 동기화'}
         </button>
+        {selected.size > 0 && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="px-3 py-1.5 text-xs rounded-md border border-red-400 text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-50"
+          >
+            {deleting ? '삭제 중...' : `선택 삭제 (${selected.size})`}
+          </button>
+        )}
         {lastSyncMsg && <span className="text-[11px] text-text-secondary">{lastSyncMsg}</span>}
       </div>
       <p className="text-[11px] text-text-secondary mb-3">
@@ -584,6 +795,9 @@ function MaturityTab() {
             <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
               <thead>
                 <tr className="border-b border-surface-secondary">
+                  <th className="px-2.5 py-2.5 sticky top-0 bg-surface">
+                    <input type="checkbox" checked={selected.size === filtered.length} onChange={toggleAll} />
+                  </th>
                   {['선수 이름', '포지션', '측정일', '선수 신장(cm)', '선수 몸무게(kg)', '의자 높이(cm)', '앉은 키(cm)',
                     '엄마 신장(cm)', '아빠 신장(cm)', '만 나이', 'PHV Offset', 'APHV', '성숙 단계',
                     'Khamis-Roche 예측키(cm)', '%PAH', 'Z-score'].map(h => (
@@ -596,6 +810,9 @@ function MaturityTab() {
               <tbody>
                 {filtered.map(row => (
                   <tr key={row.player_id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2">
+                      <input type="checkbox" checked={selected.has(row.player_id)} onChange={() => toggleOne(row.player_id)} />
+                    </td>
                     <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.baseline_measured_at ?? '—'}</td>
@@ -619,6 +836,31 @@ function MaturityTab() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+function MaturityTab() {
+  const [subTab, setSubTab] = useState<'roster' | 'scratch'>('roster');
+
+  const subTabBtn = (id: 'roster' | 'scratch', label: string) => (
+    <button
+      onClick={() => setSubTab(id)}
+      className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+        subTab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <div className="flex gap-2 mb-3">
+        {subTabBtn('roster', '선수 명단')}
+        {subTabBtn('scratch', '임시 계산')}
+      </div>
+      {subTab === 'roster' ? <MaturityRosterTab /> : <MaturityScratchCalculator />}
     </>
   );
 }
