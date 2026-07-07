@@ -1685,9 +1685,10 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   // Fetch training_daily with group_type in chunks (Supabase 1000-row limit)
   const dailyData: any[] = [];
   const chunkSize = 14;
-  for (let offset = 0; offset < days; offset += chunkSize) {
+  for (let offset = 0; ; offset += chunkSize) {
     const cStart = new Date(startDate);
     cStart.setDate(startDate.getDate() + offset);
+    if (cStart > today) break;
     const cEnd = new Date(startDate);
     cEnd.setDate(startDate.getDate() + offset + chunkSize - 1);
     if (cEnd > today) cEnd.setTime(today.getTime());
