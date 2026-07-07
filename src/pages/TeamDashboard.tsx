@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  LineChart, Line, ReferenceLine, ReferenceArea,
+  LineChart, Line, ReferenceLine, ReferenceArea, Cell,
 } from 'recharts';
 import { fetchTeamAcwrData, type TeamAcwrSeries } from '../lib/api';
 import MatchTab from './MatchTab';
@@ -112,6 +112,53 @@ function computeWeeklyStrain(series: TeamAcwrSeries[]) {
   });
 }
 
+// 팀 자체 부하 기준(정상 범위) — Chronic(장기 부하) 히스토리의 min/avg/max.
+// EWMA가 아직 수렴하지 않은 초반 구간(10일)은 제외.
+function computeTeamLoadRange(series: TeamAcwrSeries[], skipDays = 10) {
+  const vals = series.slice(skipDays).map(d => d.chronic).filter(v => v > 0);
+  if (vals.length === 0) return null;
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return { min, avg, max };
+}
+
+// 주 단위 Monotony 히스토리 (일별 시리즈를 월요일 기준 주로 묶어 mean/sd 계산)
+interface WeeklyMonotony { week: string; label: string; monotony: number | null; complete: boolean; }
+
+function computeWeeklyMonotonyHistory(series: TeamAcwrSeries[]): WeeklyMonotony[] {
+  const weeks = new Map<string, number[]>();
+  for (const item of series) {
+    const d = new Date(item.date);
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = mon.toISOString().split('T')[0];
+    if (!weeks.has(key)) weeks.set(key, []);
+    weeks.get(key)!.push(item.daily);
+  }
+  return [...weeks.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([week, vals]) => {
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
+    const d = new Date(week);
+    return {
+      week,
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      monotony: sd > 0 ? +(mean / sd).toFixed(2) : null,
+      complete: vals.length >= 6,
+    };
+  });
+}
+
+// 완결된(7일 다 채워진) 주차만으로 팀 자체 Monotony 정상 범위 계산
+function computeTeamMonotonyRange(weeks: WeeklyMonotony[]) {
+  const vals = weeks.filter(w => w.complete && w.monotony !== null).map(w => w.monotony!);
+  if (vals.length === 0) return null;
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const avg = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+  return { min, avg, max };
+}
+
 // ── 공통 유틸 ──────────────────────────────────────────────────────────
 const fmt = (d: string) => { const dt = new Date(d); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
 
@@ -122,19 +169,6 @@ function AcwrDot({ cx, cy, payload }: any) {
   if (v == null || !cx || !cy) return null;
   const color = v >= 2.0 ? '#7f1d1d' : v >= 1.5 ? '#dc2626' : v >= 1.3 ? '#d97706' : v < 0.8 ? '#2563eb' : '#16a34a';
   return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ZoneDot({ cx, cy, payload, thresholds }: any) {
-  const val = payload?.monotony;
-  if (val == null || !cx || !cy) return null;
-  return <circle cx={cx} cy={cy} r={3.5} fill={ZONE_COLOR[getZone(val, thresholds)]} stroke="#fff" strokeWidth={1} />;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ZoneLabel({ x, y, value, thresholds }: any) {
-  if (value == null) return null;
-  return <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontFamily="DM Mono" fill={ZONE_COLOR[getZone(value, thresholds)]}>{value}</text>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,7 +191,10 @@ function StrainBarShape({ x, y, width, height, value, payload }: any) {
 }
 
 // ── ACWR 콤보 차트 (2패널) ─────────────────────────────────────────────
-function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSeries[]; unit?: string }) {
+function AcwrComboChart({ title, data, unit, teamRange }: {
+  title: string; data: TeamAcwrSeries[]; unit?: string;
+  teamRange: { min: number; avg: number; max: number } | null;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const last28 = data.slice(-28);
   const chartWidth = Math.max(last28.length * 48, 600);
@@ -169,16 +206,35 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
   }));
 
   const vals = chartData.flatMap(d => [d.daily, d.acute, d.chronic]).filter(v => v > 0);
-  const yMax = vals.length > 0 ? Math.ceil(Math.max(...vals) * 1.2) : 100;
+  const yMax = Math.ceil(Math.max(...vals, teamRange?.max ?? 0, 1) * 1.2);
   const todayStr = chartData[chartData.length - 1]?.date ?? '';
   const loadNames: Record<string, string> = { daily: 'Daily', acute: 'Acute(EWMA)', chronic: 'Chronic(EWMA)' };
 
+  const latestAcute = [...chartData].reverse().find(d => d.acute > 0)?.acute ?? null;
+  const rangeStatus = teamRange && latestAcute != null
+    ? (latestAcute < teamRange.min ? 'below' : latestAcute > teamRange.max ? 'above' : 'within')
+    : null;
+  const rangeBadge = rangeStatus === 'within'
+    ? { text: '부하는 팀 정상범위 내', bg: '#EAF3DE', color: '#3B6D11' }
+    : rangeStatus === 'above'
+    ? { text: '부하가 팀 최대치 초과', bg: '#FCEBEB', color: '#A32D2D' }
+    : rangeStatus === 'below'
+    ? { text: '부하가 팀 최소치 미만', bg: '#E6F1FB', color: '#0C447C' }
+    : null;
+
   return (
     <div className="chart-card mb-4">
-      <div className="chart-title text-center mb-0">{title}</div>
+      <div className="flex items-center justify-center gap-2 mb-0 flex-wrap">
+        <div className="chart-title !mb-0">{title}</div>
+        {rangeBadge && (
+          <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: rangeBadge.bg, color: rangeBadge.color }}>
+            {rangeBadge.text}
+          </span>
+        )}
+      </div>
       <div ref={scrollRef} className="overflow-x-auto">
         <div style={{ width: chartWidth }}>
-          {/* 상단: Daily 바 + Acute/Chronic EWMA 라인 */}
+          {/* 상단: Daily 바 + Acute/Chronic EWMA 라인 + 팀 자체 정상범위(Chronic 기준) */}
           <ResponsiveContainer width="100%" height={200}>
             <ComposedChart data={chartData} margin={{ top: 12, right: 20, bottom: 0, left: 54 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
@@ -189,6 +245,14 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
                 labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
                 formatter={(val: string) => loadNames[val] ?? val} />
+              {teamRange && (
+                <ReferenceArea y1={teamRange.min} y2={teamRange.max} fill="#97C459" fillOpacity={0.18}
+                  stroke="#639922" strokeDasharray="4 3" strokeOpacity={0.6} />
+              )}
+              {teamRange && (
+                <ReferenceLine y={teamRange.avg} stroke="#3B6D11" strokeDasharray="3 2" strokeWidth={1}
+                  label={{ value: `팀 평균 ${Math.round(teamRange.avg).toLocaleString()}`, position: 'insideBottomLeft', fontSize: 8, fill: '#3B6D11' }} />
+              )}
               <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
                 label={{ value: '오늘', position: 'insideTopLeft', fontSize: 9, fill: '#374151' }} />
               <Bar dataKey="daily" name="daily" fill="rgba(100,149,237,0.55)" barSize={14} radius={[2, 2, 0, 0]} />
@@ -196,6 +260,11 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
               <Line type="monotone" dataKey="acute"   name="acute"   stroke="#e85d3a" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
+          {teamRange && (
+            <div className="text-center" style={{ fontSize: 9, color: '#3B6D11', marginTop: -4 }}>
+              녹색 밴드 = 우리 팀 장기 부하(Chronic) 정상범위 {Math.round(teamRange.min).toLocaleString()}~{Math.round(teamRange.max).toLocaleString()}{unit}
+            </div>
+          )}
 
           {/* 하단: ACWR 비율 라인 + 구간 색상 배경 */}
           <ResponsiveContainer width="100%" height={140}>
@@ -232,57 +301,62 @@ function AcwrComboChart({ title, data, unit }: { title: string; data: TeamAcwrSe
   );
 }
 
-// ── Monotony 차트 ──────────────────────────────────────────────────────
-function MonotonyChart({ title, data, metricKey }: { title: string; data: MonotonySeries[]; metricKey: string }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const last28 = data.slice(-28);
-  const chartWidth = last28.length * 48;
+// ── Monotony 차트 (주간 막대 · 문헌 구간 음영 + 팀 자체 정상범위) ──────
+function MonotonyChart({ title, series, metricKey }: { title: string; series: TeamAcwrSeries[]; metricKey: string }) {
   const t = METRIC_THRESHOLDS[metricKey];
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [data]);
+  const weeks = useMemo(() => computeWeeklyMonotonyHistory(series).slice(-10), [series]);
+  const teamRange = useMemo(() => computeTeamMonotonyRange(weeks), [weeks]);
 
-  const maxVal = Math.max(...last28.map(d => d.monotony ?? 0), t.highDanger * 1.1);
-  const yMax = Math.ceil(maxVal * 1.15 * 10) / 10;
-  const lastVal = [...last28].reverse().find(d => d.monotony !== null)?.monotony ?? null;
-  const todayStr = last28[last28.length - 1]?.date ?? '';
+  const last = [...weeks].reverse().find(w => w.monotony !== null) ?? null;
+  const lastVal = last?.monotony ?? null;
+  const zone = getZone(lastVal, t);
+
+  const yMax = Math.ceil(Math.max(...weeks.map(w => w.monotony ?? 0), t.highDanger * 1.1) * 10) / 10;
+
+  const compareText = lastVal === null || !teamRange ? null
+    : lastVal > t.danger && lastVal <= teamRange.max
+    ? `문헌 기준(${t.danger})보다 높지만 우리 팀 정상범위(${teamRange.min}~${teamRange.max})안입니다.`
+    : lastVal > teamRange.max
+    ? `문헌 기준은 물론 우리 팀 역대 범위(최대 ${teamRange.max})도 넘어섰습니다.`
+    : `우리 팀 평균(${teamRange.avg}) 대비 ${lastVal > teamRange.avg ? '높은' : '낮은'} 수준입니다.`;
 
   return (
     <div className="chart-card mb-4">
       <div className="flex items-center justify-center gap-2 mb-1">
+        <span className="font-mono font-bold" style={{ fontSize: 26, color: ZONE_COLOR[zone] }}>{lastVal ?? '-'}</span>
         <div className="chart-title !mb-0">{title}</div>
         {lastVal !== null && (
-          <span className={`text-xs font-bold px-2 py-0.5 rounded ${ZONE_BADGE[getZone(lastVal, t)]}`}>
-            {lastVal} {ZONE_LABEL[getZone(lastVal, t)]}
-          </span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded ${ZONE_BADGE[zone]}`}>{ZONE_LABEL[zone]}</span>
         )}
       </div>
-      <div className="text-center text-xs text-text-secondary mb-1" style={{ fontSize: 10 }}>
-        주의 {t.caution} · 위험 {t.danger} · 고위험 {t.highDanger}
+      {compareText && (
+        <div className="text-center text-xs text-text-secondary mb-2">{compareText}</div>
+      )}
+      <div className="flex items-center justify-center gap-3 flex-wrap mb-1" style={{ fontSize: 9 }}>
+        <span style={{ color: '#dc2626' }}>■ 문헌 위험 {t.danger}~{t.highDanger}</span>
+        <span style={{ color: '#7f1d1d' }}>■ 문헌 고위험 &gt;{t.highDanger}</span>
+        {teamRange && <span style={{ color: '#3B6D11' }}>┅ 팀 정상범위 {teamRange.min}~{teamRange.max}</span>}
       </div>
-      <div ref={scrollRef} className="overflow-x-auto">
-        <div style={{ width: chartWidth }}>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={last28} margin={{ top: 24, right: 20, bottom: 20, left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={40} />
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <Tooltip formatter={(v: any) => [v != null ? v : '-', 'Monotony']}
-                labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
-              <ReferenceLine y={t.highDanger} stroke="#7f1d1d" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: `${t.highDanger} 고위험`, position: 'insideTopRight', fontSize: 9, fill: '#7f1d1d' }} />
-              <ReferenceLine y={t.danger} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: `${t.danger} 위험`, position: 'insideTopRight', fontSize: 9, fill: '#dc2626' }} />
-              <ReferenceLine y={t.caution} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1.5}
-                label={{ value: `${t.caution} 주의`, position: 'insideTopRight', fontSize: 9, fill: '#d97706' }} />
-              <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
-                label={{ value: '오늘', position: 'insideTopLeft', fontSize: 9, fill: '#374151' }} />
-              <Line type="monotone" dataKey="monotony" stroke="#7c3aed" strokeWidth={2}
-                dot={<ZoneDot thresholds={t} />} activeDot={{ r: 5 }} connectNulls={false}
-                label={<ZoneLabel thresholds={t} />} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <ResponsiveContainer width="100%" height={220}>
+        <ComposedChart data={weeks} margin={{ top: 20, right: 20, bottom: 4, left: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+          <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={40} />
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          <Tooltip formatter={(v: any) => [v != null ? v : '-', 'Monotony']} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
+          <ReferenceArea y1={t.danger} y2={t.highDanger} fill="#fee2e2" fillOpacity={0.6} />
+          <ReferenceArea y1={t.highDanger} y2={yMax} fill="#fecaca" fillOpacity={0.7} />
+          <ReferenceArea y1={t.caution} y2={t.danger} fill="#fef9c3" fillOpacity={0.5} />
+          {teamRange && (
+            <ReferenceArea y1={teamRange.min} y2={teamRange.max} fill="none" stroke="#639922" strokeDasharray="4 3" />
+          )}
+          <Bar dataKey="monotony" radius={[3, 3, 0, 0]} barSize={28}>
+            {weeks.map((w, i) => (
+              <Cell key={i} fill={ZONE_COLOR[getZone(w.monotony, t)]} fillOpacity={i === weeks.length - 1 ? 1 : 0.7} />
+            ))}
+          </Bar>
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -491,7 +565,7 @@ export function TeamDashboard() {
   const [showAcwrThreshold, setShowAcwrThreshold] = useState(false);
 
   useEffect(() => {
-    fetchTeamAcwrData(60)
+    fetchTeamAcwrData(210)
       .then(d => { setData(d); setLoading(false); })
       .catch(() => { setError(true); setLoading(false); });
   }, []);
@@ -531,6 +605,14 @@ export function TeamDashboard() {
       label, val: vals[key as keyof typeof vals], zone: getAcwrZone(vals[key as keyof typeof vals]),
     })).filter(i => i.val !== null) as InsightItem[];
     return { vals, items };
+  }, [data]);
+
+  // 팀 자체 장기 부하(Chronic) 정상범위 — ACWR 콤보 차트에 겹쳐 표시
+  const teamLoadRange = useMemo(() => {
+    if (!data) return null;
+    return Object.fromEntries(
+      METRIC_KEYS.map(({ key }) => [key, computeTeamLoadRange(data[key as keyof MetricData])])
+    ) as Record<string, ReturnType<typeof computeTeamLoadRange>>;
   }, [data]);
 
   // Strain 데이터
@@ -583,7 +665,8 @@ export function TeamDashboard() {
               <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">일별 ACWR 흐름</div>
               <div className="space-y-2">
                 {METRIC_KEYS.map(({ key, label, unit }) => (
-                  <AcwrComboChart key={key} title={`${label} / ACWR`} data={data[key as keyof MetricData]} unit={unit || undefined} />
+                  <AcwrComboChart key={key} title={`${label} / ACWR`} data={data[key as keyof MetricData]} unit={unit || undefined}
+                    teamRange={teamLoadRange?.[key] ?? null} />
                 ))}
               </div>
             </>
@@ -595,7 +678,7 @@ export function TeamDashboard() {
       {tab === 'monotony' && (
         <>
           <p className="text-xs text-text-secondary mb-4">
-            3학년 선수 팀 평균 기준 · 7일 롤링 윈도우 (Monotony = 평균/표준편차) · 지표별 차등 임계값 · 최근 4주
+            3학년 선수 팀 평균 기준 · 주 단위 Monotony(평균/표준편차) · 지표별 차등 임계값 + 팀 자체 정상범위 · 최근 10주
           </p>
           {loadingEl ?? (monotonyState ? (
             <>
@@ -610,10 +693,10 @@ export function TeamDashboard() {
 
               <ThresholdTable show={showThreshold} onToggle={() => setShowThreshold(v => !v)} />
 
-              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">일별 Monotony 흐름</div>
-              {METRIC_KEYS.map(({ key, label }) => (
+              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">주간 Monotony 흐름</div>
+              {data && METRIC_KEYS.map(({ key, label }) => (
                 <MonotonyChart key={key} title={`${label} Monotony`}
-                  data={monotonyState.series[key as keyof typeof monotonyState.series]} metricKey={key} />
+                  series={data[key as keyof MetricData]} metricKey={key} />
               ))}
 
               <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2 mt-2">Strain 모니터링</div>
