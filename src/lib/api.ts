@@ -1730,21 +1730,19 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
       return filtered.reduce((s: number, r: any) => s + fn(r), 0) / filtered.length;
     };
 
-    const tlVal = avg(r => {
-      const dtl = Number(r.daily_training_load);
-      if (dtl > 0) return dtl;
+    // RPE 미입력 등으로 TL을 산출할 수 없는 선수는 0이 아니라 집계에서 제외한다.
+    // (일부 선수만 RPE 미입력인 날 전체를 0으로 채우면 팀 평균이 부당하게 희석됨)
+    const tlValid: number[] = [];
+    for (const r of filtered) {
+      const dtl = Number(r.daily_training_load) || 0;
+      if (dtl > 0) { tlValid.push(dtl); continue; }
       const dur = Number(r.duration_min) || 0;
       const rpe = Number(r.rpe) || 0;
-      return dur * rpe;
-    });
-
-    // RPE 미입력 등으로 TL을 산출할 수 없는 날 — "실제 저부하"가 아니라 "데이터 없음"으로 구분
-    const tlMissing = filtered.length > 0 && filtered.every((r) => {
-      if ((Number(r.daily_training_load) || 0) > 0) return false;
-      const dur = Number(r.duration_min) || 0;
-      const rpe = Number(r.rpe) || 0;
-      return !(dur > 0 && rpe > 0);
-    });
+      if (dur > 0 && rpe > 0) tlValid.push(dur * rpe);
+    }
+    const tlVal = tlValid.length > 0 ? tlValid.reduce((a, b) => a + b, 0) / tlValid.length : 0;
+    // 유효 데이터가 있는 선수가 한 명도 없는 날 — "실제 저부하"가 아니라 "데이터 없음"으로 구분
+    const tlMissing = filtered.length > 0 && tlValid.length === 0;
 
     dateMap.set(date, {
       date,
