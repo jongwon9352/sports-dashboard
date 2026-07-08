@@ -1664,6 +1664,10 @@ export interface TeamAcwrSeries {
   acute: number;
   chronic: number;
   acwr: number;
+  n?: number;        // 그날 집계에 포함된 U15 선수 수 (표본 신뢰도 참고용)
+  missing?: boolean; // RPE 등 입력 누락으로 실제 부하를 알 수 없어 전날 값으로 대체한 날
+  warmup?: boolean;  // 10일 이상 공백(방학 등) 직후 웜업 구간 — EWMA가 아직 안정화되지 않음
+  postRest?: boolean;// 전날이 실제 휴식(0)이어서 오늘 값이 급반등으로 보이는 날
 }
 
 export async function fetchTeamAcwrData(days: number = 60): Promise<{
@@ -1716,7 +1720,7 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     allDates.push(toLocalDateStr(d));
   }
 
-  const dateMap = new Map<string, TeamAcwrDayData>();
+  const dateMap = new Map<string, TeamAcwrDayData & { n: number; tlMissing: boolean; hasSession: boolean }>();
   for (const date of allDates) {
     const rows = byDate.get(date) ?? [];
     const filtered = rows.filter((r: any) => r.group_type === 'U15');
@@ -1734,8 +1738,19 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
       return dur * rpe;
     });
 
+    // RPE 미입력 등으로 TL을 산출할 수 없는 날 — "실제 저부하"가 아니라 "데이터 없음"으로 구분
+    const tlMissing = filtered.length > 0 && filtered.every((r) => {
+      if ((Number(r.daily_training_load) || 0) > 0) return false;
+      const dur = Number(r.duration_min) || 0;
+      const rpe = Number(r.rpe) || 0;
+      return !(dur > 0 && rpe > 0);
+    });
+
     dateMap.set(date, {
       date,
+      n: filtered.length,
+      hasSession: rows.length > 0,
+      tlMissing,
       tl: tlVal,
       td: avg(r => Number(r.total_distance) || 0),
       hsr: avg(r => Number(r.hsr_distance) || 0),
@@ -1744,20 +1759,53 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     });
   }
 
+  // 장기 공백(연속 10일 이상 세션 기록 없음 — 방학 등) 이후 웜업 구간(7일) 판정.
+  // 매주 1회 정도의 짧은 휴식(예: 일요일)은 정상 스케줄이므로 리셋 대상에서 제외한다.
+  const GAP_THRESHOLD = 10;
+  const WARMUP_DAYS = 7;
+  const resetDates = new Set<string>();
+  const warmupDates = new Set<string>();
+  {
+    let gapRun = 0;
+    for (let i = 0; i < allDates.length; i++) {
+      const has = dateMap.get(allDates[i])!.hasSession;
+      if (!has) {
+        gapRun++;
+      } else {
+        if (gapRun >= GAP_THRESHOLD) {
+          resetDates.add(allDates[i]);
+          for (let k = 0; k < WARMUP_DAYS && i + k < allDates.length; k++) warmupDates.add(allDates[i + k]);
+        }
+        gapRun = 0;
+      }
+    }
+  }
+
   // Compute EWMA for each metric
-  function computeEwma(dailyValues: { date: string; value: number }[]): TeamAcwrSeries[] {
+  // Acute λ=0.25 (Williams et al. 2016 표준: EWMA_today = value*λ + EWMA_yesterday*(1-λ), λacute=2/(7+1))
+  function computeEwma(dailyValues: { date: string; value: number; n: number; missing: boolean }[]): TeamAcwrSeries[] {
     let acute: number | null = null;
     let chronic: number | null = null;
-    return dailyValues.map(({ date, value }) => {
-      if (acute === null) {
-        acute = value;
-        chronic = value;
+    let lastRawValue = 0;
+    return dailyValues.map(({ date, value, n, missing }, i) => {
+      // 데이터 미입력일은 0으로 취급하지 않고 직전 값으로 대체해 EWMA 왜곡을 막는다.
+      const effectiveValue = missing ? lastRawValue : value;
+      if (!missing) lastRawValue = value;
+
+      if (acute === null || resetDates.has(date)) {
+        acute = effectiveValue;
+        chronic = effectiveValue;
       } else {
-        acute = acute * 0.25 + value * 0.75;
-        chronic = value * 0.069 + chronic! * 0.931;
+        acute = acute * 0.75 + effectiveValue * 0.25;
+        chronic = effectiveValue * 0.069 + chronic! * 0.931;
       }
       const acwr = (acute > 0 && chronic! > 0) ? acute / chronic! : 0;
-      return { date, daily: value, acute, chronic: chronic!, acwr };
+      const prev = i > 0 ? dailyValues[i - 1] : null;
+      const postRest = !!prev && prev.value === 0 && !prev.missing && !missing;
+      return {
+        date, daily: value, acute, chronic: chronic!, acwr,
+        n, missing, warmup: warmupDates.has(date), postRest,
+      };
     });
   }
 
@@ -1765,10 +1813,10 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
   const result: Record<string, TeamAcwrSeries[]> = {};
 
   for (const metric of metrics) {
-    const dailyValues = allDates.map(d => ({
-      date: d,
-      value: dateMap.get(d)?.[metric] as number ?? 0,
-    }));
+    const dailyValues = allDates.map(d => {
+      const rec = dateMap.get(d)!;
+      return { date: d, value: rec[metric] as number, n: rec.n, missing: metric === 'tl' ? rec.tlMissing : false };
+    });
     result[metric] = computeEwma(dailyValues);
   }
 

@@ -75,16 +75,20 @@ const ZONE_BADGE: Record<ZoneType, string> = {
 };
 
 // ── 계산 함수 ──────────────────────────────────────────────────────────
-interface MonotonySeries { date: string; monotony: number | null; daily: number; }
+interface MonotonySeries {
+  date: string; monotony: number | null; daily: number;
+  n?: number; missing?: boolean; warmup?: boolean; postRest?: boolean;
+}
 
 function computeMonotony(series: TeamAcwrSeries[], window = 7): MonotonySeries[] {
   return series.map((item, i) => {
     const slice = series.slice(Math.max(0, i - window + 1), i + 1).map(s => s.daily);
-    if (slice.length < 2) return { date: item.date, monotony: null, daily: item.daily };
+    const base = { date: item.date, daily: item.daily, n: item.n, missing: item.missing, warmup: item.warmup, postRest: item.postRest };
+    if (slice.length < 2) return { ...base, monotony: null };
     const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
     const sd = Math.sqrt(slice.reduce((a, b) => a + (b - mean) ** 2, 0) / slice.length);
     // sd=0: 완전히 균일한 부하 → 이론상 무한대 Monotony이나 실제로는 null 처리
-    return { date: item.date, monotony: sd > 0 ? +(mean / sd).toFixed(2) : null, daily: item.daily };
+    return { ...base, monotony: sd > 0 ? +(mean / sd).toFixed(2) : null };
   });
 }
 
@@ -110,6 +114,33 @@ function computeWeeklyStrain(series: TeamAcwrSeries[]) {
     const label = `${d.getMonth() + 1}/${d.getDate()}~${sun.getMonth() + 1}/${sun.getDate()}`;
     return { week, label, strain, monotony: +monotony.toFixed(2), sum: Math.round(sum) };
   });
+}
+
+// 팀 자체 Strain 상위 15% 지점(P85) — 문헌 기준(6,000AU, 성인 축구)과 병행 참고용.
+// 웜업 구간이 낀 주는 왜곡 방지를 위해 제외.
+function computeTeamStrainP85(series: TeamAcwrSeries[]) {
+  const weeks = new Map<string, number[]>();
+  const weekHasWarmup = new Map<string, boolean>();
+  for (const item of series) {
+    const d = new Date(item.date);
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = mon.toISOString().split('T')[0];
+    if (!weeks.has(key)) weeks.set(key, []);
+    weeks.get(key)!.push(item.daily);
+    if (item.warmup) weekHasWarmup.set(key, true);
+  }
+  const strains = [...weeks.entries()]
+    .filter(([week, vals]) => vals.length >= 6 && !weekHasWarmup.get(week))
+    .map(([, vals]) => {
+      const sum = vals.reduce((a, b) => a + b, 0);
+      const mean = sum / vals.length;
+      const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
+      return Math.round(sum * (sd > 0 ? mean / sd : 0));
+    })
+    .sort((a, b) => a - b);
+  if (strains.length === 0) return null;
+  return strains[Math.floor(0.85 * (strains.length - 1))];
 }
 
 // 팀 자체 부하 기준(정상 범위) — Chronic(장기 부하) 히스토리의 min/avg/max.
@@ -205,6 +236,17 @@ function AcwrComboChart({ title, data, unit, teamRange }: {
     acwr: d.chronic > 0 ? +((d.acute / d.chronic).toFixed(2)) : null,
   }));
 
+  // 공백 이후 웜업 구간(연속) 범위 계산 — 이 구간은 EWMA가 아직 안정화되지 않았음을 표시
+  const warmupRanges: { x1: string; x2: string }[] = [];
+  for (const d of chartData) {
+    if (!d.warmup) continue;
+    const last = warmupRanges[warmupRanges.length - 1];
+    const idx = chartData.indexOf(d);
+    const prevIdx = chartData.findIndex(c => c.date === last?.x2);
+    if (last && idx === prevIdx + 1) last.x2 = d.date;
+    else warmupRanges.push({ x1: d.date, x2: d.date });
+  }
+
   const vals = chartData.flatMap(d => [d.daily, d.acute, d.chronic]).filter(v => v > 0);
   const yMax = Math.ceil(Math.max(...vals, teamRange?.max ?? 0, 1) * 1.2);
   const todayStr = chartData[chartData.length - 1]?.date ?? '';
@@ -281,6 +323,10 @@ function AcwrComboChart({ title, data, unit, teamRange }: {
               <ReferenceArea y1={1.3} y2={1.5} fill="#fef9c3" fillOpacity={0.6} />
               <ReferenceArea y1={1.5} y2={2.0} fill="#fee2e2" fillOpacity={0.6} />
               <ReferenceArea y1={2.0} y2={2.5} fill="#fecaca" fillOpacity={0.7} />
+              {warmupRanges.map(r => (
+                <ReferenceArea key={r.x1} x1={r.x1} x2={r.x2} fill="#7c3aed" fillOpacity={0.12}
+                  label={{ value: '웜업 구간', position: 'insideTop', fontSize: 8, fill: '#7c3aed', fontWeight: 700 }} />
+              ))}
               <ReferenceLine y={1.5} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1}
                 label={{ value: '1.5 위험', position: 'insideTopRight', fontSize: 8, fill: '#dc2626' }} />
               <ReferenceLine y={1.3} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1}
@@ -362,15 +408,16 @@ function MonotonyChart({ title, series, metricKey }: { title: string; series: Te
 }
 
 // ── Strain 차트 & 테이블 ───────────────────────────────────────────────
-function StrainBarChart({ weeklyData }: { weeklyData: ReturnType<typeof computeWeeklyStrain> }) {
+function StrainBarChart({ weeklyData, teamP85 }: { weeklyData: ReturnType<typeof computeWeeklyStrain>; teamP85: number | null }) {
   const DANGER_LINE = 6000;
-  const maxStrain = Math.max(...weeklyData.map(d => d.strain), DANGER_LINE);
+  const maxStrain = Math.max(...weeklyData.map(d => d.strain), DANGER_LINE, teamP85 ?? 0);
   const yMax = Math.ceil(maxStrain * 1.2 / 1000) * 1000;
   return (
     <div className="chart-card">
       <div className="chart-title text-center mb-0.5">TL Strain — 주별 추이</div>
       <div className="text-center mb-2" style={{ fontSize: 10, color: '#6b7280' }}>
         Strain = 주간 합산 × Monotony · 위험 기준 6,000 AU (Alexiou &amp; Coutts, 2008)
+        {teamP85 != null && <> · 팀 자체 상위 15% 기준선 {teamP85.toLocaleString()} AU</>}
       </div>
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={weeklyData} margin={{ top: 28, right: 16, bottom: 20, left: 10 }}>
@@ -383,6 +430,10 @@ function StrainBarChart({ weeklyData }: { weeklyData: ReturnType<typeof computeW
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
           <ReferenceLine y={DANGER_LINE} stroke="#dc2626" strokeDasharray="5 3" strokeWidth={1.5}
             label={{ value: '위험 6,000', position: 'insideTopRight', fontSize: 9, fill: '#dc2626' }} />
+          {teamP85 != null && (
+            <ReferenceLine y={teamP85} stroke="#7c3aed" strokeDasharray="4 2" strokeWidth={1.5}
+              label={{ value: `팀 P85 ${teamP85.toLocaleString()}`, position: 'insideBottomRight', fontSize: 9, fill: '#7c3aed' }} />
+          )}
           <Bar dataKey="strain" name="TL Strain" barSize={32} shape={<StrainBarShape />} />
         </ComposedChart>
       </ResponsiveContainer>
@@ -434,47 +485,87 @@ function StrainTable({ metrics }: { metrics: { key: string; label: string; monot
 }
 
 // ── 공통 UI 컴포넌트 ───────────────────────────────────────────────────
-type InsightItem = { label: string; val: number; zone: ZoneType };
+type SuppressReason = 'postRest' | 'warmup';
+type InsightItem = { label: string; val: number; zone: ZoneType; n?: number; missing?: boolean; suppressReason?: SuppressReason };
+type StatusItem = { label: string; val: number | null; zone: ZoneType; n?: number; missing?: boolean; suppressReason?: SuppressReason };
+
+const SUPPRESS_LABEL: Record<SuppressReason, string> = {
+  postRest: '휴식 다음날 반등 — 예정된 패턴이므로 경고에서 제외',
+  warmup: '장기 공백 후 웜업 구간 — EWMA 미안정으로 경고에서 제외',
+};
 
 function InsightBox({ items, metricName }: { items: InsightItem[]; metricName: string }) {
-  const warnings = items.filter(i => i.zone === 'danger' || i.zone === 'high-danger');
-  const cautions = items.filter(i => i.zone === 'caution');
-  if (warnings.length === 0 && cautions.length === 0) {
-    return (
-      <div className="mb-4 rounded-lg border px-4 py-3 text-sm" style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#166534' }}>
-        ✅ 모든 지표 안전 구간 — 현재 {metricName} 수치가 적절하게 유지되고 있습니다.
-      </div>
-    );
-  }
+  const [showSuppressed, setShowSuppressed] = useState(false);
+  const suppressed = items.filter(i => i.suppressReason && i.zone !== 'safe');
+  const active = items.filter(i => !(i.suppressReason && i.zone !== 'safe'));
+  const warnings = active.filter(i => i.zone === 'danger' || i.zone === 'high-danger');
+  const cautions = active.filter(i => i.zone === 'caution');
+
   return (
-    <div className="mb-4 rounded-lg border px-4 py-3" style={{ background: '#fefce8', borderColor: '#fcd34d', color: '#78350f' }}>
-      <div className="font-bold text-sm mb-1">⚠️ 주의 필요 (오늘 기준)</div>
-      <ul className="text-xs space-y-0.5" style={{ paddingLeft: 14 }}>
-        {warnings.map(i => (
-          <li key={i.label}>
-            <strong>{i.label} {metricName} {i.val}</strong> — {i.zone === 'high-danger' ? '고위험' : '위험'} 구간. 즉시 확인 필요
-          </li>
-        ))}
-        {cautions.map(i => (
-          <li key={i.label} style={{ color: '#92400e' }}>
-            {metricName === 'ACWR' && i.val < ACWR_THRESHOLDS.undertraining
-              ? `${i.label} ${metricName} ${i.val} — 과소훈련 구간 (기준 <${ACWR_THRESHOLDS.undertraining}). 체력 저하 위험`
-              : `${i.label} ${metricName} ${i.val} — 주의 구간`}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <>
+      {warnings.length === 0 && cautions.length === 0 ? (
+        <div className="mb-2 rounded-lg border px-4 py-3 text-sm" style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#166534' }}>
+          ✅ 모든 지표 안전 구간 — 현재 {metricName} 수치가 적절하게 유지되고 있습니다.
+        </div>
+      ) : (
+        <div className="mb-2 rounded-lg border px-4 py-3" style={{ background: '#fefce8', borderColor: '#fcd34d', color: '#78350f' }}>
+          <div className="font-bold text-sm mb-1">⚠️ 주의 필요 (오늘 기준)</div>
+          <ul className="text-xs space-y-0.5" style={{ paddingLeft: 14 }}>
+            {warnings.map(i => (
+              <li key={i.label}>
+                <strong>{i.label} {metricName} {i.val}</strong> — {i.zone === 'high-danger' ? '고위험' : '위험'} 구간. 즉시 확인 필요
+              </li>
+            ))}
+            {cautions.map(i => (
+              <li key={i.label} style={{ color: '#92400e' }}>
+                {metricName === 'ACWR' && i.val < ACWR_THRESHOLDS.undertraining
+                  ? `${i.label} ${metricName} ${i.val} — 과소훈련 구간 (기준 <${ACWR_THRESHOLDS.undertraining}). 체력 저하 위험`
+                  : `${i.label} ${metricName} ${i.val} — 주의 구간`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {suppressed.length > 0 && (
+        <div className="mb-4 rounded-lg border px-4 py-2.5 text-xs" style={{ borderColor: '#d1d5db', color: '#6b7280' }}>
+          <button onClick={() => setShowSuppressed(v => !v)} className="font-semibold">
+            😴 억제된 항목 {suppressed.length}건 {showSuppressed ? '숨기기 ▲' : '보기 ▼'}
+          </button>
+          {showSuppressed && (
+            <ul className="mt-1.5 space-y-0.5" style={{ paddingLeft: 14 }}>
+              {suppressed.map(i => (
+                <li key={i.label}>{i.label} {metricName} {i.val} — {SUPPRESS_LABEL[i.suppressReason!]}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
-function StatusCards({ items, subtitle }: { items: { label: string; val: number | null; zone: ZoneType }[]; subtitle: string }) {
+function StatusCards({ items, subtitle }: { items: StatusItem[]; subtitle: string }) {
   return (
     <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-      {items.map(({ label, val, zone }) => (
+      {items.map(({ label, val, zone, n, missing }) => (
         <div key={label} className="chart-card !mb-0 !p-3">
-          <div className="text-text-secondary mb-1" style={{ fontSize: 10 }}>{label} {subtitle}</div>
-          <div className="font-bold font-mono mb-1" style={{ fontSize: 22, color: ZONE_COLOR[zone] }}>{val ?? '-'}</div>
-          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${ZONE_BADGE[zone]}`}>{ZONE_LABEL[zone]}</span>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-text-secondary" style={{ fontSize: 10 }}>{label} {subtitle}</span>
+            {n != null && (
+              <span className="font-mono" style={{ fontSize: 9, color: '#9ca3af', background: 'rgba(120,120,130,0.14)', padding: '1px 5px', borderRadius: 4 }}>
+                n={n}명
+              </span>
+            )}
+          </div>
+          {missing ? (
+            <div className="font-bold mb-1" style={{ fontSize: 13, color: '#9ca3af' }}>RPE 미입력</div>
+          ) : (
+            <div className="font-bold font-mono mb-1" style={{ fontSize: 22, color: ZONE_COLOR[zone] }}>{val ?? '-'}</div>
+          )}
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${missing ? '' : ZONE_BADGE[zone]}`}
+            style={missing ? { background: 'rgba(120,120,130,0.15)', color: '#6b7280' } : undefined}>
+            {missing ? '데이터 없음' : ZONE_LABEL[zone]}
+          </span>
         </div>
       ))}
     </div>
@@ -570,7 +661,11 @@ export function TeamDashboard() {
       .catch(() => { setError(true); setLoading(false); });
   }, []);
 
-  // Monotony 시리즈 + 최신값 + Insight 아이템 (단일 useMemo)
+  // 억제 사유 판정 — 웜업 구간이 최우선, 아니면 휴식 다음날 반등만 억제 대상
+  const suppressReasonOf = (zone: ZoneType, warmup?: boolean, postRest?: boolean): SuppressReason | undefined =>
+    warmup ? 'warmup' : (zone !== 'safe' && postRest) ? 'postRest' : undefined;
+
+  // Monotony 시리즈 + 최신값 + Insight/Status 아이템 (단일 useMemo)
   const monotonyState = useMemo(() => {
     if (!data) return null;
     const series = {
@@ -580,31 +675,31 @@ export function TeamDashboard() {
       sprint: computeMonotony(data.sprint),
       acd:    computeMonotony(data.acd),
     };
-    const lastVal = (s: MonotonySeries[]) => [...s].reverse().find(d => d.monotony !== null)?.monotony ?? null;
-    const latest: Record<string, number | null> = Object.fromEntries(
-      METRIC_KEYS.map(({ key }) => [key, lastVal(series[key as keyof typeof series])])
-    );
-    const items = METRIC_KEYS.map(({ key, label }) => ({
-      label, val: latest[key], zone: getZone(latest[key], METRIC_THRESHOLDS[key]),
-    })).filter(i => i.val !== null) as InsightItem[];
-    return { series, latest, items };
+    const lastEntry = (s: MonotonySeries[]) => [...s].reverse().find(d => d.monotony !== null) ?? null;
+    const all: StatusItem[] = METRIC_KEYS.map(({ key, label }) => {
+      const e = lastEntry(series[key as keyof typeof series]);
+      const val = e?.monotony ?? null;
+      const zone = getZone(val, METRIC_THRESHOLDS[key]);
+      return { label, val, zone, n: e?.n, missing: e?.missing, suppressReason: suppressReasonOf(zone, e?.warmup, e?.postRest) };
+    });
+    const latest: Record<string, number | null> = Object.fromEntries(METRIC_KEYS.map(({ key }, i) => [key, all[i].val]));
+    const items = all.filter(i => i.val !== null) as InsightItem[];
+    return { series, latest, items, all };
   }, [data]);
 
-  // ACWR 최신값 + Insight 아이템 (단일 useMemo)
+  // ACWR 최신값 + Insight/Status 아이템 (단일 useMemo)
   const acwrState = useMemo(() => {
     if (!data) return null;
-    const calc = (s: TeamAcwrSeries[]) => {
-      const last = [...s].reverse().find(d => d.chronic > 0);
-      return last ? +((last.acute / last.chronic).toFixed(2)) : null;
-    };
-    const vals = {
-      tl: calc(data.tl), td: calc(data.td), hsr: calc(data.hsr),
-      sprint: calc(data.sprint), acd: calc(data.acd),
-    };
-    const items = METRIC_KEYS.map(({ key, label }) => ({
-      label, val: vals[key as keyof typeof vals], zone: getAcwrZone(vals[key as keyof typeof vals]),
-    })).filter(i => i.val !== null) as InsightItem[];
-    return { vals, items };
+    const lastEntry = (s: TeamAcwrSeries[]) => [...s].reverse().find(d => d.chronic > 0) ?? null;
+    const all: StatusItem[] = METRIC_KEYS.map(({ key, label }) => {
+      const e = lastEntry(data[key as keyof MetricData]);
+      const val = e ? +((e.acute / e.chronic).toFixed(2)) : null;
+      const zone = getAcwrZone(val);
+      return { label, val, zone, n: e?.n, missing: e?.missing, suppressReason: suppressReasonOf(zone, e?.warmup, e?.postRest) };
+    });
+    const vals: Record<string, number | null> = Object.fromEntries(METRIC_KEYS.map(({ key }, i) => [key, all[i].val]));
+    const items = all.filter(i => i.val !== null) as InsightItem[];
+    return { vals, items, all };
   }, [data]);
 
   // 팀 자체 장기 부하(Chronic) 정상범위 — ACWR 콤보 차트에 겹쳐 표시
@@ -615,8 +710,9 @@ export function TeamDashboard() {
     ) as Record<string, ReturnType<typeof computeTeamLoadRange>>;
   }, [data]);
 
-  // Strain 데이터
+  // Strain 데이터 + 팀 자체 상위 15% 기준선
   const weeklyStrain = useMemo(() => data ? computeWeeklyStrain(data.tl) : [], [data]);
+  const teamStrainP85 = useMemo(() => data ? computeTeamStrainP85(data.tl) : null, [data]);
   const strainMetrics = useMemo(() => monotonyState
     ? METRIC_KEYS.map(({ key, label, unit }) => ({ key, label, monotony: monotonyState.series[key as keyof typeof monotonyState.series], unit }))
     : [], [monotonyState]);
@@ -647,18 +743,14 @@ export function TeamDashboard() {
       {tab === 'acwr' && (
         <>
           <p className="text-xs text-text-secondary mb-3">
-            3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.75, Chronic λ=0.069) · 최근 4주 · 하단 패널 = ACWR 비율
+            3학년 선수 팀 평균 기준 · EWMA (Acute λ=0.25, Chronic λ=0.069, Williams 2016 표준) · 최근 4주 · 하단 패널 = ACWR 비율
           </p>
           {loadingEl ?? (data && acwrState ? (
             <>
               <InsightBox items={acwrState.items} metricName="ACWR" />
 
               <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">오늘 기준 ACWR 현황</div>
-              <StatusCards subtitle="ACWR"
-                items={METRIC_KEYS.map(({ key, label }) => ({
-                  label, val: acwrState.vals[key as keyof typeof acwrState.vals],
-                  zone: getAcwrZone(acwrState.vals[key as keyof typeof acwrState.vals]),
-                }))} />
+              <StatusCards subtitle="ACWR" items={acwrState.all} />
 
               <AcwrThresholdTable show={showAcwrThreshold} onToggle={() => setShowAcwrThreshold(v => !v)} />
 
@@ -685,11 +777,7 @@ export function TeamDashboard() {
               <InsightBox items={monotonyState.items} metricName="Monotony" />
 
               <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">오늘 기준 Monotony 현황</div>
-              <StatusCards subtitle="Monotony"
-                items={METRIC_KEYS.map(({ key, label }) => ({
-                  label, val: monotonyState.latest[key] ?? null,
-                  zone: getZone(monotonyState.latest[key] ?? null, METRIC_THRESHOLDS[key]),
-                }))} />
+              <StatusCards subtitle="Monotony" items={monotonyState.all} />
 
               <ThresholdTable show={showThreshold} onToggle={() => setShowThreshold(v => !v)} />
 
@@ -701,7 +789,7 @@ export function TeamDashboard() {
 
               <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2 mt-2">Strain 모니터링</div>
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <StrainBarChart weeklyData={weeklyStrain} />
+                <StrainBarChart weeklyData={weeklyStrain} teamP85={teamStrainP85} />
                 <StrainTable metrics={strainMetrics} />
               </div>
             </>
