@@ -1706,7 +1706,18 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     if (chunk) dailyData.push(...chunk);
   }
 
-  if (dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+  // 경기일 부하(match_data)도 함께 가져온다 — 경기 GPS 기록은 training_daily에 없어
+  // 경기 다음날 ACWR 계산에서 통째로 누락되고 있었음(경기일이 훈련 부하가 가장 큰 날인 경우가 많음).
+  const { data: matchRows } = await supabase
+    .from('match_data')
+    .select('player_id, match_date, play_time_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+    .eq('player_group', 'U15')
+    .gte('match_date', toLocalDateStr(startDate))
+    .lte('match_date', toLocalDateStr(today));
+
+  if (dailyData.length === 0 && (!matchRows || matchRows.length === 0)) {
+    return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+  }
 
   const byDate = new Map<string, any[]>();
   for (const row of dailyData as any[]) {
@@ -1720,40 +1731,73 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
     allDates.push(toLocalDateStr(d));
   }
 
+  // 선수 단위로 훈련(training_daily) + 경기(match_data) 부하를 합산한다.
+  // 같은 날 훈련과 경기가 모두 있는 선수는 두 부하를 더한다.
+  type PlayerDay = { tl: number | null; td: number; hsr: number; sprint: number; acd: number };
+  const perPlayerDay = new Map<string, Map<string, PlayerDay>>();
+  const ensure = (date: string, playerId: string) => {
+    if (!perPlayerDay.has(date)) perPlayerDay.set(date, new Map());
+    const m = perPlayerDay.get(date)!;
+    if (!m.has(playerId)) m.set(playerId, { tl: null, td: 0, hsr: 0, sprint: 0, acd: 0 });
+    return m.get(playerId)!;
+  };
+
+  for (const date of allDates) {
+    const rows = (byDate.get(date) ?? []).filter((r: any) => r.group_type === 'U15');
+    for (const r of rows) {
+      const e = ensure(date, r.player_id);
+      const dtl = Number(r.daily_training_load) || 0;
+      let tl: number | null = null;
+      if (dtl > 0) tl = dtl;
+      else {
+        const dur = Number(r.duration_min) || 0;
+        const rpe = Number(r.rpe) || 0;
+        if (dur > 0 && rpe > 0) tl = dur * rpe;
+      }
+      if (tl !== null) e.tl = (e.tl ?? 0) + tl;
+      e.td += Number(r.total_distance) || 0;
+      e.hsr += Number(r.hsr_distance) || 0;
+      e.sprint += Number(r.sprint_distance) || 0;
+      e.acd += Number(r.acd_load) || 0;
+    }
+  }
+  for (const r of (matchRows ?? []) as any[]) {
+    const date = r.match_date as string;
+    const e = ensure(date, r.player_id);
+    const dur = Number(r.play_time_min) || 0;
+    const rpe = Number(r.rpe) || 0;
+    const tl = (dur > 0 && rpe > 0) ? dur * rpe : null;
+    if (tl !== null) e.tl = (e.tl ?? 0) + tl;
+    e.td += Number(r.total_distance) || 0;
+    e.hsr += Number(r.hsr_distance) || 0;
+    e.sprint += Number(r.sprint_distance) || 0;
+    e.acd += Number(r.acd_load) || 0;
+  }
+
   const dateMap = new Map<string, TeamAcwrDayData & { n: number; tlMissing: boolean; hasSession: boolean }>();
   for (const date of allDates) {
     const rows = byDate.get(date) ?? [];
-    const filtered = rows.filter((r: any) => r.group_type === 'U15');
-
-    const avg = (fn: (r: any) => number) => {
-      if (filtered.length === 0) return 0;
-      return filtered.reduce((s: number, r: any) => s + fn(r), 0) / filtered.length;
-    };
+    const players = [...(perPlayerDay.get(date)?.values() ?? [])];
+    const n = players.length;
 
     // RPE 미입력 등으로 TL을 산출할 수 없는 선수는 0이 아니라 집계에서 제외한다.
     // (일부 선수만 RPE 미입력인 날 전체를 0으로 채우면 팀 평균이 부당하게 희석됨)
-    const tlValid: number[] = [];
-    for (const r of filtered) {
-      const dtl = Number(r.daily_training_load) || 0;
-      if (dtl > 0) { tlValid.push(dtl); continue; }
-      const dur = Number(r.duration_min) || 0;
-      const rpe = Number(r.rpe) || 0;
-      if (dur > 0 && rpe > 0) tlValid.push(dur * rpe);
-    }
+    const tlValid = players.map(p => p.tl).filter((v): v is number => v !== null);
     const tlVal = tlValid.length > 0 ? tlValid.reduce((a, b) => a + b, 0) / tlValid.length : 0;
     // 유효 데이터가 있는 선수가 한 명도 없는 날 — "실제 저부하"가 아니라 "데이터 없음"으로 구분
-    const tlMissing = filtered.length > 0 && tlValid.length === 0;
+    const tlMissing = n > 0 && tlValid.length === 0;
+    const avgOf = (fn: (p: PlayerDay) => number) => n === 0 ? 0 : players.reduce((s, p) => s + fn(p), 0) / n;
 
     dateMap.set(date, {
       date,
-      n: filtered.length,
-      hasSession: rows.length > 0,
+      n,
+      hasSession: rows.length > 0 || n > 0,
       tlMissing,
       tl: tlVal,
-      td: avg(r => Number(r.total_distance) || 0),
-      hsr: avg(r => Number(r.hsr_distance) || 0),
-      sprint: avg(r => Number(r.sprint_distance) || 0),
-      acd: avg(r => Number(r.acd_load) || 0),
+      td: avgOf(p => p.td),
+      hsr: avgOf(p => p.hsr),
+      sprint: avgOf(p => p.sprint),
+      acd: avgOf(p => p.acd),
     });
   }
 
