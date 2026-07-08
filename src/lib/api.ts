@@ -1845,7 +1845,8 @@ export async function fetchTeamAcwrData(days: number = 60): Promise<{
       const prev = i > 0 ? dailyValues[i - 1] : null;
       const postRest = !!prev && prev.value === 0 && !prev.missing && !missing;
       return {
-        date, daily: value, acute, chronic: chronic!, acwr,
+        // daily도 결측일엔 effectiveValue(전날 값 대체)를 써야 Monotony 주간 SD·Strain 주간 합산에 0이 섞여 들어가지 않는다.
+        date, daily: effectiveValue, acute, chronic: chronic!, acwr,
         n, missing, warmup: warmupDates.has(date), postRest,
       };
     });
