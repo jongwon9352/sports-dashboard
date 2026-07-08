@@ -407,14 +407,40 @@ export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: strin
     .upsert(matchRows, { onConflict: 'player_id,match_date,opponent' });
   if (matchError) throw matchError;
 
-  // training_daily에도 저장 (데일리/위클리 리포트 반영)
-  await importDailyCsvRows(rows, date, seasonYear, overrides);
+  // 예전엔 여기서 training_daily에도 미러링해서 저장했으나, 이 미러링이 조용히 실패하는
+  // 경우가 있어(경기 35건 중 10건 누락 발견) 제거했다. 대신 training_daily를 읽는 쪽에서
+  // match_data를 함께 조회해 합산하도록 통일한다(fetchMatchLoadMap 참고).
+  await recalculatePlayerAcwr([...new Set(matchRows.map(r => r.player_id as string))]);
 
   return matchRows.length;
 }
 
+// match_data(경기 GPS 기록)의 TL을 player_id+날짜 기준으로 계산해서 돌려주는 공용 헬퍼.
+// training_daily만 읽으면 경기일 부하가 통째로 빠지므로, TL을 다루는 모든 집계 함수는
+// 이 헬퍼로 얻은 경기 부하를 training_daily의 daily_training_load와 합산해야 한다.
+async function fetchMatchTlByPlayerDate(playerIds: string[]): Promise<Map<string, number>> {
+  if (playerIds.length === 0) return new Map();
+  const client = requireSupabase();
+  const { data } = await client
+    .from('match_data')
+    .select('player_id, match_date, play_time_min, rpe')
+    .in('player_id', playerIds);
+
+  const map = new Map<string, number>();
+  for (const r of (data as R[]) ?? []) {
+    const dur = Number(r.play_time_min) || 0;
+    const rpe = Number(r.rpe) || 0;
+    if (dur > 0 && rpe > 0) {
+      const key = `${r.player_id as string}_${r.match_date as string}`;
+      map.set(key, (map.get(key) ?? 0) + dur * rpe);
+    }
+  }
+  return map;
+}
+
 async function recalculatePlayerAcwr(playerIds: string[]) {
   const client = requireSupabase();
+  const matchTlMap = await fetchMatchTlByPlayerDate(playerIds);
 
   for (const playerId of playerIds) {
     const { data, error } = await client
@@ -424,23 +450,32 @@ async function recalculatePlayerAcwr(playerIds: string[]) {
       .order('training_date', { ascending: true });
     if (error) throw error;
 
-    const playerDaily = ((data as R[]) ?? [])
-      .filter(row => row.daily_training_load !== null)
-      .sort((a, b) => String(a.training_date).localeCompare(String(b.training_date)));
-    if (playerDaily.length === 0) continue;
+    const loadByDate = new Map<string, number>();
+    for (const row of (data as R[]) ?? []) {
+      if (row.daily_training_load !== null) {
+        loadByDate.set(String(row.training_date), Number(row.daily_training_load) || 0);
+      }
+    }
+    // 경기일 부하(match_data)를 같은 날짜의 훈련 부하에 더한다.
+    for (const [key, tl] of matchTlMap) {
+      if (!key.startsWith(`${playerId}_`)) continue;
+      const date = key.slice(playerId.length + 1);
+      loadByDate.set(date, (loadByDate.get(date) ?? 0) + tl);
+    }
+    if (loadByDate.size === 0) continue;
 
-    const loadByDate = new Map(
-      playerDaily.map(row => [String(row.training_date), Number(row.daily_training_load) || 0])
-    );
-    const startDate = new Date(playerDaily[0].training_date);
-    const endDate = new Date(playerDaily[playerDaily.length - 1].training_date);
+    const sortedDates = [...loadByDate.keys()].sort();
+    const toLocalDateStr = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const startDate = new Date(sortedDates[0]);
+    const endDate = new Date(sortedDates[sortedDates.length - 1]);
     const acwrRows = [];
     let prevAcute: number | null = null;
     let prevChronic: number | null = null;
     let dayCount = 0;
 
     for (const d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(d);
       const load = loadByDate.get(dateStr) ?? 0;
       const acute = calculateAcuteEwma(load, prevAcute);
       const chronic = calculateChronicEwma(load, prevChronic);
@@ -658,33 +693,89 @@ export async function fetchDailyReportData(date: string): Promise<DailyReportRow
     .from('training_daily')
     .select('player_id, group_type, duration_min, total_distance, m_per_min, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, rpe, daily_training_load, players(name, jersey_number, position)')
     .eq('training_date', date)
-    .in('player_id', playerIds)
-    .order('total_distance', { ascending: false });
+    .in('player_id', playerIds);
 
-  if (!data) return [];
+  // 경기일엔 training_daily에 아무 기록이 없을 수 있으므로 match_data도 함께 조회해 합산한다.
+  const { data: matchData } = await supabase
+    .from('match_data')
+    .select('player_id, player_group, play_time_min, total_distance, m_per_min, hsr_distance, sprint_distance, sprint_count, acc_count, dec_count, acd_load, max_speed, rpe, players(name, jersey_number, position)')
+    .eq('match_date', date)
+    .in('player_id', playerIds);
 
-  return (data as R[]).map(row => ({
-    player_id: row.player_id,
-    group_type: row.group_type ?? null,
-    player_name: row.players?.name ?? '',
-    jersey_number: row.players?.jersey_number,
-    position: row.players?.position,
-    duration_min: Number(row.duration_min) || 0,
-    total_distance: Number(row.total_distance) || 0,
-    m_per_min: Number(row.m_per_min) || 0,
-    hsr_distance: Number(row.hsr_distance) || 0,
-    hsr_custom: Number(row.hsr_custom) || 0,
-    sprint_distance: Number(row.sprint_distance) || 0,
-    sprint_custom: Number(row.sprint_custom) || 0,
-    sprint_count: Number(row.sprint_count) || 0,
-    sprint_count_custom: Number(row.sprint_count_custom) || 0,
-    acc_count: Number(row.acc_count) || 0,
-    dec_count: Number(row.dec_count) || 0,
-    acd_load: Number(row.acd_load) || 0,
-    max_speed: Number(row.max_speed) || 0,
-    rpe: row.rpe != null ? Number(row.rpe) : null,
-    daily_training_load: row.daily_training_load != null ? Number(row.daily_training_load) : null,
-  }));
+  const rows = new Map<string, DailyReportRow>();
+  for (const row of (data as R[]) ?? []) {
+    rows.set(row.player_id as string, {
+      player_id: row.player_id as string,
+      group_type: (row.group_type as string) ?? null,
+      player_name: row.players?.name ?? '',
+      jersey_number: row.players?.jersey_number,
+      position: row.players?.position,
+      duration_min: Number(row.duration_min) || 0,
+      total_distance: Number(row.total_distance) || 0,
+      m_per_min: Number(row.m_per_min) || 0,
+      hsr_distance: Number(row.hsr_distance) || 0,
+      hsr_custom: Number(row.hsr_custom) || 0,
+      sprint_distance: Number(row.sprint_distance) || 0,
+      sprint_custom: Number(row.sprint_custom) || 0,
+      sprint_count: Number(row.sprint_count) || 0,
+      sprint_count_custom: Number(row.sprint_count_custom) || 0,
+      acc_count: Number(row.acc_count) || 0,
+      dec_count: Number(row.dec_count) || 0,
+      acd_load: Number(row.acd_load) || 0,
+      max_speed: Number(row.max_speed) || 0,
+      rpe: row.rpe != null ? Number(row.rpe) : null,
+      daily_training_load: row.daily_training_load != null ? Number(row.daily_training_load) : null,
+    });
+  }
+  for (const row of (matchData as R[]) ?? []) {
+    const playerId = row.player_id as string;
+    const dur = Number(row.play_time_min) || 0;
+    const rpe = row.rpe != null ? Number(row.rpe) : null;
+    const tl = (dur > 0 && rpe != null && rpe > 0) ? dur * rpe : null;
+    const prev = rows.get(playerId);
+    if (prev) {
+      rows.set(playerId, {
+        ...prev,
+        duration_min: prev.duration_min + dur,
+        total_distance: prev.total_distance + (Number(row.total_distance) || 0),
+        m_per_min: Number(row.m_per_min) || prev.m_per_min,
+        hsr_distance: prev.hsr_distance + (Number(row.hsr_distance) || 0),
+        sprint_distance: prev.sprint_distance + (Number(row.sprint_distance) || 0),
+        sprint_count: prev.sprint_count + (Number(row.sprint_count) || 0),
+        acc_count: prev.acc_count + (Number(row.acc_count) || 0),
+        dec_count: prev.dec_count + (Number(row.dec_count) || 0),
+        acd_load: prev.acd_load + (Number(row.acd_load) || 0),
+        max_speed: Math.max(prev.max_speed, Number(row.max_speed) || 0),
+        rpe: rpe ?? prev.rpe,
+        daily_training_load: (tl ?? 0) + (prev.daily_training_load ?? 0) || null,
+      });
+    } else {
+      rows.set(playerId, {
+        player_id: playerId,
+        group_type: (row.player_group as string) ?? null,
+        player_name: row.players?.name ?? '',
+        jersey_number: row.players?.jersey_number,
+        position: row.players?.position,
+        duration_min: dur,
+        total_distance: Number(row.total_distance) || 0,
+        m_per_min: Number(row.m_per_min) || 0,
+        hsr_distance: Number(row.hsr_distance) || 0,
+        hsr_custom: 0,
+        sprint_distance: Number(row.sprint_distance) || 0,
+        sprint_custom: 0,
+        sprint_count: Number(row.sprint_count) || 0,
+        sprint_count_custom: 0,
+        acc_count: Number(row.acc_count) || 0,
+        dec_count: Number(row.dec_count) || 0,
+        acd_load: Number(row.acd_load) || 0,
+        max_speed: Number(row.max_speed) || 0,
+        rpe,
+        daily_training_load: tl,
+      });
+    }
+  }
+
+  return [...rows.values()].sort((a, b) => b.total_distance - a.total_distance);
 }
 
 export async function fetchPlayerAcwrHistory(playerId: string): Promise<AcwrDaily[]> {
@@ -746,7 +837,19 @@ export async function fetchRpeData(): Promise<{
     offset += PAGE;
   }
 
+  // 경기일 RPE(match_data)도 같이 반영한다 — training_daily만 보면 경기 RPE가 누락된다.
+  const { data: matchRpeRows } = await supabase
+    .from('match_data')
+    .select('match_date, rpe, player_id, players(name)')
+    .in('player_id', playerIds)
+    .not('rpe', 'is', null)
+    .gt('rpe', 0);
+  for (const row of (matchRpeRows as R[]) ?? []) {
+    rows.push({ training_date: row.match_date, rpe: row.rpe, player_id: row.player_id, players: row.players });
+  }
+
   if (!rows.length) return { teamTrend: [], playerAvgs: [], distribution: [] };
+  rows.sort((a, b) => String(a.training_date).localeCompare(String(b.training_date)));
 
   const byDate = new Map<string, number[]>();
   const byPlayer = new Map<string, { name: string; rpes: number[]; id: string }>();
@@ -1876,6 +1979,9 @@ export async function fetchPlayerAcwrMultiMetric(playerId: string, days: number 
 }> {
   if (!supabase) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
 
+  const toLocalDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
   const today = new Date();
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - days);
@@ -1884,30 +1990,43 @@ export async function fetchPlayerAcwrMultiMetric(playerId: string, days: number 
     .from('training_daily')
     .select('training_date, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
     .eq('player_id', playerId)
-    .gte('training_date', startDate.toISOString().split('T')[0])
-    .lte('training_date', today.toISOString().split('T')[0])
+    .gte('training_date', toLocalDateStr(startDate))
+    .lte('training_date', toLocalDateStr(today))
     .order('training_date', { ascending: true });
 
-  if (!dailyData || dailyData.length === 0) return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+  // 경기 부하(match_data)도 함께 가져와 같은 날짜의 훈련 부하에 합산한다.
+  const { data: matchData } = await supabase
+    .from('match_data')
+    .select('match_date, play_time_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+    .eq('player_id', playerId)
+    .gte('match_date', toLocalDateStr(startDate))
+    .lte('match_date', toLocalDateStr(today));
 
-  const byDate = new Map<string, any>((dailyData as any[]).map(r => [r.training_date as string, r]));
+  if ((!dailyData || dailyData.length === 0) && (!matchData || matchData.length === 0)) {
+    return { tl: [], td: [], hsr: [], sprint: [], acd: [] };
+  }
+
+  const byDate = new Map((dailyData as R[] ?? []).map(r => [r.training_date as string, r]));
+  const matchByDate = new Map((matchData as R[] ?? []).map(r => [r.match_date as string, r]));
 
   const allDates: string[] = [];
   for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
-    allDates.push(d.toISOString().split('T')[0]);
+    allDates.push(toLocalDateStr(d));
   }
 
   const dateMap = new Map<string, TeamAcwrDayData>();
   for (const date of allDates) {
     const r = byDate.get(date);
-    const tlVal = r ? (Number(r.daily_training_load) || (Number(r.duration_min) || 0) * (Number(r.rpe) || 0)) : 0;
+    const m = matchByDate.get(date);
+    const trainingTl = r ? (Number(r.daily_training_load) || (Number(r.duration_min) || 0) * (Number(r.rpe) || 0)) : 0;
+    const matchTl = m && Number(m.play_time_min) > 0 && Number(m.rpe) > 0 ? Number(m.play_time_min) * Number(m.rpe) : 0;
     dateMap.set(date, {
       date,
-      tl: tlVal,
-      td: r ? Number(r.total_distance) || 0 : 0,
-      hsr: r ? Number(r.hsr_distance) || 0 : 0,
-      sprint: r ? Number(r.sprint_distance) || 0 : 0,
-      acd: r ? Number(r.acd_load) || 0 : 0,
+      tl: trainingTl + matchTl,
+      td: (r ? Number(r.total_distance) || 0 : 0) + (m ? Number(m.total_distance) || 0 : 0),
+      hsr: (r ? Number(r.hsr_distance) || 0 : 0) + (m ? Number(m.hsr_distance) || 0 : 0),
+      sprint: (r ? Number(r.sprint_distance) || 0 : 0) + (m ? Number(m.sprint_distance) || 0 : 0),
+      acd: (r ? Number(r.acd_load) || 0 : 0) + (m ? Number(m.acd_load) || 0 : 0),
     });
   }
 
@@ -1919,7 +2038,7 @@ export async function fetchPlayerAcwrMultiMetric(playerId: string, days: number 
         acute = value;
         chronic = value;
       } else {
-        acute = acute * 0.25 + value * 0.75;
+        acute = acute * 0.75 + value * 0.25;
         chronic = value * 0.069 + chronic! * 0.931;
       }
       const acwr = (acute > 0 && chronic! > 0) ? acute / chronic! : 0;
