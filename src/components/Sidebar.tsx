@@ -76,9 +76,6 @@ export function Sidebar() {
             </div>
           )}
 
-          <NavLink to="/acwr" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-            <span className="w-[18px] text-center text-[13px]">⚡</span>ACWR 현황
-          </NavLink>
           <NavLink to="/rpe" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
             <span className="w-[18px] text-center text-[13px]">💪</span>RPE 모니터링
           </NavLink>
