@@ -2325,6 +2325,50 @@ export async function upsertPhysicalTestRecord(input: {
   if (error) throw error;
 }
 
+// ── VALD 항목 목록 (임계값 입력 화면·팀 비교 차트 공용) ───────────────────
+export const VALD_METRIC_DEFS: { key: string; label: string; unit: string; invert?: boolean; hasLR?: boolean }[] = [
+  { key: 'nordic_curl', label: 'Nordic Curl (햄스트링 근력)', unit: 'N', hasLR: true },
+  { key: 'hip_abduction', label: 'Hip Abduction (고관절 벌림)', unit: 'N', hasLR: true },
+  { key: 'hip_adduction', label: 'Hip Adduction (고관절 모음)', unit: 'N', hasLR: true },
+  { key: 'ham_iso', label: 'Hamstring Iso Prone (등척성 버티기)', unit: 'N', hasLR: true },
+  { key: 'cmj_height', label: 'CMJ (반동 점프)', unit: 'cm' },
+  { key: 'squat_jump_height', label: 'Squat Jump (스쿼트 점프)', unit: 'cm' },
+  { key: 'sprint_5m', label: '5m 스프린트', unit: 'sec', invert: true },
+  { key: 'sprint_10m', label: '10m 스프린트', unit: 'sec', invert: true },
+  { key: 'sprint_30m', label: '30m 스프린트', unit: 'sec', invert: true },
+  { key: 'cod_run', label: '방향전환(볼 무)', unit: 'sec', invert: true },
+  { key: 'cod_ball', label: '방향전환(볼 유)', unit: 'sec', invert: true },
+];
+export const VALD_GRADES = ['전체', '1학년', '2학년', '3학년'] as const;
+
+// ── VALD 항목별 학년 임계값(최대/평균/최저) — 수동 입력 ──────────────────
+export interface ValdThreshold {
+  metric_key: string;
+  grade: string; // '전체' | '1학년' | '2학년' | '3학년'
+  max_value: number | null;
+  avg_value: number | null;
+  min_value: number | null;
+}
+
+export async function fetchValdThresholds(): Promise<ValdThreshold[]> {
+  const client = requireSupabase();
+  const { data, error } = await client.from('vald_thresholds').select('metric_key, grade, max_value, avg_value, min_value');
+  if (error) throw error;
+  return ((data as R[]) ?? []).map(r => ({
+    metric_key: r.metric_key as string,
+    grade: r.grade as string,
+    max_value: r.max_value != null ? Number(r.max_value) : null,
+    avg_value: r.avg_value != null ? Number(r.avg_value) : null,
+    min_value: r.min_value != null ? Number(r.min_value) : null,
+  }));
+}
+
+export async function upsertValdThresholds(rows: ValdThreshold[]): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.from('vald_thresholds').upsert(rows, { onConflict: 'metric_key,grade' });
+  if (error) throw error;
+}
+
 export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));

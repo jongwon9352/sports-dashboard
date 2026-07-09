@@ -3,9 +3,10 @@ import {
   fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
   fetchBodyCompositionRecords, fetchSpeedCustomRecords, updateSpeedCustomOverride,
   fetchMaturityRecords, syncMaturityFromGoogleSheet, clearMaturityData,
-  fetchKhamisRocheCoefficients,
+  fetchKhamisRocheCoefficients, fetchValdThresholds, upsertValdThresholds,
+  VALD_METRIC_DEFS, VALD_GRADES,
   type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomRow, type MaturityRow,
-  type KhamisRocheCoefficient,
+  type KhamisRocheCoefficient, type ValdThreshold,
 } from '../lib/api';
 import type { Player } from '../types';
 
@@ -171,6 +172,105 @@ function ValdModal({ players, initial, onClose, onSaved }: {
   );
 }
 
+function ValdThresholdEditor() {
+  const [thresholds, setThresholds] = useState<ValdThreshold[]>([]);
+  const [metricKey, setMetricKey] = useState(VALD_METRIC_DEFS[0].key);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<Record<string, { max: string; avg: string; min: string }>>({});
+
+  const load = () => {
+    setLoading(true);
+    fetchValdThresholds().then(setThresholds).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  useEffect(() => {
+    const next: Record<string, { max: string; avg: string; min: string }> = {};
+    for (const grade of VALD_GRADES) {
+      const t = thresholds.find(x => x.metric_key === metricKey && x.grade === grade);
+      next[grade] = {
+        max: t?.max_value != null ? String(t.max_value) : '',
+        avg: t?.avg_value != null ? String(t.avg_value) : '',
+        min: t?.min_value != null ? String(t.min_value) : '',
+      };
+    }
+    setForm(next);
+  }, [metricKey, thresholds]);
+
+  const setField = (grade: string, field: 'max' | 'avg' | 'min', value: string) =>
+    setForm(prev => ({ ...prev, [grade]: { ...prev[grade], [field]: value } }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const rows: ValdThreshold[] = VALD_GRADES.map(grade => ({
+        metric_key: metricKey,
+        grade,
+        max_value: num(form[grade]?.max ?? ''),
+        avg_value: num(form[grade]?.avg ?? ''),
+        min_value: num(form[grade]?.min ?? ''),
+      }));
+      await upsertValdThresholds(rows);
+      load();
+    } catch {
+      alert('저장 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4">
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <h2 className="text-sm font-bold">VALD 항목별 학년 임계값</h2>
+        <select value={metricKey} onChange={e => setMetricKey(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded border border-surface-secondary bg-[var(--bg)]">
+          {VALD_METRIC_DEFS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+      </div>
+      {loading ? (
+        <p className="text-sm text-text-secondary text-center py-8">로딩 중...</p>
+      ) : (
+        <>
+          <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--color-surface-secondary)' }}>
+                {['학년', '최대', '평균', '최저'].map(h => (
+                  <th key={h} className="py-1.5 px-2 text-left text-text-secondary font-semibold text-xs">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {VALD_GRADES.map(grade => (
+                <tr key={grade} style={{ borderBottom: '1px solid var(--color-surface-secondary)' }}>
+                  <td className="py-1.5 px-2 font-medium">{grade}</td>
+                  {(['max', 'avg', 'min'] as const).map(field => (
+                    <td key={field} className="py-1.5 px-2">
+                      <input
+                        type="number" step="0.01"
+                        value={form[grade]?.[field] ?? ''}
+                        onChange={e => setField(grade, field, e.target.value)}
+                        className="w-24 px-2 py-1 text-sm rounded border border-surface-secondary bg-[var(--bg)]"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex justify-end mt-3">
+            <button onClick={handleSave} disabled={saving}
+              className="px-3 py-1.5 text-sm rounded bg-purple text-white disabled:opacity-50">
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ValdTab() {
   const [data, setData] = useState<PhysicalTestRow[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -178,6 +278,7 @@ function ValdTab() {
   const [search, setSearch] = useState('');
   const [selectedRound, setSelectedRound] = useState('전체');
   const [modalForm, setModalForm] = useState<ValdFormState | null>(null);
+  const [showThresholds, setShowThresholds] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -248,7 +349,14 @@ function ValdTab() {
         >
           + 측정 추가
         </button>
+        <button
+          onClick={() => setShowThresholds(v => !v)}
+          className="px-3 py-1.5 text-xs rounded-md border border-surface-secondary hover:bg-surface-secondary transition-colors"
+        >
+          {showThresholds ? '▲ 임계값 설정 숨기기' : '▼ 임계값 설정'}
+        </button>
       </div>
+      {showThresholds && <ValdThresholdEditor />}
       <p className="text-[11px] text-text-secondary mb-3">
         측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 ForceDecks/NordBord/ForceFrame/SmartSpeed CSV를 올리면 자동으로 반영됩니다.
       </p>
