@@ -2332,7 +2332,10 @@ export async function upsertPhysicalTestRecord(input: {
 }
 
 // ── VALD 항목 목록 (임계값 입력 화면·팀 비교 차트 공용) ───────────────────
-export const VALD_METRIC_DEFS: { key: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string }[] = [
+export const VALD_METRIC_DEFS: {
+  key: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
+  tiers?: { max: number; label: string }[];
+}[] = [
   { key: 'nordic_curl', label: 'Nordic Curl (햄스트링 근력)', unit: 'N', hasLR: true },
   { key: 'hip_abduction', label: 'Hip Abduction (고관절 벌림)', unit: 'N', hasLR: true },
   { key: 'hip_adduction', label: 'Hip Adduction (고관절 모음)', unit: 'N', hasLR: true },
@@ -2344,6 +2347,11 @@ export const VALD_METRIC_DEFS: { key: string; label: string; unit: string; inver
   {
     key: 'eur', label: 'EUR (Eccentric Utilization Ratio)', unit: '',
     note: 'EUR = CMJ 높이 ÷ Squat Jump 높이. 1.1 이하 = 폭발적인 힘을 위한 훈련 필요 / 1.1~1.15 = 현재 훈련 비율 유지 / 1.15 이상 = 최대근력 훈련 필요',
+    tiers: [
+      { max: 1.1, label: '1.1 이하 · 폭발적인 힘 훈련 필요' },
+      { max: 1.15, label: '1.1~1.15 · 현재 훈련 비율 유지' },
+      { max: Infinity, label: '1.15 이상 · 최대근력 훈련 필요' },
+    ],
   },
   { key: 'sprint_5m', label: '5m 스프린트', unit: 'sec', invert: true },
   { key: 'sprint_10m', label: '10m 스프린트', unit: 'sec', invert: true },
@@ -2352,6 +2360,39 @@ export const VALD_METRIC_DEFS: { key: string; label: string; unit: string; inver
   { key: 'cod_ball', label: '방향전환(볼 유)', unit: 'sec', invert: true },
 ];
 export const VALD_GRADES = ['전체', '1학년', '2학년', '3학년'] as const;
+
+// VALD 항목별 좌/우/단일값 접근자 (PhysicalTestRow → 항목 값). 팀 비교 차트와
+// 임계값 자동 채우기(데이터 관리 페이지)가 동일한 정의를 공유한다.
+export const VALD_ACCESSORS: Record<string, { left?: (r: PhysicalTestRow) => number | null; right?: (r: PhysicalTestRow) => number | null; value?: (r: PhysicalTestRow) => number | null }> = {
+  nordic_curl: { left: r => r.nordic_curl_left, right: r => r.nordic_curl_right },
+  hip_abduction: { left: r => r.hip_ab_left, right: r => r.hip_ab_right },
+  hip_adduction: { left: r => r.hip_ad_left, right: r => r.hip_ad_right },
+  ham_iso: { left: r => r.ham_iso_left, right: r => r.ham_iso_right },
+  cmj_height: { value: r => r.cmj_height },
+  cmj_peak_force: { value: r => r.cmj_peak_force },
+  squat_jump_height: { value: r => r.squat_jump_height },
+  squat_jump_peak_force: { value: r => r.squat_jump_peak_force },
+  eur: { value: r => (r.cmj_height != null && r.squat_jump_height != null && r.squat_jump_height > 0) ? r.cmj_height / r.squat_jump_height : null },
+  sprint_5m: { value: r => r.sprint_5m_time },
+  sprint_10m: { value: r => r.sprint_10m_time },
+  sprint_30m: { value: r => r.sprint_30m_time },
+  cod_run: { value: r => r.cod_run },
+  cod_ball: { value: r => r.cod_ball },
+};
+
+// 좌/우 평균 혹은 단일값으로 항목의 대표값 하나를 계산 (임계값 자동 채우기용)
+export function computeValdValue(metricKey: string, record: PhysicalTestRow): number | null {
+  const acc = VALD_ACCESSORS[metricKey];
+  if (!acc) return null;
+  if (acc.value) return acc.value(record);
+  if (acc.left && acc.right) {
+    const l = acc.left(record);
+    const r = acc.right(record);
+    if (l != null && r != null) return (l + r) / 2;
+    return l ?? r ?? null;
+  }
+  return null;
+}
 
 // ── VALD 항목별 학년 임계값(최대/평균/최저) — 수동 입력 ──────────────────
 export interface ValdThreshold {

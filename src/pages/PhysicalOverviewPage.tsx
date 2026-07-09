@@ -4,29 +4,11 @@ import {
 } from 'recharts';
 import {
   fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchValdThresholds,
-  VALD_METRIC_DEFS, VALD_GRADES,
+  VALD_METRIC_DEFS, VALD_GRADES, VALD_ACCESSORS,
   type PhysicalTestRow, type MaturityRow, type SpeedCustomRow, type ValdThreshold,
 } from '../lib/api';
 import type { Player, Grade } from '../types';
 import { colors } from '../styles/colors';
-
-// ── VALD 항목별 좌/우/단일값 접근자 (PhysicalTestRow → 차트용 숫자) ────────
-const VALD_ACCESSORS: Record<string, { left?: (r: PhysicalTestRow) => number | null; right?: (r: PhysicalTestRow) => number | null; value?: (r: PhysicalTestRow) => number | null }> = {
-  nordic_curl: { left: r => r.nordic_curl_left, right: r => r.nordic_curl_right },
-  hip_abduction: { left: r => r.hip_ab_left, right: r => r.hip_ab_right },
-  hip_adduction: { left: r => r.hip_ad_left, right: r => r.hip_ad_right },
-  ham_iso: { left: r => r.ham_iso_left, right: r => r.ham_iso_right },
-  cmj_height: { value: r => r.cmj_height },
-  cmj_peak_force: { value: r => r.cmj_peak_force },
-  squat_jump_height: { value: r => r.squat_jump_height },
-  squat_jump_peak_force: { value: r => r.squat_jump_peak_force },
-  eur: { value: r => (r.cmj_height != null && r.squat_jump_height != null && r.squat_jump_height > 0) ? r.cmj_height / r.squat_jump_height : null },
-  sprint_5m: { value: r => r.sprint_5m_time },
-  sprint_10m: { value: r => r.sprint_10m_time },
-  sprint_30m: { value: r => r.sprint_30m_time },
-  cod_run: { value: r => r.cod_run },
-  cod_ball: { value: r => r.cod_ball },
-};
 
 // 좌우 차이 % — VALD 표준: (큰 쪽 - 작은 쪽) / 큰 쪽 * 100, 부호는 R 기준
 function imbalancePercent(l: number, r: number): number {
@@ -61,11 +43,23 @@ function imbalanceZone(pct: number | null): 'safe' | 'caution' | 'danger' | null
   return 'safe';
 }
 
-function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, rows, threshold }: {
+const TIER_COLORS = [colors.warning, colors.green, colors.navy];
+function tierIndexOf(value: number, tiers: { max: number; label: string }[]): number {
+  for (let i = 0; i < tiers.length; i++) if (value <= tiers[i].max) return i;
+  return tiers.length - 1;
+}
+
+function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers, rows, threshold }: {
   metricKey: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
+  tiers?: { max: number; label: string }[];
   rows: { name: string; record: PhysicalTestRow }[]; threshold: ValdThreshold | null;
 }) {
   const items = useMemo(() => buildValdItems(metricKey, rows), [metricKey, rows]);
+  // 구간(tiers)이 있는 항목(예: EUR)은 구간별로 묶여 보이도록 값 오름차순 정렬
+  const displayItems = useMemo(
+    () => tiers ? [...items].sort((a, b) => a.value - b.value) : items,
+    [items, tiers],
+  );
   const top10 = useMemo(
     () => [...items].sort((a, b) => invert ? a.value - b.value : b.value - a.value).slice(0, 10),
     [items, invert],
@@ -96,7 +90,7 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, rows, 
       )}
       <div className="bg-surface rounded-xl border border-surface-secondary p-3.5 mb-3">
         <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={items} margin={{ bottom: 60 }}>
+          <BarChart data={displayItems} margin={{ bottom: 60 }}>
             <CartesianGrid stroke={colors.grid} vertical={false} />
             <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
             <YAxis tick={{ fontSize: 10 }} unit={unit} />
@@ -120,11 +114,27 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, rows, 
                 <Bar dataKey="L" name="Left" fill={colors.navy} radius={[2, 2, 0, 0]} />
                 <Bar dataKey="R" name="Right" fill={colors.green} radius={[2, 2, 0, 0]} />
               </>
+            ) : tiers ? (
+              <Bar dataKey="value" name={label} radius={[2, 2, 0, 0]}>
+                {displayItems.map((d, i) => (
+                  <Cell key={i} fill={TIER_COLORS[tierIndexOf(d.value, tiers)]} />
+                ))}
+              </Bar>
             ) : (
               <Bar dataKey="value" name={label} fill={colors.navy} radius={[2, 2, 0, 0]} />
             )}
           </BarChart>
         </ResponsiveContainer>
+        {tiers && (
+          <div className="flex gap-4 mt-2 flex-wrap justify-center text-[11px] text-text-secondary">
+            {tiers.map((t, i) => (
+              <span key={t.label} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: TIER_COLORS[i] }} />
+                {t.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {hasLR && riskPlayers.length > 0 && (
@@ -761,6 +771,7 @@ export function PhysicalOverviewPage() {
                 invert={metric.invert}
                 hasLR={metric.hasLR}
                 note={metric.note}
+                tiers={metric.tiers}
                 rows={teamValdRows}
                 threshold={thresholds.find(t => t.metric_key === metric.key && t.grade === gradeFilter) ?? null}
               />

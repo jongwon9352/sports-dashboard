@@ -3,7 +3,7 @@ import {
   fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
   fetchBodyCompositionRecords, fetchSpeedCustomRecords, updateSpeedCustomOverride,
   fetchMaturityRecords, syncMaturityFromGoogleSheet, clearMaturityData,
-  fetchKhamisRocheCoefficients, fetchValdThresholds, upsertValdThresholds,
+  fetchKhamisRocheCoefficients, fetchValdThresholds, upsertValdThresholds, computeValdValue,
   VALD_METRIC_DEFS, VALD_GRADES,
   type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomRow, type MaturityRow,
   type KhamisRocheCoefficient, type ValdThreshold,
@@ -177,11 +177,12 @@ function ValdModal({ players, initial, onClose, onSaved }: {
   );
 }
 
-function ValdThresholdEditor() {
+function ValdThresholdEditor({ records, players }: { records: PhysicalTestRow[]; players: Player[] }) {
   const [thresholds, setThresholds] = useState<ValdThreshold[]>([]);
   const [metricKey, setMetricKey] = useState(VALD_METRIC_DEFS[0].key);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autofilling, setAutofilling] = useState(false);
   const [form, setForm] = useState<Record<string, { max: string; avg: string; min: string }>>({});
 
   const load = () => {
@@ -225,6 +226,41 @@ function ValdThresholdEditor() {
     }
   };
 
+  // 팀 실측 데이터(선수별 최신 측정 기록)의 최대/평균/최저를 학년별로 계산해 자동 채우기
+  const handleAutofill = async () => {
+    setAutofilling(true);
+    try {
+      const latestByPlayer = new Map<string, PhysicalTestRow>();
+      for (const r of records) {
+        const prev = latestByPlayer.get(r.player_id);
+        if (!prev || r.test_date > prev.test_date) latestByPlayer.set(r.player_id, r);
+      }
+      const gradeMap = new Map(players.map(p => [p.id, p.grade as string]));
+      const rows: ValdThreshold[] = VALD_GRADES.map(grade => {
+        const values = players
+          .filter(p => grade === '전체' || gradeMap.get(p.id) === grade)
+          .map(p => latestByPlayer.get(p.id))
+          .filter((r): r is PhysicalTestRow => r != null)
+          .map(r => computeValdValue(metricKey, r))
+          .filter((v): v is number => v != null);
+        if (values.length === 0) return { metric_key: metricKey, grade, max_value: null, avg_value: null, min_value: null };
+        return {
+          metric_key: metricKey,
+          grade,
+          max_value: +Math.max(...values).toFixed(2),
+          avg_value: +(values.reduce((a, b) => a + b, 0) / values.length).toFixed(2),
+          min_value: +Math.min(...values).toFixed(2),
+        };
+      });
+      await upsertValdThresholds(rows);
+      load();
+    } catch {
+      alert('자동 채우기 중 오류가 발생했습니다.');
+    } finally {
+      setAutofilling(false);
+    }
+  };
+
   return (
     <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4">
       <div className="flex items-center gap-3 mb-3 flex-wrap">
@@ -233,6 +269,10 @@ function ValdThresholdEditor() {
           className="px-3 py-1.5 text-sm rounded border border-surface-secondary bg-[var(--bg)]">
           {VALD_METRIC_DEFS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
         </select>
+        <button onClick={handleAutofill} disabled={autofilling}
+          className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-50">
+          {autofilling ? '계산 중...' : '팀 데이터로 자동 채우기'}
+        </button>
       </div>
       {loading ? (
         <p className="text-sm text-text-secondary text-center py-8">로딩 중...</p>
@@ -363,7 +403,7 @@ function ValdTab() {
           {showThresholds ? '▲ 임계값 설정 숨기기' : '▼ 임계값 설정'}
         </button>
       </div>
-      {showThresholds && <ValdThresholdEditor />}
+      {showThresholds && <ValdThresholdEditor records={data} players={players} />}
       <p className="text-[11px] text-text-secondary mb-3">
         측정일마다 새 기록이 누적됩니다. 데이터 관리 &gt; 업로드에서 ForceDecks/NordBord/ForceFrame/SmartSpeed CSV를 올리면 자동으로 반영됩니다.
       </p>
