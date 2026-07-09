@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, ReferenceArea, Legend,
+  ComposedChart, Scatter,
 } from 'recharts';
 import {
   fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchValdThresholds,
@@ -57,17 +58,25 @@ function outOfRange(value: number, threshold: ValdThreshold | null): boolean {
   return false;
 }
 
-function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers, rows, threshold }: {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ValdDot({ cx, cy, payload, threshold }: any) {
+  if (cx == null || cy == null) return null;
+  const fill = outOfRange(payload.value, threshold) ? colors.warning : colors.navy;
+  return <circle cx={cx} cy={cy} r={5} fill={fill} stroke="#fff" strokeWidth={1.5} />;
+}
+
+function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers, dotPlot, rows, threshold }: {
   metricKey: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
-  tiers?: { max: number; label: string }[];
+  tiers?: { max: number; label: string }[]; dotPlot?: boolean;
   rows: { name: string; record: PhysicalTestRow }[]; threshold: ValdThreshold | null;
 }) {
   const items = useMemo(() => buildValdItems(metricKey, rows), [metricKey, rows]);
-  // 구간(tiers)이 있는 항목(예: EUR)은 구간별로 묶여 보이도록 값 오름차순 정렬
-  const displayItems = useMemo(
-    () => tiers ? [...items].sort((a, b) => a.value - b.value) : items,
-    [items, tiers],
-  );
+  // 구간(tiers)이 있는 항목(예: EUR)은 오름차순, 닷플롯 항목(스프린트 등)은 기록 좋은 순으로 정렬
+  const displayItems = useMemo(() => {
+    if (tiers) return [...items].sort((a, b) => a.value - b.value);
+    if (dotPlot) return [...items].sort((a, b) => invert ? a.value - b.value : b.value - a.value);
+    return items;
+  }, [items, tiers, dotPlot, invert]);
   const top10 = useMemo(
     () => [...items].sort((a, b) => invert ? a.value - b.value : b.value - a.value).slice(0, 10),
     [items, invert],
@@ -121,46 +130,65 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
         </div>
       )}
       <div className="bg-surface rounded-xl border border-surface-secondary p-3.5 mb-3">
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={displayItems} margin={{ bottom: 60 }}>
-            <CartesianGrid stroke={colors.grid} vertical={false} />
-            <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} unit={unit} />
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <Tooltip formatter={(v: any, n: any) => [`${v}${unit}`, n]} />
-            {hasLR && <Legend wrapperStyle={{ fontSize: 11 }} />}
-            {threshold?.min_value != null && threshold?.max_value != null && (
-              <ReferenceArea y1={threshold.min_value} y2={threshold.max_value} fill={colors.green} fillOpacity={0.08} />
-            )}
-            {threshold?.max_value != null && (
-              <ReferenceLine y={threshold.max_value} stroke={colors.green} strokeWidth={1.5} strokeDasharray="5 3" />
-            )}
-            {threshold?.avg_value != null && (
-              <ReferenceLine y={threshold.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
-            )}
-            {threshold?.min_value != null && (
-              <ReferenceLine y={threshold.min_value} stroke={colors.wine} strokeWidth={1.5} strokeDasharray="5 3" />
-            )}
-            {hasLR ? (
-              <>
-                <Bar dataKey="L" name="Left" fill={colors.navy} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="R" name="Right" fill={colors.green} radius={[2, 2, 0, 0]} />
-              </>
-            ) : tiers ? (
-              <Bar dataKey="value" name={label} radius={[2, 2, 0, 0]}>
-                {displayItems.map((d, i) => (
-                  <Cell key={i} fill={TIER_COLORS[tierIndexOf(d.value, tiers)]} />
-                ))}
-              </Bar>
-            ) : (
-              <Bar dataKey="value" name={label} radius={[2, 2, 0, 0]}>
-                {displayItems.map((d, i) => (
-                  <Cell key={i} fill={outOfRange(d.value, threshold) ? colors.warning : colors.navy} />
-                ))}
-              </Bar>
-            )}
-          </BarChart>
-        </ResponsiveContainer>
+        {dotPlot ? (
+          <ResponsiveContainer width="100%" height={Math.max(240, displayItems.length * 22)}>
+            <ComposedChart data={displayItems} layout="vertical" margin={{ left: 10 }}>
+              <CartesianGrid stroke={colors.grid} horizontal={false} />
+              <XAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10.5 }} interval={0} />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <Tooltip formatter={(v: any) => `${Number(v).toFixed(3)}${unit}`} />
+              {threshold?.min_value != null && threshold?.max_value != null && (
+                <ReferenceArea x1={threshold.min_value} x2={threshold.max_value} fill={colors.green} fillOpacity={0.1} />
+              )}
+              {threshold?.avg_value != null && (
+                <ReferenceLine x={threshold.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
+              )}
+              <Scatter dataKey="value" shape={<ValdDot threshold={threshold} />} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={displayItems} margin={{ bottom: 60 }}>
+              <CartesianGrid stroke={colors.grid} vertical={false} />
+              <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} unit={unit} />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <Tooltip formatter={(v: any, n: any) => [`${v}${unit}`, n]} />
+              {hasLR && <Legend wrapperStyle={{ fontSize: 11 }} />}
+              {threshold?.min_value != null && threshold?.max_value != null && (
+                <ReferenceArea y1={threshold.min_value} y2={threshold.max_value} fill={colors.green} fillOpacity={0.08} />
+              )}
+              {threshold?.max_value != null && (
+                <ReferenceLine y={threshold.max_value} stroke={colors.green} strokeWidth={1.5} strokeDasharray="5 3" />
+              )}
+              {threshold?.avg_value != null && (
+                <ReferenceLine y={threshold.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
+              )}
+              {threshold?.min_value != null && (
+                <ReferenceLine y={threshold.min_value} stroke={colors.wine} strokeWidth={1.5} strokeDasharray="5 3" />
+              )}
+              {hasLR ? (
+                <>
+                  <Bar dataKey="L" name="Left" fill={colors.navy} radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="R" name="Right" fill={colors.green} radius={[2, 2, 0, 0]} />
+                </>
+              ) : tiers ? (
+                <Bar dataKey="value" name={label} radius={[2, 2, 0, 0]}>
+                  {displayItems.map((d, i) => (
+                    <Cell key={i} fill={TIER_COLORS[tierIndexOf(d.value, tiers)]} />
+                  ))}
+                </Bar>
+              ) : (
+                <Bar dataKey="value" name={label} radius={[2, 2, 0, 0]}>
+                  {displayItems.map((d, i) => (
+                    <Cell key={i} fill={outOfRange(d.value, threshold) ? colors.warning : colors.navy} />
+                  ))}
+                </Bar>
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        )}
         {tiers && (
           <div className="flex gap-4 mt-2 flex-wrap justify-center text-[11px] text-text-secondary">
             {tiers.map((t, i) => (
@@ -808,6 +836,7 @@ export function PhysicalOverviewPage() {
                 hasLR={metric.hasLR}
                 note={metric.note}
                 tiers={metric.tiers}
+                dotPlot={metric.dotPlot}
                 rows={teamValdRows}
                 threshold={thresholds.find(t => t.metric_key === metric.key && t.grade === gradeFilter) ?? null}
               />

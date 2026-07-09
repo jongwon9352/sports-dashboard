@@ -2334,7 +2334,7 @@ export async function upsertPhysicalTestRecord(input: {
 // ── VALD 항목 목록 (임계값 입력 화면·팀 비교 차트 공용) ───────────────────
 export const VALD_METRIC_DEFS: {
   key: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
-  tiers?: { max: number; label: string }[];
+  tiers?: { max: number; label: string }[]; dotPlot?: boolean;
 }[] = [
   { key: 'nordic_curl', label: 'Nordic Curl (햄스트링 근력)', unit: 'N', hasLR: true },
   { key: 'hip_abduction', label: 'Hip Abduction (고관절 벌림)', unit: 'N', hasLR: true },
@@ -2353,11 +2353,11 @@ export const VALD_METRIC_DEFS: {
       { max: Infinity, label: '1.15 이상 · 최대근력 훈련 필요' },
     ],
   },
-  { key: 'sprint_5m', label: '5m 스프린트', unit: 'sec', invert: true },
-  { key: 'sprint_10m', label: '10m 스프린트', unit: 'sec', invert: true },
-  { key: 'sprint_30m', label: '30m 스프린트', unit: 'sec', invert: true },
-  { key: 'cod_run', label: '방향전환(볼 무)', unit: 'sec', invert: true },
-  { key: 'cod_ball', label: '방향전환(볼 유)', unit: 'sec', invert: true },
+  { key: 'sprint_5m', label: '5m 스프린트', unit: 'sec', invert: true, dotPlot: true },
+  { key: 'sprint_10m', label: '10m 스프린트', unit: 'sec', invert: true, dotPlot: true },
+  { key: 'sprint_30m', label: '30m 스프린트', unit: 'sec', invert: true, dotPlot: true },
+  { key: 'cod_run', label: '방향전환(볼 무)', unit: 'sec', invert: true, dotPlot: true },
+  { key: 'cod_ball', label: '방향전환(볼 유)', unit: 'sec', invert: true, dotPlot: true },
 ];
 export const VALD_GRADES = ['전체', '1학년', '2학년', '3학년'] as const;
 
