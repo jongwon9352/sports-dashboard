@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, ReferenceArea, Legend,
 } from 'recharts';
 import {
   fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchValdThresholds,
@@ -49,6 +49,14 @@ function tierIndexOf(value: number, tiers: { max: number; label: string }[]): nu
   return tiers.length - 1;
 }
 
+// 팀 임계값(최저~최대) 범위를 벗어난 개인 기록을 색으로 강조 — 범위 안은 기본색 유지
+function outOfRange(value: number, threshold: ValdThreshold | null): boolean {
+  if (!threshold) return false;
+  if (threshold.max_value != null && value > threshold.max_value) return true;
+  if (threshold.min_value != null && value < threshold.min_value) return true;
+  return false;
+}
+
 function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers, rows, threshold }: {
   metricKey: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
   tiers?: { max: number; label: string }[];
@@ -88,6 +96,30 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
           {note}
         </div>
       )}
+      {threshold && (threshold.max_value != null || threshold.avg_value != null || threshold.min_value != null) && (
+        <div className="flex gap-4 flex-wrap items-center mb-2 text-xs font-medium">
+          {threshold.max_value != null && (
+            <span className="flex items-center gap-1.5" style={{ color: colors.green }}>
+              <span className="w-3 h-0.5 inline-block" style={{ background: colors.green }} /> 최대 {threshold.max_value}{unit}
+            </span>
+          )}
+          {threshold.avg_value != null && (
+            <span className="flex items-center gap-1.5" style={{ color: colors.navy }}>
+              <span className="w-3 h-0.5 inline-block" style={{ background: colors.navy }} /> 평균 {threshold.avg_value}{unit}
+            </span>
+          )}
+          {threshold.min_value != null && (
+            <span className="flex items-center gap-1.5" style={{ color: colors.wine }}>
+              <span className="w-3 h-0.5 inline-block" style={{ background: colors.wine }} /> 최저 {threshold.min_value}{unit}
+            </span>
+          )}
+          {!tiers && (threshold.min_value != null || threshold.max_value != null) && (
+            <span className="flex items-center gap-1.5 text-text-secondary">
+              <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: colors.warning }} /> 범위 이탈 기록
+            </span>
+          )}
+        </div>
+      )}
       <div className="bg-surface rounded-xl border border-surface-secondary p-3.5 mb-3">
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={displayItems} margin={{ bottom: 60 }}>
@@ -97,17 +129,17 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Tooltip formatter={(v: any, n: any) => [`${v}${unit}`, n]} />
             {hasLR && <Legend wrapperStyle={{ fontSize: 11 }} />}
+            {threshold?.min_value != null && threshold?.max_value != null && (
+              <ReferenceArea y1={threshold.min_value} y2={threshold.max_value} fill={colors.green} fillOpacity={0.08} />
+            )}
             {threshold?.max_value != null && (
-              <ReferenceLine y={threshold.max_value} stroke={colors.green} strokeDasharray="4 3"
-                label={{ value: `최대 ${threshold.max_value}`, fontSize: 10, fill: colors.green, position: 'insideTopRight' }} />
+              <ReferenceLine y={threshold.max_value} stroke={colors.green} strokeWidth={1.5} strokeDasharray="5 3" />
             )}
             {threshold?.avg_value != null && (
-              <ReferenceLine y={threshold.avg_value} stroke={colors.navy} strokeDasharray="4 3"
-                label={{ value: `평균 ${threshold.avg_value}`, fontSize: 10, fill: colors.navy, position: 'insideTopRight' }} />
+              <ReferenceLine y={threshold.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
             )}
             {threshold?.min_value != null && (
-              <ReferenceLine y={threshold.min_value} stroke={colors.wine} strokeDasharray="4 3"
-                label={{ value: `최저 ${threshold.min_value}`, fontSize: 10, fill: colors.wine, position: 'insideBottomRight' }} />
+              <ReferenceLine y={threshold.min_value} stroke={colors.wine} strokeWidth={1.5} strokeDasharray="5 3" />
             )}
             {hasLR ? (
               <>
@@ -121,7 +153,11 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
                 ))}
               </Bar>
             ) : (
-              <Bar dataKey="value" name={label} fill={colors.navy} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="value" name={label} radius={[2, 2, 0, 0]}>
+                {displayItems.map((d, i) => (
+                  <Cell key={i} fill={outOfRange(d.value, threshold) ? colors.warning : colors.navy} />
+                ))}
+              </Bar>
             )}
           </BarChart>
         </ResponsiveContainer>

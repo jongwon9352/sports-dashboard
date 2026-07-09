@@ -2591,8 +2591,13 @@ export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear:
       test_date: row.test_date,
       weight: row.bodyWeight,
     };
-    if (row.metric === 'cmj') base.cmj_height = row.jumpHeight;
-    else base.squat_jump_height = row.jumpHeight;
+    if (row.metric === 'cmj') {
+      base.cmj_height = row.jumpHeight;
+      base.cmj_peak_force = row.peakForce;
+    } else {
+      base.squat_jump_height = row.jumpHeight;
+      base.squat_jump_peak_force = row.peakForce;
+    }
     return base;
   }).filter(row => row.player_id);
 

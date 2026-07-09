@@ -346,6 +346,7 @@ export interface ForcedecksRow {
   metric: 'cmj' | 'sj';
   jumpHeight: number;
   bodyWeight: number;
+  peakForce: number | null;
 }
 
 // forcedecks-test-export: Test Type 컬럼으로 SJ/CMJ 판별
@@ -359,6 +360,8 @@ export function parseForcedecksCsv(csvText: string): ForcedecksRow[] {
   const isCmj = heightKeyCmj in rows[0];
   const heightKey = isCmj ? heightKeyCmj : heightKeySj;
   const metric: 'cmj' | 'sj' = isCmj ? 'cmj' : 'sj';
+  // CMJ 리포트는 "Takeoff Peak Force [N]", SJ 리포트는 "Force at Peak Power [N]" 컬럼명을 쓴다.
+  const peakForceKey = isCmj ? 'Takeoff Peak Force [N] ' : 'Force at Peak Power [N] ';
 
   return rows.filter(r => r['Name']).map(r => ({
     player_name: stripTeamPrefix(r['Name']),
@@ -366,6 +369,7 @@ export function parseForcedecksCsv(csvText: string): ForcedecksRow[] {
     metric,
     jumpHeight: parseFloat(r[heightKey]) || 0,
     bodyWeight: parseFloat(r['BW [KG]']) || 0,
+    peakForce: parseNullableNumber(r[peakForceKey]),
   }));
 }
 
