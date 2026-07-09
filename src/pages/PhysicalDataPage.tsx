@@ -26,6 +26,8 @@ interface ValdFormState {
   weight: string;
   cmj_height: string;
   squat_jump_height: string;
+  cmj_peak_force: string;
+  squat_jump_peak_force: string;
   nordic_curl_left: string;
   nordic_curl_right: string;
   ham_iso_left: string;
@@ -43,7 +45,7 @@ interface ValdFormState {
 
 const EMPTY_VALD_FORM: ValdFormState = {
   player_id: '', test_date: '', height: '', weight: '',
-  cmj_height: '', squat_jump_height: '',
+  cmj_height: '', squat_jump_height: '', cmj_peak_force: '', squat_jump_peak_force: '',
   nordic_curl_left: '', nordic_curl_right: '', ham_iso_left: '', ham_iso_right: '',
   hip_ad_left: '', hip_ad_right: '', hip_ab_left: '', hip_ab_right: '',
   sprint_5m_time: '', sprint_10m_time: '', sprint_30m_time: '',
@@ -56,6 +58,7 @@ const VALD_FIELD_GROUPS: { title: string; fields: { key: keyof ValdFormState; la
   ]},
   { title: 'Power (ForceDecks)', fields: [
     { key: 'cmj_height', label: 'CMJ' }, { key: 'squat_jump_height', label: 'SJ' },
+    { key: 'cmj_peak_force', label: 'CMJ Peak Force' }, { key: 'squat_jump_peak_force', label: 'SJ Peak Force' },
   ]},
   { title: 'Strength (NordBord / ForceFrame)', fields: [
     { key: 'nordic_curl_left', label: 'HAM ECC(L)' }, { key: 'nordic_curl_right', label: 'HAM ECC(R)' },
@@ -98,6 +101,8 @@ function ValdModal({ players, initial, onClose, onSaved }: {
         weight: num(form.weight),
         cmj_height: num(form.cmj_height),
         squat_jump_height: num(form.squat_jump_height),
+        cmj_peak_force: num(form.cmj_peak_force),
+        squat_jump_peak_force: num(form.squat_jump_peak_force),
         nordic_curl_left: num(form.nordic_curl_left),
         nordic_curl_right: num(form.nordic_curl_right),
         ham_iso_left: num(form.ham_iso_left),
@@ -310,6 +315,8 @@ function ValdTab() {
     weight: row.weight != null ? String(row.weight) : '',
     cmj_height: row.cmj_height != null ? String(row.cmj_height) : '',
     squat_jump_height: row.squat_jump_height != null ? String(row.squat_jump_height) : '',
+    cmj_peak_force: row.cmj_peak_force != null ? String(row.cmj_peak_force) : '',
+    squat_jump_peak_force: row.squat_jump_peak_force != null ? String(row.squat_jump_peak_force) : '',
     nordic_curl_left: row.nordic_curl_left != null ? String(row.nordic_curl_left) : '',
     nordic_curl_right: row.nordic_curl_right != null ? String(row.nordic_curl_right) : '',
     ham_iso_left: row.ham_iso_left != null ? String(row.ham_iso_left) : '',
@@ -371,7 +378,7 @@ function ValdTab() {
             <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
               <thead>
                 <tr className="border-b border-surface-secondary">
-                  {['TEST_ID', '이름', '포지션', '측정일', '키', '체중', 'CMJ', 'SJ',
+                  {['TEST_ID', '이름', '포지션', '측정일', '키', '체중', 'CMJ', 'SJ', 'CMJ Peak Force', 'SJ Peak Force',
                     'HAM ECC(L)', 'HAM ECC(R)', 'HAM ISO(L)', 'HAM ISO(R)',
                     'HIP ADD(L)', 'HIP ADD(R)', 'HIP ABD(L)', 'HIP ABD(R)',
                     '5M', '10M', '30M', 'COD', 'COD(BALL)', ''].map(h => (
@@ -392,6 +399,8 @@ function ValdTab() {
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.weight)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cmj_height)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.squat_jump_height)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.cmj_peak_force)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.squat_jump_peak_force)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_left)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.nordic_curl_right)}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.ham_iso_left)}</td>

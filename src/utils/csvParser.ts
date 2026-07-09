@@ -233,10 +233,13 @@ export interface ParsedPhysicalRow {
   cod_ball: number | null;
   mas_value: number | null;
   mss_value: number | null;
+  cmj_peak_force: number | null;
+  squat_jump_peak_force: number | null;
 }
 
 // CSV 컬럼 순서: 이름, Nordic(좌), Nordic(우), 외전(좌), 외전(우), 내전(좌), 내전(우),
-// 5m(s), 10m(s), 30m(s), CMJ(cm), 재점프(cm), Squat Jump(cm), 방향전환(런), 방향전환(볼), MAS, MSS
+// 5m(s), 10m(s), 30m(s), CMJ(cm), 재점프(cm), Squat Jump(cm), 방향전환(런), 방향전환(볼), MAS, MSS,
+// CMJ Peak Force(N), Squat Jump Peak Force(N)
 export function parsePhysicalCsv(csvText: string): ParsedPhysicalRow[] {
   const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
   const rows = result.data;
@@ -260,6 +263,8 @@ export function parsePhysicalCsv(csvText: string): ParsedPhysicalRow[] {
     cod_ball: parseNullableNumber(row[14]),
     mas_value: parseNullableNumber(row[15]),
     mss_value: parseNullableNumber(row[16]),
+    cmj_peak_force: parseNullableNumber(row[17]),
+    squat_jump_peak_force: parseNullableNumber(row[18]),
   })).filter(r => r.player_name);
 }
 

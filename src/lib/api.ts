@@ -2243,6 +2243,8 @@ export interface PhysicalTestRow {
   weight: number | null;
   cmj_height: number | null;
   squat_jump_height: number | null;
+  cmj_peak_force: number | null;
+  squat_jump_peak_force: number | null;
   nordic_curl_left: number | null;
   nordic_curl_right: number | null;
   ham_iso_left: number | null;
@@ -2262,7 +2264,7 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
   const client = requireSupabase();
   const { data, error } = await client
     .from('physical_report')
-    .select('id, player_id, test_date, test_round, height, weight, cmj_height, squat_jump_height, nordic_curl_left, nordic_curl_right, ham_iso_left, ham_iso_right, hip_ad_left, hip_ad_right, hip_ab_left, hip_ab_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cod_run, cod_ball, players(name, jersey_number, position)')
+    .select('id, player_id, test_date, test_round, height, weight, cmj_height, squat_jump_height, cmj_peak_force, squat_jump_peak_force, nordic_curl_left, nordic_curl_right, ham_iso_left, ham_iso_right, hip_ad_left, hip_ad_right, hip_ab_left, hip_ab_right, sprint_5m_time, sprint_10m_time, sprint_30m_time, cod_run, cod_ball, players(name, jersey_number, position)')
     .order('test_date', { ascending: false });
   if (error) throw error;
 
@@ -2280,6 +2282,8 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
       weight: r.weight != null ? Number(r.weight) : null,
       cmj_height: r.cmj_height != null ? Number(r.cmj_height) : null,
       squat_jump_height: r.squat_jump_height != null ? Number(r.squat_jump_height) : null,
+      cmj_peak_force: r.cmj_peak_force != null ? Number(r.cmj_peak_force) : null,
+      squat_jump_peak_force: r.squat_jump_peak_force != null ? Number(r.squat_jump_peak_force) : null,
       nordic_curl_left: r.nordic_curl_left != null ? Number(r.nordic_curl_left) : null,
       nordic_curl_right: r.nordic_curl_right != null ? Number(r.nordic_curl_right) : null,
       ham_iso_left: r.ham_iso_left != null ? Number(r.ham_iso_left) : null,
@@ -2304,6 +2308,8 @@ export async function upsertPhysicalTestRecord(input: {
   weight: number | null;
   cmj_height: number | null;
   squat_jump_height: number | null;
+  cmj_peak_force: number | null;
+  squat_jump_peak_force: number | null;
   nordic_curl_left: number | null;
   nordic_curl_right: number | null;
   ham_iso_left: number | null;
@@ -2326,13 +2332,19 @@ export async function upsertPhysicalTestRecord(input: {
 }
 
 // ── VALD 항목 목록 (임계값 입력 화면·팀 비교 차트 공용) ───────────────────
-export const VALD_METRIC_DEFS: { key: string; label: string; unit: string; invert?: boolean; hasLR?: boolean }[] = [
+export const VALD_METRIC_DEFS: { key: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string }[] = [
   { key: 'nordic_curl', label: 'Nordic Curl (햄스트링 근력)', unit: 'N', hasLR: true },
   { key: 'hip_abduction', label: 'Hip Abduction (고관절 벌림)', unit: 'N', hasLR: true },
   { key: 'hip_adduction', label: 'Hip Adduction (고관절 모음)', unit: 'N', hasLR: true },
   { key: 'ham_iso', label: 'Hamstring Iso Prone (등척성 버티기)', unit: 'N', hasLR: true },
-  { key: 'cmj_height', label: 'CMJ (반동 점프)', unit: 'cm' },
-  { key: 'squat_jump_height', label: 'Squat Jump (스쿼트 점프)', unit: 'cm' },
+  { key: 'cmj_height', label: 'CMJ (반동 점프 높이)', unit: 'cm' },
+  { key: 'cmj_peak_force', label: 'CMJ Peak Force (반동 점프 파워)', unit: 'N' },
+  { key: 'squat_jump_height', label: 'Squat Jump (스쿼트 점프 높이)', unit: 'cm' },
+  { key: 'squat_jump_peak_force', label: 'Squat Jump Peak Force (스쿼트 점프 파워)', unit: 'N' },
+  {
+    key: 'eur', label: 'EUR (Eccentric Utilization Ratio)', unit: '',
+    note: 'EUR = CMJ 높이 ÷ Squat Jump 높이. 1.1 이하 = 폭발적인 힘을 위한 훈련 필요 / 1.1~1.15 = 현재 훈련 비율 유지 / 1.15 이상 = 최대근력 훈련 필요',
+  },
   { key: 'sprint_5m', label: '5m 스프린트', unit: 'sec', invert: true },
   { key: 'sprint_10m', label: '10m 스프린트', unit: 'sec', invert: true },
   { key: 'sprint_30m', label: '30m 스프린트', unit: 'sec', invert: true },
@@ -2389,6 +2401,8 @@ export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: str
     cmj_height: row.cmj_height,
     rebound_jump_height: row.rebound_jump_height,
     squat_jump_height: row.squat_jump_height,
+    cmj_peak_force: row.cmj_peak_force,
+    squat_jump_peak_force: row.squat_jump_peak_force,
     cod_run: row.cod_run,
     cod_ball: row.cod_ball,
     mas_value: row.mas_value,

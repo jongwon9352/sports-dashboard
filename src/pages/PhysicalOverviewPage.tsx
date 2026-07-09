@@ -17,7 +17,10 @@ const VALD_ACCESSORS: Record<string, { left?: (r: PhysicalTestRow) => number | n
   hip_adduction: { left: r => r.hip_ad_left, right: r => r.hip_ad_right },
   ham_iso: { left: r => r.ham_iso_left, right: r => r.ham_iso_right },
   cmj_height: { value: r => r.cmj_height },
+  cmj_peak_force: { value: r => r.cmj_peak_force },
   squat_jump_height: { value: r => r.squat_jump_height },
+  squat_jump_peak_force: { value: r => r.squat_jump_peak_force },
+  eur: { value: r => (r.cmj_height != null && r.squat_jump_height != null && r.squat_jump_height > 0) ? r.cmj_height / r.squat_jump_height : null },
   sprint_5m: { value: r => r.sprint_5m_time },
   sprint_10m: { value: r => r.sprint_10m_time },
   sprint_30m: { value: r => r.sprint_30m_time },
@@ -58,8 +61,8 @@ function imbalanceZone(pct: number | null): 'safe' | 'caution' | 'danger' | null
   return 'safe';
 }
 
-function ValdMetricSection({ metricKey, label, unit, invert, hasLR, rows, threshold }: {
-  metricKey: string; label: string; unit: string; invert?: boolean; hasLR?: boolean;
+function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, rows, threshold }: {
+  metricKey: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
   rows: { name: string; record: PhysicalTestRow }[]; threshold: ValdThreshold | null;
 }) {
   const items = useMemo(() => buildValdItems(metricKey, rows), [metricKey, rows]);
@@ -84,8 +87,13 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, rows, thresh
   return (
     <div className="mb-5">
       <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
-        {label} ({unit}) · {items.length}명
+        {label}{unit ? ` (${unit})` : ''} · {items.length}명
       </p>
+      {note && (
+        <div className="rounded-lg border px-3 py-2 mb-3 text-xs" style={{ background: '#eff6ff', borderColor: '#93c5fd', color: '#1e3a8a' }}>
+          {note}
+        </div>
+      )}
       <div className="bg-surface rounded-xl border border-surface-secondary p-3.5 mb-3">
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={items} margin={{ bottom: 60 }}>
@@ -752,6 +760,7 @@ export function PhysicalOverviewPage() {
                 unit={metric.unit}
                 invert={metric.invert}
                 hasLR={metric.hasLR}
+                note={metric.note}
                 rows={teamValdRows}
                 threshold={thresholds.find(t => t.metric_key === metric.key && t.grade === gradeFilter) ?? null}
               />
