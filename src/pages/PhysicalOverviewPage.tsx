@@ -131,22 +131,26 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
       )}
       <div className="bg-surface rounded-xl border border-surface-secondary p-3.5 mb-3">
         {dotPlot ? (
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={displayItems} margin={{ bottom: 60 }}>
-              <CartesianGrid stroke={colors.grid} vertical={false} />
-              <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
-              <YAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <Tooltip formatter={(v: any) => `${Number(v).toFixed(3)}${unit}`} />
-              {threshold?.min_value != null && threshold?.max_value != null && (
-                <ReferenceArea y1={threshold.min_value} y2={threshold.max_value} fill={colors.green} fillOpacity={0.1} />
-              )}
-              {threshold?.avg_value != null && (
-                <ReferenceLine y={threshold.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
-              )}
-              <Scatter dataKey="value" shape={<ValdDot threshold={threshold} />} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: Math.max(600, displayItems.length * 32) }}>
+              <ResponsiveContainer width="100%" height={320}>
+                <ComposedChart data={displayItems} margin={{ bottom: 60 }}>
+                  <CartesianGrid stroke={colors.grid} vertical={false} />
+                  <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
+                  <YAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  <Tooltip formatter={(v: any) => `${Number(v).toFixed(3)}${unit}`} />
+                  {threshold?.min_value != null && threshold?.max_value != null && (
+                    <ReferenceArea y1={threshold.min_value} y2={threshold.max_value} fill={colors.green} fillOpacity={0.1} />
+                  )}
+                  {threshold?.avg_value != null && (
+                    <ReferenceLine y={threshold.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
+                  )}
+                  <Scatter dataKey="value" shape={<ValdDot threshold={threshold} />} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         ) : (
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={displayItems} margin={{ bottom: 60 }}>
