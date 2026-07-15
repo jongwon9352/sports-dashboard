@@ -264,6 +264,20 @@ function AcwrComboChart({ title, data, unit, teamRange }: {
     ? { text: '부하가 팀 최소치 미만', bg: '#E6F1FB', color: '#0C447C' }
     : null;
 
+  // 오늘 기준 ACWR / Acute / Chronic 요약 카드 값
+  const todayRow = chartData[chartData.length - 1] ?? null;
+  const yesterdayRow = chartData[chartData.length - 2] ?? null;
+  const acwrEntry = [...chartData].reverse().find(d => d.chronic > 0) ?? null;
+  const acwrVal = acwrEntry ? +((acwrEntry.acute / acwrEntry.chronic).toFixed(2)) : null;
+  const acwrZone = getAcwrZone(acwrVal);
+
+  // 목표 ACWR 1.0에 맞추기 위한 오늘의 권장 부하 — EWMA 역산
+  // acute_new = ACUTE_LAMBDA * todayLoad + (1 - ACUTE_LAMBDA) * 어제까지의 acute = chronic(목표)
+  const ACUTE_LAMBDA = 0.25;
+  const chronicToday = todayRow?.chronic ?? 0;
+  const acutePrev = yesterdayRow?.acute ?? 0;
+  const suggestedLoad = Math.max(0, Math.round((chronicToday - (1 - ACUTE_LAMBDA) * acutePrev) / ACUTE_LAMBDA));
+
   return (
     <div className="chart-card mb-4">
       <div className="flex items-center justify-center gap-2 mb-0 flex-wrap">
@@ -274,7 +288,28 @@ function AcwrComboChart({ title, data, unit, teamRange }: {
           </span>
         )}
       </div>
-      <div ref={scrollRef} className="overflow-x-auto">
+      <div className="flex gap-3 items-start">
+        <div className="shrink-0 rounded-lg border border-surface-secondary p-3 text-center" style={{ width: 150 }}>
+          <div className="text-xs text-text-secondary mb-1">ACWR</div>
+          <div className="font-mono font-bold mb-1" style={{ fontSize: 28, color: ZONE_COLOR[acwrZone] }}>
+            {acwrVal ?? '0.00'}
+          </div>
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${ZONE_BADGE[acwrZone]}`}>{ZONE_LABEL[acwrZone]}</span>
+          <div className="mt-3 pt-3 border-t border-surface-secondary text-left">
+            <div className="flex justify-between text-xs text-text-secondary"><span>Acute</span>
+              <span className="font-mono font-bold text-text-primary">{Math.round(todayRow?.acute ?? 0).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-xs text-text-secondary mt-1"><span>Chronic</span>
+              <span className="font-mono font-bold text-text-primary">{Math.round(todayRow?.chronic ?? 0).toLocaleString()}</span>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-surface-secondary">
+            <div className="text-xs text-amber-600 font-semibold">오늘 훈련 제안</div>
+            <div className="font-mono font-bold" style={{ fontSize: 20, color: '#d97706' }}>{suggestedLoad.toLocaleString()}{unit}</div>
+            <div className="text-xs text-text-secondary mt-0.5">ACWR 1.00 목표</div>
+          </div>
+        </div>
+        <div ref={scrollRef} className="overflow-x-auto flex-1 min-w-0">
         <div style={{ width: chartWidth }}>
           {/* 상단: Daily 바 + Acute/Chronic EWMA 라인 + 팀 자체 정상범위(Chronic 기준) */}
           <ResponsiveContainer width="100%" height={200}>
@@ -341,6 +376,7 @@ function AcwrComboChart({ title, data, unit, teamRange }: {
                   : null} />
             </LineChart>
           </ResponsiveContainer>
+        </div>
         </div>
       </div>
     </div>
