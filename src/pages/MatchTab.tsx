@@ -154,8 +154,11 @@ function toMetrics(rs: MatchRow[]): PosMetrics {
   };
 }
 
-function computePosStats(rows: MatchRow[], selectedMatchKey: string | null): Map<Pos, PosStats> {
-  const dates = [...new Set(rows.map(r => r.match_date))].sort();
+// cumRows: 상단 이벤트·그룹 필터가 반영된 누적 평균용 데이터
+// allRows: 필터와 무관하게 선택한 특정 경기의 실제 기록을 그대로 보여주기 위한 전체 데이터
+// (그룹 필터에 걸리지 않는 콜업 선수가 뛴 경기를 비교 경기로 선택해도 데이터가 사라지지 않도록 분리)
+function computePosStats(cumRows: MatchRow[], allRows: MatchRow[], selectedMatchKey: string | null): Map<Pos, PosStats> {
+  const dates = [...new Set(cumRows.map(r => r.match_date))].sort();
   const lastDate = dates[dates.length - 1];
 
   let refDate: string | null = null;
@@ -170,9 +173,9 @@ function computePosStats(rows: MatchRow[], selectedMatchKey: string | null): Map
 
   const result = new Map<Pos, PosStats>();
   for (const pos of POSITIONS) {
-    const posRows = rows.filter(r => r.position_played === pos);
-    const lastRows = posRows.filter(r =>
-      r.match_date === refDate && (refOpp === null || r.opponent === refOpp)
+    const posRows = cumRows.filter(r => r.position_played === pos);
+    const lastRows = allRows.filter(r =>
+      r.position_played === pos && r.match_date === refDate && (refOpp === null || r.opponent === refOpp)
     );
     const lastOpp = lastRows[0]?.opponent ?? refOpp ?? '미정';
     const dt = refDate ? new Date(refDate) : null;
@@ -444,7 +447,7 @@ export default function MatchTab() {
     return result;
   }, [filtered]);
 
-  const posStats = useMemo(() => computePosStats(filtered, selectedMatchKey), [filtered, selectedMatchKey]);
+  const posStats = useMemo(() => computePosStats(filtered, rows, selectedMatchKey), [filtered, rows, selectedMatchKey]);
   const maxVals  = useMemo((): PosMetrics => {
     const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
     for (const s of posStats.values()) {
