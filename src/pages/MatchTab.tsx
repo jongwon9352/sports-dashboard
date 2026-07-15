@@ -438,7 +438,7 @@ export default function MatchTab() {
       if (!seen.has(key)) {
         seen.add(key);
         const dt = new Date(r.match_date);
-        result.push({ key, label: `${r.opponent} (${dt.getMonth()+1}/${dt.getDate()}) · ${r.event_type}` });
+        result.push({ key, label: `${r.opponent ?? '미정'} (${dt.getMonth()+1}/${dt.getDate()}) · ${r.event_type}` });
       }
     }
     return result;
