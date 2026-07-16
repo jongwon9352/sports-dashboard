@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react';
 import {
-  BarChart, Bar, Legend,
+  BarChart, Bar, Legend, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
   fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
-  fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS,
+  fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
   fetchPlayerAcwrMultiMetric, fetchTeamAcwrData,
+  fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
-import { chartColors } from '../styles/colors';
+import { chartColors, colors } from '../styles/colors';
 import {
   AcwrComboChart, computeTeamLoadRange, METRIC_KEYS, getAcwrZone, ZONE_COLOR, ZONE_LABEL,
 } from './TeamDashboard';
 import type { PlayerWithAcwr, TrainingDaily, MatchData } from '../types';
-import type { PhysicalTestRow, TeamAcwrSeries } from '../lib/api';
+import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow } from '../lib/api';
 
 type Tab = 'load' | 'match' | 'physical';
 const TABS: { id: Tab; label: string }[] = [
@@ -362,36 +363,216 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
   );
 }
 
-// ── Physical 탭: VALD 최신 측정값 ────────────────────────────────────────
-function PhysicalTabPanel({ record }: { record: PhysicalTestRow | null }) {
+// ── Physical 탭 ────────────────────────────────────────────────────────
+// 좌우 차이 % — VALD 표준: (큰 쪽 - 작은 쪽) / 큰 쪽 * 100
+function imbalancePercent(l: number, r: number): number {
+  const base = Math.max(l, r);
+  return base > 0 ? ((r - l) / base) * 100 : 0;
+}
+function imbalanceColor(pct: number): string {
+  const abs = Math.abs(pct);
+  return abs >= 10 ? colors.danger : abs >= 5 ? colors.warning : colors.safe;
+}
+
+function StatMiniCard({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
+  return (
+    <div className="rounded-lg border border-surface-secondary p-3">
+      <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <p className="text-lg font-bold mt-1">{value}</p>
+      {sub && <p className="text-[11px] mt-0.5" style={{ color: subColor ?? undefined }}>{sub}</p>}
+    </div>
+  );
+}
+
+// 체중/키 월별 추이 (인바디 세부 항목은 DB에 없어 growth_tracking의 키·체중만 시각화)
+function BodyCompositionSection({ rows }: { rows: BodyCompositionRow[] }) {
+  const sorted = [...rows].sort((a, b) => a.year - b.year || a.month - b.month);
+  const chartData = sorted.map(r => ({ label: `${r.year}.${String(r.month).padStart(2, '0')}`, height: r.height, weight: r.weight }));
+  const latest = sorted[sorted.length - 1];
+  const prev = sorted[sorted.length - 2];
+
+  if (sorted.length === 0) {
+    return <div className="chart-card text-center text-text-secondary py-8">체중·키 기록이 없습니다.</div>;
+  }
+
+  const delta = (key: 'height' | 'weight') => {
+    if (!latest || !prev || latest[key] == null || prev[key] == null) return null;
+    return +((latest[key]! - prev[key]!).toFixed(1));
+  };
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {([['weight', '체중', 'kg', colors.muted], ['height', '키', 'cm', colors.navy]] as const).map(([key, label, unit, color]) => {
+        const d = delta(key);
+        return (
+          <div key={key} className="chart-card">
+            <div className="flex items-baseline gap-2 mb-1">
+              <div className="chart-title !mb-0">{label}</div>
+              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>{latest?.[key] ?? '—'}{unit}</span>
+              {d != null && (
+                <span className={`text-xs font-medium ${d >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {d >= 0 ? '▲' : '▼'}{Math.abs(d)}{unit}
+                </span>
+              )}
+            </div>
+            <ResponsiveContainer width="100%" height={140}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any) => [`${v}${unit}`, label]} />
+                <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const MATURITY_STAGE_LABEL: Record<string, { label: string; bg: string; text: string }> = {
+  '성장 급증기 전': { label: 'Pre-PHV (성장 급증기 전)',  bg: '#E8EEF5', text: colors.navy },
+  '성장 급증기':    { label: 'Mid-PHV (성장 급증기)',    bg: '#FFF6CC', text: '#8A6B00' },
+  '성장 급증기 후': { label: 'Post-PHV (성장 급증기 후)', bg: '#E0F3F0', text: '#006D62' },
+};
+
+function MaturitySection({ row }: { row: MaturityRow | null }) {
+  if (!row) {
+    return <div className="chart-card text-center text-text-secondary py-8">신체 성숙도 기록이 없습니다.</div>;
+  }
+  const stage = row.maturity_stage ? MATURITY_STAGE_LABEL[row.maturity_stage] ?? { label: row.maturity_stage, bg: '#eee', text: '#666' } : null;
+  return (
+    <div className="chart-card">
+      <div className="chart-title">신체 성숙도 (Khamis-Roche / Mirwald)</div>
+      <div className="grid grid-cols-5 gap-3 stat-grid-4">
+        <StatMiniCard label="현재 키" value={row.baseline_height_cm != null ? `${row.baseline_height_cm}cm` : '—'} />
+        <StatMiniCard label="예측 성인 키" value={row.predicted_adult_height_cm != null ? `${row.predicted_adult_height_cm}cm` : '—'} />
+        <StatMiniCard label="성장 도달률 (PAH%)" value={row.pah_percent != null ? `${row.pah_percent}%` : '—'} />
+        <StatMiniCard label="APHV 도달 나이" value={row.mirwald_aphv_age != null ? `${row.mirwald_aphv_age}세` : '—'} />
+        <div className="rounded-lg border border-surface-secondary p-3">
+          <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙 단계</p>
+          {stage ? (
+            <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stage.bg, color: stage.text }}>
+              {stage.label}
+            </span>
+          ) : <p className="text-lg font-bold mt-1">—</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// VALD 항목 중 좌우(L/R)가 있는 항목은 불균형 배지와 함께, 단일값 항목은 값만 표시
+const VALD_LR_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'];
+function ValdSection({ record }: { record: PhysicalTestRow | null }) {
   if (!record) {
     return <div className="chart-card text-center text-text-secondary py-8">VALD 측정 기록이 없습니다.</div>;
   }
   return (
     <div className="chart-card">
-      <div className="chart-title">VALD 최신 측정 ({record.test_date})</div>
-      <div className="overflow-x-auto">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>항목</th>
-              <th className="right">값</th>
-            </tr>
-          </thead>
-          <tbody>
-            {VALD_METRIC_DEFS.map(m => {
-              const val = computeValdValue(m.key, record);
-              if (val == null) return null;
-              return (
-                <tr key={m.key} style={{ cursor: 'default' }}>
-                  <td className="name">{m.label}</td>
-                  <td className="num">{val.toFixed(m.unit === 'sec' ? 3 : m.key === 'eur' ? 2 : 1)}{m.unit}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="chart-title">VALD 측정 ({record.test_date})</div>
+      <div className="grid grid-cols-4 gap-3 stat-grid-4">
+        {VALD_METRIC_DEFS.map(m => {
+          const acc = VALD_ACCESSORS[m.key];
+          if (VALD_LR_KEYS.includes(m.key) && acc.left && acc.right) {
+            const l = acc.left(record);
+            const r = acc.right(record);
+            if (l == null || r == null) return null;
+            const imb = imbalancePercent(l, r);
+            return (
+              <StatMiniCard key={m.key} label={m.label} value={`${l.toFixed(1)} / ${r.toFixed(1)} ${m.unit}`}
+                sub={`좌우 불균형 ${imb.toFixed(1)}%`} subColor={imbalanceColor(imb)} />
+            );
+          }
+          const val = computeValdValue(m.key, record);
+          if (val == null) return null;
+          return (
+            <StatMiniCard key={m.key} label={m.label} value={`${val.toFixed(m.unit === 'sec' ? 3 : m.key === 'eur' ? 2 : 1)}${m.unit}`} />
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+function SpeedCustomSection({ row }: { row: SpeedCustomRow | null }) {
+  if (!row) {
+    return <div className="chart-card text-center text-text-secondary py-8">Speed custom 기록이 없습니다.</div>;
+  }
+  return (
+    <div className="chart-card">
+      <div className="chart-title">Speed Custom (MAS/MSS 기준 훈련 Zone)</div>
+      <div className="grid grid-cols-4 gap-3 mb-3 stat-grid-4">
+        <StatMiniCard label="MAS" value={`${row.mas}km/h`} />
+        <StatMiniCard label="MSS" value={`${row.mss}km/h`} />
+        <StatMiniCard label="Zone1 (MAS 60%)" value={`${row.zone1_mas60}km/h`} />
+        <StatMiniCard label="Zone2 (MAS 80%)" value={`${row.zone2_mas80}km/h`} />
+      </div>
+      <div className="grid grid-cols-3 gap-3 stat-grid-4">
+        <StatMiniCard label="Zone3 (MAS 100%)" value={`${row.zone3_mas100}km/h`} />
+        <StatMiniCard label="Zone4 (ASR 20%)" value={`${row.zone4_asr20}km/h`} />
+        <StatMiniCard label="Zone5 (MSS 80%)" value={`${row.zone5_mss80}km/h`} />
+      </div>
+    </div>
+  );
+}
+
+// 팀 대시보드 InsightBox 패턴을 참고해 VALD 불균형·EUR·성숙 단계·Speed를 종합한 개인 인사이트 문구 생성
+function PhysicalInsightBox({ record, maturity }: { record: PhysicalTestRow | null; maturity: MaturityRow | null }) {
+  const warnings: string[] = [];
+  const notes: string[] = [];
+
+  if (record) {
+    for (const key of VALD_LR_KEYS) {
+      const acc = VALD_ACCESSORS[key];
+      const def = VALD_METRIC_DEFS.find(d => d.key === key);
+      if (!acc.left || !acc.right || !def) continue;
+      const l = acc.left(record);
+      const r = acc.right(record);
+      if (l == null || r == null) continue;
+      const imb = imbalancePercent(l, r);
+      if (Math.abs(imb) >= 10) warnings.push(`${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 부상 위험 높음, 편측 보강 훈련 필요`);
+      else if (Math.abs(imb) >= 5) notes.push(`${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 주의 관찰`);
+    }
+    const eur = computeValdValue('eur', record);
+    if (eur != null) {
+      if (eur <= 1.1) notes.push(`EUR ${eur.toFixed(2)} — 폭발적인 힘을 위한 훈련(플라이오메트릭) 필요`);
+      else if (eur >= 1.15) notes.push(`EUR ${eur.toFixed(2)} — 최대근력 훈련 비중 확대 필요`);
+    }
+  }
+
+  if (maturity?.maturity_stage === '성장 급증기 전') notes.push('Pre-PHV(성장 급증기 전) 단계 — 코디네이션·기초 체력 위주 훈련 권장, 고강도 근력 훈련은 신중히 접근');
+  if (maturity?.maturity_stage === '성장 급증기 후') notes.push('Post-PHV(성장 급증기 후) 단계 — 근력·파워 훈련 비중을 늘려도 되는 시기');
+
+  const safe = warnings.length === 0 && notes.length === 0;
+
+  return (
+    <div className={`chart-card border ${warnings.length > 0 ? 'border-red-200 bg-red-50' : safe ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+      <div className="chart-title !mb-2">운동 처방 솔루션 및 인사이트</div>
+      {safe ? (
+        <p className="text-sm text-text-secondary">✅ 특이사항 없음 — 현재 VALD·성숙도 지표가 안정적인 범위입니다.</p>
+      ) : (
+        <ul className="space-y-1.5 text-sm">
+          {warnings.map((w, i) => <li key={`w${i}`} className="text-red-700">⚠️ {w}</li>)}
+          {notes.map((n, i) => <li key={`n${i}`} className="text-amber-700">· {n}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function PhysicalTabPanel({ record, bodyComp, maturity, speed }: {
+  record: PhysicalTestRow | null; bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+}) {
+  return (
+    <div className="space-y-4">
+      <BodyCompositionSection rows={bodyComp} />
+      <MaturitySection row={maturity} />
+      <ValdSection record={record} />
+      <SpeedCustomSection row={speed} />
+      <PhysicalInsightBox record={record} maturity={maturity} />
     </div>
   );
 }
@@ -405,6 +586,9 @@ export function PersonalDashboard() {
   const [dailyData, setDailyData] = useState<TrainingDaily[]>([]);
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [physicalRecord, setPhysicalRecord] = useState<PhysicalTestRow | null>(null);
+  const [bodyComp, setBodyComp] = useState<BodyCompositionRow[]>([]);
+  const [maturity, setMaturity] = useState<MaturityRow | null>(null);
+  const [speed, setSpeed] = useState<SpeedCustomRow | null>(null);
   const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
 
@@ -430,13 +614,19 @@ export function PersonalDashboard() {
       fetchPlayerDailyData(selectedId),
       fetchPlayerMatchHistory(selectedId),
       fetchPhysicalTestRecords(),
-    ]).then(([multi, daily, matchData, physicalRows]) => {
+      fetchBodyCompositionRecords(),
+      fetchMaturityRecords(),
+      fetchSpeedCustomRecords(),
+    ]).then(([multi, daily, matchData, physicalRows, bodyRows, maturityRows, speedRows]) => {
       if (!active) return;
       setMultiMetric(multi);
       setDailyData(daily);
       setMatches(matchData);
       const own = physicalRows.filter(r => r.player_id === selectedId).sort((a, b) => b.test_date.localeCompare(a.test_date));
       setPhysicalRecord(own[0] ?? null);
+      setBodyComp(bodyRows.filter(r => r.player_id === selectedId));
+      setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
+      setSpeed(speedRows.find(r => r.player_id === selectedId) ?? null);
     });
     return () => { active = false; };
   }, [selectedId]);
@@ -515,7 +705,7 @@ export function PersonalDashboard() {
 
         {player && tab === 'load' && <LoadTab dailyData={dailyData} multiMetric={multiMetric} teamLoadRange={teamLoadRange} />}
         {tab === 'match' && <PersonalMatchTab matches={matches} />}
-        {tab === 'physical' && <PhysicalTabPanel record={physicalRecord} />}
+        {tab === 'physical' && <PhysicalTabPanel record={physicalRecord} bodyComp={bodyComp} maturity={maturity} speed={speed} />}
       </div>
     </div>
   );
