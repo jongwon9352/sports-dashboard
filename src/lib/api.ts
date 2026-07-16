@@ -272,6 +272,11 @@ const GRADE_TO_GROUP: Record<string, string> = {
   '3학년': 'U15',
 };
 
+// "K리그주니어"/"K리그 주니어"/"k리그주니어"처럼 표기가 섞여 들어와도 같은 대회로 인식하기 위한 정규화
+function normalizeEventTypeForGroup(et: string): string {
+  return et.replace(/\s/g, '').toLowerCase();
+}
+
 export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
@@ -367,10 +372,18 @@ export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: strin
     .in('id', allPlayerIds);
   const metaMap = new Map((playerMeta ?? []).map((p: any) => [p.id as string, p as { grade: string; position: string }]));
 
+  // K리그주니어는 대회 규정상 경기당 단일 연령대로만 출전하므로, 상대팀명에 포함된 연령(예: "울산U15")이
+  // 선수 본인 학년보다 신뢰할 수 있는 소속 기준이다 (콜업 선수는 본인 학년이 아니라 뛴 경기의 연령으로 집계).
+  // U16처럼 우리 팀에 없는 연령이 상대팀명에 있는 경우(합동 연습경기 등)는 선수 본인 학년으로 판단한다.
+  const opponentGroupMatch = /U(1[3-5])/.exec(opponent);
+  const opponentGroup = normalizeEventTypeForGroup(event_type) === 'k리그주니어' && opponentGroupMatch
+    ? `U${opponentGroupMatch[1]}`
+    : null;
+
   const matchRows = validRows.map(row => {
     const playerId = playerMap.get(normalizeName(row.player_name));
     const meta = playerId ? metaMap.get(playerId) : undefined;
-    const playerGroup = meta?.grade ? (GRADE_TO_GROUP[meta.grade] ?? null) : null;
+    const playerGroup = opponentGroup ?? (meta?.grade ? (GRADE_TO_GROUP[meta.grade] ?? null) : null);
     return {
       id: crypto.randomUUID(),
       player_id: playerId,
