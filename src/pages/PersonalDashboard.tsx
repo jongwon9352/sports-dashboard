@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  BarChart, Bar,
+  BarChart, Bar, Legend,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
@@ -125,13 +125,193 @@ function LoadTab({ dailyData, multiMetric, teamLoadRange }: {
 }
 
 // ── Match 탭: 경기 기록 ──────────────────────────────────────────────────
-function MatchTabPanel({ matches }: { matches: MatchData[] }) {
+// 개인 Match 탭에서 비교할 지표 목록 (엑셀 '대시보드' 시트의 지표 구성 기준, 목표(Goal)는 외부 벤치마크가 없어 제외)
+const MATCH_METRICS: { key: keyof MatchData; label: string; unit: string }[] = [
+  { key: 'total_distance', label: 'TD', unit: 'm' },
+  { key: 'm_per_min', label: 'm/min', unit: '' },
+  { key: 'hsr_distance', label: 'HSR', unit: 'm' },
+  { key: 'sprint_distance', label: 'Sprint', unit: 'm' },
+  { key: 'sprint_count', label: 'Sprint 횟수', unit: '회' },
+  { key: 'acc_count', label: 'ACC', unit: '회' },
+  { key: 'dec_count', label: 'DEC', unit: '회' },
+  { key: 'action_count', label: 'Action', unit: '회' },
+  { key: 'acd_load', label: 'ACD Load', unit: '' },
+  { key: 'max_speed', label: 'Max Speed', unit: 'km/h' },
+];
+
+const ZONE_KEYS: { key: keyof MatchData; label: string }[] = [
+  { key: 'speed_zone_1', label: 'Zone1' },
+  { key: 'speed_zone_2', label: 'Zone2' },
+  { key: 'speed_zone_3', label: 'Zone3' },
+  { key: 'speed_zone_4', label: 'Zone4' },
+  { key: 'speed_zone_5', label: 'Zone5' },
+];
+
+function avgOf(rows: MatchData[], key: keyof MatchData): number {
+  const vals = rows.map(r => Number(r[key]) || 0);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+}
+function maxOf(rows: MatchData[], key: keyof MatchData): number {
+  return rows.length ? Math.max(...rows.map(r => Number(r[key]) || 0)) : 0;
+}
+
+function DeltaText({ last, ref, refLabel }: { last: number; ref: number; refLabel: string }) {
+  if (ref === 0) return null;
+  const diff = last - ref;
+  const pct = (diff / ref) * 100;
+  const color = diff === 0 ? 'text-text-secondary' : diff > 0 ? 'text-green-600' : 'text-red-500';
+  return (
+    <span className={`text-[10px] font-medium ${color}`}>
+      {refLabel} 대비 {diff === 0 ? '동일' : `${diff > 0 ? '+' : ''}${pct.toFixed(0)}%`}
+    </span>
+  );
+}
+
+// 지표별 Avg/Last/Total Peak 비교 카드 + 미니 바 차트
+// 좁은 카드 폭에서는 recharts 미니 바 차트의 카테고리 폭이 너무 좁아져 막대가 렌더링되지 않는
+// 경우가 있어(narrow-width edge case), CSS 기반 범위 바로 대체해 항상 안정적으로 그린다.
+function MetricCompareCard({ label, unit, avgVal, lastVal, peakVal }: {
+  label: string; unit: string; avgVal: number; lastVal: number; peakVal: number;
+}) {
+  const max = Math.max(peakVal, avgVal, lastVal, 1);
+  const pct = (v: number) => Math.min(100, (v / max) * 100);
+  const lastColor = lastVal >= avgVal ? '#A42843' : '#153E6F';
+  const fmt = (v: number) => (unit === 'sec' ? v.toFixed(2) : v.toLocaleString());
+
+  return (
+    <div className="chart-card">
+      <div className="chart-title !mb-1">{label}</div>
+      <div className="flex items-baseline gap-2 mb-2">
+        <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>{lastVal.toLocaleString()}{unit}</span>
+        <DeltaText last={lastVal} ref={avgVal} refLabel="평균" />
+      </div>
+
+      <div className="relative h-2 rounded-full bg-gray-100 mb-1">
+        <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct(lastVal)}%`, background: lastColor }} />
+        <div className="absolute -top-0.5 w-0.5 h-3 bg-gray-400" style={{ left: `${pct(avgVal)}%` }} title="평균" />
+      </div>
+      <div className="flex justify-between text-[9px] text-text-secondary">
+        <span>평균 {fmt(avgVal)}{unit}</span>
+        <span>Peak {fmt(peakVal)}{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
+  const [eventFilter, setEventFilter] = useState('전체');
+  const [groupFilter, setGroupFilter] = useState('전체');
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  const eventTypes = ['전체', ...new Set(matches.map(m => m.event_type))];
+  const groups = ['전체', ...new Set(matches.map(m => m.player_group).filter((g): g is string => !!g))];
+
+  const filteredMatches = matches.filter(m =>
+    (eventFilter === '전체' || m.event_type === eventFilter) &&
+    (groupFilter === '전체' || m.player_group === groupFilter),
+  );
+
+  // 비교 경기 드롭다운은 필터된 목록에서 고르되, 실제 값은 그룹 필터와 무관하게 그 경기 원본 기록을 그대로 사용한다.
+  const matchOptions = [...filteredMatches]
+    .sort((a, b) => b.match_date.localeCompare(a.match_date))
+    .map(m => ({ key: `${m.match_date}__${m.opponent}`, label: `${m.opponent} (${m.match_date.slice(5)}) · ${m.event_type}` }));
+
+  const lastRow = selectedKey
+    ? matches.find(m => `${m.match_date}__${m.opponent}` === selectedKey) ?? null
+    : filteredMatches[0] ?? matches[0] ?? null;
+
   if (matches.length === 0) {
     return <div className="chart-card text-center text-text-secondary py-8">경기 기록이 없습니다.</div>;
   }
+
+  const zoneData = ZONE_KEYS.map(z => {
+    const avgTd = avgOf(filteredMatches, 'total_distance');
+    const avgZone = avgOf(filteredMatches, z.key);
+    const lastTd = Number(lastRow?.total_distance) || 0;
+    const lastZone = lastRow ? Number(lastRow[z.key]) || 0 : 0;
+    return {
+      zone: z.label,
+      평균: avgTd > 0 ? +((avgZone / avgTd) * 100).toFixed(1) : 0,
+      선택경기: lastTd > 0 ? +((lastZone / lastTd) * 100).toFixed(1) : 0,
+    };
+  });
+
   return (
-    <div className="chart-card">
-      <div className="chart-title">경기 기록 ({matches.length}경기)</div>
+    <>
+      <div className="chart-card mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="text-xs font-semibold text-text-secondary w-16">경기 타입</span>
+          {eventTypes.map(et => (
+            <button
+              key={et}
+              onClick={() => setEventFilter(et)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                eventFilter === et ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {et}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="text-xs font-semibold text-text-secondary w-16">경기 연령</span>
+          {groups.map(g => (
+            <button
+              key={g}
+              onClick={() => setGroupFilter(g)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                groupFilter === g ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-text-secondary w-16">비교 경기</span>
+          <select
+            value={selectedKey ?? ''}
+            onChange={e => setSelectedKey(e.target.value || null)}
+            className="text-xs border border-surface-secondary rounded-lg px-2 py-1 bg-surface"
+          >
+            <option value="">최근 경기 (자동)</option>
+            {matchOptions.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          </select>
+          <span className="text-[11px] text-text-secondary">필터된 {filteredMatches.length}경기 평균 · 커리어 최고(Peak)는 전체 경기 기준</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-3 mb-4 stat-grid-4">
+        {MATCH_METRICS.map(m => (
+          <MetricCompareCard
+            key={m.key}
+            label={m.label}
+            unit={m.unit}
+            avgVal={avgOf(filteredMatches, m.key)}
+            lastVal={lastRow ? Number(lastRow[m.key]) || 0 : 0}
+            peakVal={maxOf(matches, m.key)}
+          />
+        ))}
+      </div>
+
+      <div className="chart-card mb-4">
+        <div className="chart-title">속도 구간(Zone) 분포 — 평균 vs 선택 경기 (TD 대비 %)</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={zoneData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+            <XAxis dataKey="zone" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 10 }} unit="%" />
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any) => `${v}%`} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="평균" fill="#153E6F99" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="선택경기" fill="#A42843" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="chart-card">
+        <div className="chart-title">경기 기록 ({matches.length}경기)</div>
       <div className="overflow-x-auto">
         <table className="data-table">
           <thead>
@@ -166,7 +346,8 @@ function MatchTabPanel({ matches }: { matches: MatchData[] }) {
           </tbody>
         </table>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -322,7 +503,7 @@ export function PersonalDashboard() {
         </div>
 
         {player && tab === 'load' && <LoadTab dailyData={dailyData} multiMetric={multiMetric} teamLoadRange={teamLoadRange} />}
-        {tab === 'match' && <MatchTabPanel matches={matches} />}
+        {tab === 'match' && <PersonalMatchTab matches={matches} />}
         {tab === 'physical' && <PhysicalTabPanel record={physicalRecord} />}
       </div>
     </div>
