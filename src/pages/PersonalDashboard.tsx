@@ -76,7 +76,7 @@ function LoadTab({ dailyData, multiMetric, teamLoadRange }: {
       <div className="space-y-2 mb-4">
         {METRIC_KEYS.map(({ key, label, unit }) => (
           <AcwrComboChart key={key} title={`${label} / ACWR`} data={multiMetric[key] ?? []} unit={unit || undefined}
-            teamRange={teamLoadRange[key] ?? null} days={14} />
+            teamRange={teamLoadRange[key] ?? null} days={14} fitWidth />
         ))}
       </div>
 

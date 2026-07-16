@@ -222,14 +222,15 @@ function StrainBarShape({ x, y, width, height, value, payload }: any) {
 }
 
 // ── ACWR 콤보 차트 (2패널) ─────────────────────────────────────────────
-export function AcwrComboChart({ title, data, unit, teamRange, days = 28 }: {
+export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWidth = false }: {
   title: string; data: TeamAcwrSeries[]; unit?: string;
   teamRange: { min: number; avg: number; max: number } | null;
   days?: number;
+  fitWidth?: boolean; // true면 가로 스크롤 없이 카드 폭에 꽉 채운다 (짧은 기간 차트용)
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const last28 = data.slice(-days);
-  const chartWidth = Math.max(last28.length * 48, 600);
+  const chartWidth = fitWidth ? '100%' : Math.max(last28.length * 48, 600);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [data]);
 
   const chartData = last28.map(d => ({
