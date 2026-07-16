@@ -198,16 +198,27 @@ function MetricCompareCard({ label, unit, avgVal, lastVal, peakVal }: {
   );
 }
 
+// 같은 대회가 "K리그주니어"/"K리그 주니어"/"k리그주니어"처럼 표기가 섞여 들어오는 경우가 있어
+// 공백·대소문자를 무시하고 하나로 합친다 (팀 대시보드 Match 탭과 동일한 정규화).
+function normalizeEventType(et: string): string {
+  return et.replace(/\s/g, '').toLowerCase();
+}
+
 function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
   const [eventFilter, setEventFilter] = useState('전체');
   const [groupFilter, setGroupFilter] = useState('전체');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  const eventTypes = ['전체', ...new Set(matches.map(m => m.event_type))];
+  const eventTypes = ['전체'];
+  const seenEventTypes = new Set<string>();
+  for (const m of matches) {
+    const norm = normalizeEventType(m.event_type);
+    if (!seenEventTypes.has(norm)) { seenEventTypes.add(norm); eventTypes.push(m.event_type); }
+  }
   const groups = ['전체', ...new Set(matches.map(m => m.player_group).filter((g): g is string => !!g))];
 
   const filteredMatches = matches.filter(m =>
-    (eventFilter === '전체' || m.event_type === eventFilter) &&
+    (eventFilter === '전체' || normalizeEventType(m.event_type) === normalizeEventType(eventFilter)) &&
     (groupFilter === '전체' || m.player_group === groupFilter),
   );
 
