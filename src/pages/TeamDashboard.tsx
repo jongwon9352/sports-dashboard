@@ -7,7 +7,7 @@ import { fetchTeamAcwrData, type TeamAcwrSeries } from '../lib/api';
 import MatchTab from './MatchTab';
 
 // ── 공통 상수 ──────────────────────────────────────────────────────────
-const METRIC_KEYS = [
+export const METRIC_KEYS = [
   { key: 'tl',     label: 'TL',     unit: ' AU' },
   { key: 'td',     label: 'TD',     unit: ' m'  },
   { key: 'hsr',    label: 'HSR',    unit: ' m'  },
@@ -42,7 +42,7 @@ const METRIC_THRESHOLDS: Record<string, Thresholds> = {
 
 // ── Zone 시스템 ────────────────────────────────────────────────────────
 interface Thresholds { caution: number; danger: number; highDanger: number; basis: string; }
-type ZoneType = 'safe' | 'caution' | 'danger' | 'high-danger';
+export type ZoneType = 'safe' | 'caution' | 'danger' | 'high-danger';
 
 function getZone(val: number | null, t: Thresholds): ZoneType {
   if (val === null) return 'safe';
@@ -52,7 +52,7 @@ function getZone(val: number | null, t: Thresholds): ZoneType {
   return 'safe';
 }
 
-function getAcwrZone(val: number | null): ZoneType {
+export function getAcwrZone(val: number | null): ZoneType {
   if (val === null) return 'safe';
   if (val >= ACWR_THRESHOLDS.highDanger) return 'high-danger';
   if (val >= ACWR_THRESHOLDS.danger)     return 'danger';
@@ -61,13 +61,13 @@ function getAcwrZone(val: number | null): ZoneType {
   return 'safe';
 }
 
-const ZONE_COLOR: Record<ZoneType, string> = {
+export const ZONE_COLOR: Record<ZoneType, string> = {
   safe: '#16a34a', caution: '#d97706', danger: '#dc2626', 'high-danger': '#7f1d1d',
 };
-const ZONE_LABEL: Record<ZoneType, string> = {
+export const ZONE_LABEL: Record<ZoneType, string> = {
   safe: '안전', caution: '주의', danger: '위험', 'high-danger': '고위험',
 };
-const ZONE_BADGE: Record<ZoneType, string> = {
+export const ZONE_BADGE: Record<ZoneType, string> = {
   safe:         'bg-emerald-100 text-emerald-800',
   caution:      'bg-amber-100 text-amber-800',
   danger:       'bg-red-100 text-red-800',
@@ -145,7 +145,7 @@ function computeTeamStrainP85(series: TeamAcwrSeries[]) {
 
 // 팀 자체 부하 기준(정상 범위) — Chronic(장기 부하) 히스토리의 min/avg/max.
 // EWMA가 아직 수렴하지 않은 초반 구간(10일)은 제외.
-function computeTeamLoadRange(series: TeamAcwrSeries[], skipDays = 10) {
+export function computeTeamLoadRange(series: TeamAcwrSeries[], skipDays = 10) {
   const vals = series.slice(skipDays).map(d => d.chronic).filter(v => v > 0);
   if (vals.length === 0) return null;
   const min = Math.min(...vals);
@@ -222,12 +222,13 @@ function StrainBarShape({ x, y, width, height, value, payload }: any) {
 }
 
 // ── ACWR 콤보 차트 (2패널) ─────────────────────────────────────────────
-function AcwrComboChart({ title, data, unit, teamRange }: {
+export function AcwrComboChart({ title, data, unit, teamRange, days = 28 }: {
   title: string; data: TeamAcwrSeries[]; unit?: string;
   teamRange: { min: number; avg: number; max: number } | null;
+  days?: number;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const last28 = data.slice(-28);
+  const last28 = data.slice(-days);
   const chartWidth = Math.max(last28.length * 48, 600);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [data]);
 

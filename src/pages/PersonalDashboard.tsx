@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
 import {
-  LineChart, Line, BarChart, Bar,
+  BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts';
 import {
-  fetchPlayersWithAcwr, fetchPlayerAcwrHistory, fetchPlayerDailyData, fetchPlayerMatchHistory,
+  fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS,
+  fetchPlayerAcwrMultiMetric, fetchTeamAcwrData,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
-import { chartColors, colors } from '../styles/colors';
-import type { PlayerWithAcwr, AcwrDaily, TrainingDaily, MatchData } from '../types';
-import type { PhysicalTestRow } from '../lib/api';
+import { chartColors } from '../styles/colors';
+import {
+  AcwrComboChart, computeTeamLoadRange, METRIC_KEYS, getAcwrZone, ZONE_COLOR, ZONE_LABEL,
+} from './TeamDashboard';
+import type { PlayerWithAcwr, TrainingDaily, MatchData } from '../types';
+import type { PhysicalTestRow, TeamAcwrSeries } from '../lib/api';
 
 type Tab = 'load' | 'match' | 'physical';
 const TABS: { id: Tab; label: string }[] = [
@@ -32,23 +35,11 @@ function PlayerAvatar({ src, size = 40 }: { src?: string | null; size?: number }
 }
 
 // ── Load 탭: ACWR·Monotony·훈련부하 추이 ────────────────────────────────
-function LoadTab({ player, acwrHistory, dailyData }: {
-  player: PlayerWithAcwr; acwrHistory: AcwrDaily[]; dailyData: TrainingDaily[];
+function LoadTab({ dailyData, multiMetric, teamLoadRange }: {
+  dailyData: TrainingDaily[];
+  multiMetric: Record<string, TeamAcwrSeries[]>;
+  teamLoadRange: Record<string, { min: number; avg: number; max: number } | null>;
 }) {
-  const chartAcwr = acwrHistory.slice(-30).map(a => ({
-    date: a.date.slice(5),
-    acwr: +Number(a.acwr).toFixed(2),
-    acute: Math.round(Number(a.acute_ewma)),
-    chronic: Math.round(Number(a.chronic_ewma)),
-    load: Number(a.daily_load),
-  }));
-
-  const thresholds = {
-    Post: { green: 1.3, red: 1.5 },
-    Pre: { green: 1.2, red: 1.4 },
-    Mid: { green: 1.1, red: 1.3 },
-  }[player.maturity_status ?? 'Mid']!;
-
   const recentDaily = dailyData.slice(0, 14).reverse();
   const dailyChart = recentDaily.map(d => ({
     date: d.training_date.slice(5),
@@ -61,58 +52,33 @@ function LoadTab({ player, acwrHistory, dailyData }: {
 
   return (
     <>
+      <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">오늘 기준 ACWR 현황</div>
       <div className="grid grid-cols-5 gap-3 mb-5 stat-grid-4">
-        <StatCard
-          label="ACWR"
-          value={player.acwr_data?.acwr != null ? Number(player.acwr_data.acwr).toFixed(2) : '—'}
-          accent={getZoneColor(player.acwr_zone)}
-          valueColor={getZoneColor(player.acwr_zone)}
-        />
-        <StatCard label="Acute Load" value={player.acwr_data?.acute_ewma ? Number(player.acwr_data.acute_ewma).toFixed(0) : '—'} accent={colors.danger} />
-        <StatCard label="Chronic Load" value={player.acwr_data?.chronic_ewma ? Number(player.acwr_data.chronic_ewma).toFixed(0) : '—'} accent={colors.navy} />
-        <StatCard label="오늘 부하" value={player.acwr_data?.daily_load ? Number(player.acwr_data.daily_load).toFixed(0) : '—'} accent={colors.green} />
-        <StatCard
-          label="Monotony"
-          value={player.monotony?.toFixed(2) ?? '—'}
-          accent={player.monotony && player.monotony > 2 ? colors.danger : colors.muted}
-          valueColor={player.monotony && player.monotony > 2 ? colors.danger : undefined}
-        />
+        {METRIC_KEYS.map(({ key, label }) => {
+          const series = multiMetric[key] ?? [];
+          const entry = [...series].reverse().find(d => d.chronic > 0) ?? null;
+          const val = entry ? +((entry.acute / entry.chronic).toFixed(2)) : null;
+          const zone = getAcwrZone(val);
+          return (
+            <StatCard
+              key={key}
+              label={`${label} ACWR`}
+              value={val != null ? val.toFixed(2) : '—'}
+              sub={ZONE_LABEL[zone]}
+              accent={ZONE_COLOR[zone]}
+              valueColor={ZONE_COLOR[zone]}
+            />
+          );
+        })}
       </div>
 
-      {chartAcwr.length > 0 && (
-        <div className="chart-card mb-4">
-          <div className="chart-title">ACWR 추이 (최근 30일)</div>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartAcwr}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis domain={[0, 2.5]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <ReferenceLine y={0.8} stroke={colors.warning} strokeDasharray="4 4" label={{ value: '하한', fontSize: 9 }} />
-              <ReferenceLine y={thresholds.green} stroke={colors.safe} strokeDasharray="4 4" label={{ value: '안전상한', fontSize: 9 }} />
-              <ReferenceLine y={thresholds.red} stroke={colors.danger} strokeDasharray="4 4" label={{ value: '위험', fontSize: 9 }} />
-              <Line type="monotone" dataKey="acwr" stroke={colors.navy} strokeWidth={2.5} dot={false} name="ACWR" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {chartAcwr.length > 0 && (
-        <div className="chart-card mb-4">
-          <div className="chart-title">Acute / Chronic Load 추이</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartAcwr}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Line type="monotone" dataKey="acute" stroke={colors.danger} strokeWidth={2} dot={false} name="Acute" />
-              <Line type="monotone" dataKey="chronic" stroke={colors.navy} strokeWidth={2} dot={false} name="Chronic" />
-              <Line type="monotone" dataKey="load" stroke={colors.muted} strokeWidth={1} dot={false} name="Daily Load" strokeDasharray="3 3" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">일별 ACWR 흐름 (최근 2주)</div>
+      <div className="space-y-2 mb-4">
+        {METRIC_KEYS.map(({ key, label, unit }) => (
+          <AcwrComboChart key={key} title={`${label} / ACWR`} data={multiMetric[key] ?? []} unit={unit || undefined}
+            teamRange={teamLoadRange[key] ?? null} days={14} />
+        ))}
+      </div>
 
       {dailyChart.length > 0 && (
         <div className="chart-card mb-4">
@@ -244,10 +210,11 @@ export function PersonalDashboard() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('load');
 
-  const [acwrHistory, setAcwrHistory] = useState<AcwrDaily[]>([]);
   const [dailyData, setDailyData] = useState<TrainingDaily[]>([]);
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [physicalRecord, setPhysicalRecord] = useState<PhysicalTestRow | null>(null);
+  const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
+  const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
 
   useEffect(() => {
     fetchPlayersWithAcwr().then(p => {
@@ -255,19 +222,25 @@ export function PersonalDashboard() {
       if (p.length > 0) setSelectedId(p[0].id);
       setLoading(false);
     });
+    fetchTeamAcwrData(210).then(teamData => {
+      const range = Object.fromEntries(
+        METRIC_KEYS.map(({ key }) => [key, computeTeamLoadRange(teamData[key as keyof typeof teamData])]),
+      );
+      setTeamLoadRange(range);
+    });
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
     let active = true;
     Promise.all([
-      fetchPlayerAcwrHistory(selectedId),
+      fetchPlayerAcwrMultiMetric(selectedId, 90),
       fetchPlayerDailyData(selectedId),
       fetchPlayerMatchHistory(selectedId),
       fetchPhysicalTestRecords(),
-    ]).then(([history, daily, matchData, physicalRows]) => {
+    ]).then(([multi, daily, matchData, physicalRows]) => {
       if (!active) return;
-      setAcwrHistory(history);
+      setMultiMetric(multi);
       setDailyData(daily);
       setMatches(matchData);
       const own = physicalRows.filter(r => r.player_id === selectedId).sort((a, b) => b.test_date.localeCompare(a.test_date));
@@ -348,7 +321,7 @@ export function PersonalDashboard() {
           ))}
         </div>
 
-        {player && tab === 'load' && <LoadTab player={player} acwrHistory={acwrHistory} dailyData={dailyData} />}
+        {player && tab === 'load' && <LoadTab dailyData={dailyData} multiMetric={multiMetric} teamLoadRange={teamLoadRange} />}
         {tab === 'match' && <MatchTabPanel matches={matches} />}
         {tab === 'physical' && <PhysicalTabPanel record={physicalRecord} />}
       </div>
