@@ -520,10 +520,40 @@ function SpeedCustomSection({ row }: { row: SpeedCustomRow | null }) {
 }
 
 // 팀 대시보드 InsightBox 패턴을 참고해 VALD 불균형·EUR·성숙 단계·Speed를 종합한 개인 인사이트 문구 생성
-function PhysicalInsightBox({ record, maturity }: { record: PhysicalTestRow | null; maturity: MaturityRow | null }) {
-  const warnings: string[] = [];
-  const notes: string[] = [];
+const MAS_TIERS: { label: string; max: number }[] = [
+  { label: '매우 낮음', max: 11.5 },
+  { label: '낮음', max: 12.5 },
+  { label: '보통', max: 13.5 },
+  { label: '우수', max: 15.0 },
+  { label: '매우 우수', max: 16.5 },
+  { label: '엘리트', max: Infinity },
+];
+function classifyMAS(v: number): string {
+  return (MAS_TIERS.find(t => v <= t.max) ?? MAS_TIERS[MAS_TIERS.length - 1]).label;
+}
 
+function InsightSection({ title, items, emptyText }: { title: string; items: { text: string; level: 'warning' | 'note' }[]; emptyText: string }) {
+  return (
+    <div>
+      <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">{title}</div>
+      {items.length === 0 ? (
+        <p className="text-sm text-text-secondary">✅ {emptyText}</p>
+      ) : (
+        <ul className="space-y-1">
+          {items.map((it, i) => (
+            <li key={i} className={`text-sm ${it.level === 'warning' ? 'text-red-700' : 'text-amber-700'}`}>
+              {it.level === 'warning' ? '⚠️ ' : '· '}{it.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function PhysicalInsightBox({ record, maturity, speed }: { record: PhysicalTestRow | null; maturity: MaturityRow | null; speed: SpeedCustomRow | null }) {
+  // 1. VALD (EUR, 좌우 불균형)
+  const valdItems: { text: string; level: 'warning' | 'note' }[] = [];
   if (record) {
     for (const key of VALD_LR_KEYS) {
       const acc = VALD_ACCESSORS[key];
@@ -533,32 +563,42 @@ function PhysicalInsightBox({ record, maturity }: { record: PhysicalTestRow | nu
       const r = acc.right(record);
       if (l == null || r == null) continue;
       const imb = imbalancePercent(l, r);
-      if (Math.abs(imb) >= 10) warnings.push(`${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 부상 위험 높음, 편측 보강 훈련 필요`);
-      else if (Math.abs(imb) >= 5) notes.push(`${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 주의 관찰`);
+      if (Math.abs(imb) >= 10) valdItems.push({ text: `${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 부상 위험 높음, 편측 보강 훈련 필요`, level: 'warning' });
+      else if (Math.abs(imb) >= 5) valdItems.push({ text: `${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 주의 관찰`, level: 'note' });
     }
     const eur = computeValdValue('eur', record);
     if (eur != null) {
-      if (eur <= 1.1) notes.push(`EUR ${eur.toFixed(2)} — 폭발적인 힘을 위한 훈련(플라이오메트릭) 필요`);
-      else if (eur >= 1.15) notes.push(`EUR ${eur.toFixed(2)} — 최대근력 훈련 비중 확대 필요`);
+      if (eur <= 1.1) valdItems.push({ text: `EUR ${eur.toFixed(2)} — 폭발적인 힘을 위한 훈련(플라이오메트릭) 필요`, level: 'note' });
+      else if (eur >= 1.15) valdItems.push({ text: `EUR ${eur.toFixed(2)} — 최대근력 훈련 비중 확대 필요`, level: 'note' });
+      else valdItems.push({ text: `EUR ${eur.toFixed(2)} — 현재 훈련 비율 유지`, level: 'note' });
     }
   }
 
-  if (maturity?.maturity_stage === '성장 급증기 전') notes.push('Pre-PHV(성장 급증기 전) 단계 — 코디네이션·기초 체력 위주 훈련 권장, 고강도 근력 훈련은 신중히 접근');
-  if (maturity?.maturity_stage === '성장 급증기 후') notes.push('Post-PHV(성장 급증기 후) 단계 — 근력·파워 훈련 비중을 늘려도 되는 시기');
+  // 2. Speed custom
+  const speedItems: { text: string; level: 'warning' | 'note' }[] = [];
+  if (speed) {
+    const masTier = classifyMAS(speed.mas);
+    speedItems.push({ text: `MAS ${speed.mas}km/h — ${masTier} 수준`, level: (masTier === '매우 낮음' || masTier === '낮음') ? 'warning' : 'note' });
+    speedItems.push({ text: `MSS ${speed.mss}km/h — Zone5(MSS 80%) 기준 ${speed.zone5_mss80}km/h 이상에서 최고속주 훈련 권장`, level: 'note' });
+  }
 
-  const safe = warnings.length === 0 && notes.length === 0;
+  // 3. 신체 성숙도
+  const maturityItems: { text: string; level: 'warning' | 'note' }[] = [];
+  if (maturity?.maturity_stage === '성장 급증기 전') maturityItems.push({ text: 'Pre-PHV(성장 급증기 전) 단계 — 코디네이션·기초 체력 위주 훈련 권장, 고강도 근력 훈련은 신중히 접근', level: 'note' });
+  if (maturity?.maturity_stage === '성장 급증기') maturityItems.push({ text: 'Mid-PHV(성장 급증기) 단계 — 성장통·부상 위험이 높은 시기, 훈련 부하 조절 필요', level: 'note' });
+  if (maturity?.maturity_stage === '성장 급증기 후') maturityItems.push({ text: 'Post-PHV(성장 급증기 후) 단계 — 근력·파워 훈련 비중을 늘려도 되는 시기', level: 'note' });
+  if (maturity?.pah_percent != null) maturityItems.push({ text: `예측 성인 키 도달률 ${maturity.pah_percent}%`, level: 'note' });
+
+  const hasWarning = [...valdItems, ...speedItems, ...maturityItems].some(i => i.level === 'warning');
 
   return (
-    <div className={`chart-card border ${warnings.length > 0 ? 'border-red-200 bg-red-50' : safe ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
-      <div className="chart-title !mb-2">운동 처방 솔루션 및 인사이트</div>
-      {safe ? (
-        <p className="text-sm text-text-secondary">✅ 특이사항 없음 — 현재 VALD·성숙도 지표가 안정적인 범위입니다.</p>
-      ) : (
-        <ul className="space-y-1.5 text-sm">
-          {warnings.map((w, i) => <li key={`w${i}`} className="text-red-700">⚠️ {w}</li>)}
-          {notes.map((n, i) => <li key={`n${i}`} className="text-amber-700">· {n}</li>)}
-        </ul>
-      )}
+    <div className={`chart-card border ${hasWarning ? 'border-red-200 bg-red-50' : 'border-surface-secondary'}`}>
+      <div className="chart-title !mb-3">운동 처방 솔루션 및 인사이트</div>
+      <div className="space-y-4">
+        <InsightSection title="1. VALD (EUR · 좌우 불균형)" items={valdItems} emptyText="VALD 지표 안정적인 범위입니다." />
+        <InsightSection title="2. Speed Custom" items={speedItems} emptyText="Speed 기록이 없습니다." />
+        <InsightSection title="3. 신체 성숙도" items={maturityItems} emptyText="신체 성숙도 기록이 없습니다." />
+      </div>
     </div>
   );
 }
@@ -572,7 +612,7 @@ function PhysicalTabPanel({ record, bodyComp, maturity, speed }: {
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
       <SpeedCustomSection row={speed} />
-      <PhysicalInsightBox record={record} maturity={maturity} />
+      <PhysicalInsightBox record={record} maturity={maturity} speed={speed} />
     </div>
   );
 }
