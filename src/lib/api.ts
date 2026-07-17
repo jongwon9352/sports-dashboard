@@ -672,6 +672,52 @@ export async function fetchTeamDailyAggregates(days = 90): Promise<TeamDailyAggr
   }));
 }
 
+// 홈 화면 캘린더용 — 실제 업로드된 훈련/경기 로우데이터를 날짜별로 요약
+export interface CalendarEvent {
+  date: string;
+  type: 'training' | 'match';
+  label: string;
+}
+
+export async function fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  if (!supabase) return [];
+
+  const { data: dailyRows } = await supabase
+    .from('training_daily')
+    .select('training_date, player_id')
+    .gte('training_date', startDate)
+    .lte('training_date', endDate);
+
+  const { data: matchRows } = await supabase
+    .from('match_data')
+    .select('match_date, opponent, event_type')
+    .gte('match_date', startDate)
+    .lte('match_date', endDate);
+
+  const trainingCountByDate = new Map<string, number>();
+  for (const r of (dailyRows as R[] ?? [])) {
+    const date = r.training_date as string;
+    trainingCountByDate.set(date, (trainingCountByDate.get(date) ?? 0) + 1);
+  }
+
+  const matchByDate = new Map<string, Set<string>>();
+  for (const r of (matchRows as R[] ?? [])) {
+    const date = r.match_date as string;
+    const label = `${r.event_type as string} vs ${r.opponent as string}`;
+    if (!matchByDate.has(date)) matchByDate.set(date, new Set());
+    matchByDate.get(date)!.add(label);
+  }
+
+  const events: CalendarEvent[] = [];
+  for (const [date, count] of trainingCountByDate) {
+    events.push({ date, type: 'training', label: `훈련 ${count}명` });
+  }
+  for (const [date, labels] of matchByDate) {
+    for (const label of labels) events.push({ date, type: 'match', label });
+  }
+  return events;
+}
+
 export async function fetchAvailableDates(): Promise<string[]> {
   if (!supabase) return [];
 
@@ -2071,6 +2117,107 @@ export async function fetchPlayerAcwrMultiMetric(playerId: string, days: number 
   }
 
   return result as any;
+}
+
+// 전체 선수의 개인 ACWR(TL/TD/HSR/Sprint/ACD Load)을 한 번에 계산 (홈 화면 선수 현황 바용).
+// fetchPlayerAcwrMultiMetric과 동일한 EWMA 로직을 선수별로 반복한다.
+export async function fetchAllPlayersAcwrMultiMetric(days: number = 90): Promise<Map<string, {
+  tl: TeamAcwrSeries[]; td: TeamAcwrSeries[]; hsr: TeamAcwrSeries[]; sprint: TeamAcwrSeries[]; acd: TeamAcwrSeries[];
+}>> {
+  const result = new Map<string, { tl: TeamAcwrSeries[]; td: TeamAcwrSeries[]; hsr: TeamAcwrSeries[]; sprint: TeamAcwrSeries[]; acd: TeamAcwrSeries[] }>();
+  if (!supabase) return result;
+
+  const toLocalDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - days);
+  const startStr = toLocalDateStr(startDate);
+  const todayStr = toLocalDateStr(today);
+
+  const { data: dailyData } = await supabase
+    .from('training_daily')
+    .select('player_id, training_date, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+    .gte('training_date', startStr)
+    .lte('training_date', todayStr);
+
+  const { data: matchData } = await supabase
+    .from('match_data')
+    .select('player_id, match_date, play_time_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
+    .gte('match_date', startStr)
+    .lte('match_date', todayStr);
+
+  const playerIds = new Set<string>([
+    ...((dailyData as R[] ?? []).map(r => r.player_id as string)),
+    ...((matchData as R[] ?? []).map(r => r.player_id as string)),
+  ]);
+  if (playerIds.size === 0) return result;
+
+  const allDates: string[] = [];
+  for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+    allDates.push(toLocalDateStr(d));
+  }
+
+  const dailyByPlayer = new Map<string, Map<string, R>>();
+  for (const r of (dailyData as R[] ?? [])) {
+    const pid = r.player_id as string;
+    if (!dailyByPlayer.has(pid)) dailyByPlayer.set(pid, new Map());
+    dailyByPlayer.get(pid)!.set(r.training_date as string, r);
+  }
+  const matchByPlayer = new Map<string, Map<string, R>>();
+  for (const r of (matchData as R[] ?? [])) {
+    const pid = r.player_id as string;
+    if (!matchByPlayer.has(pid)) matchByPlayer.set(pid, new Map());
+    matchByPlayer.get(pid)!.set(r.match_date as string, r);
+  }
+
+  function computeEwma(dailyValues: { date: string; value: number }[]): TeamAcwrSeries[] {
+    let acute: number | null = null;
+    let chronic: number | null = null;
+    return dailyValues.map(({ date, value }) => {
+      if (acute === null) {
+        acute = value;
+        chronic = value;
+      } else {
+        acute = acute * 0.75 + value * 0.25;
+        chronic = value * 0.069 + chronic! * 0.931;
+      }
+      const acwr = (acute > 0 && chronic! > 0) ? acute / chronic! : 0;
+      return { date, daily: value, acute, chronic: chronic!, acwr };
+    });
+  }
+
+  const metrics: (keyof TeamAcwrDayData)[] = ['tl', 'td', 'hsr', 'sprint', 'acd'];
+
+  for (const playerId of playerIds) {
+    const byDate = dailyByPlayer.get(playerId) ?? new Map();
+    const matchDates = matchByPlayer.get(playerId) ?? new Map();
+    const dateMap = new Map<string, TeamAcwrDayData>();
+    for (const date of allDates) {
+      const r = byDate.get(date);
+      const m = matchDates.get(date);
+      const trainingTl = r ? (Number(r.daily_training_load) || (Number(r.duration_min) || 0) * (Number(r.rpe) || 0)) : 0;
+      const matchTl = m && Number(m.play_time_min) > 0 && Number(m.rpe) > 0 ? Number(m.play_time_min) * Number(m.rpe) : 0;
+      dateMap.set(date, {
+        date,
+        tl: trainingTl + matchTl,
+        td: (r ? Number(r.total_distance) || 0 : 0) + (m ? Number(m.total_distance) || 0 : 0),
+        hsr: (r ? Number(r.hsr_distance) || 0 : 0) + (m ? Number(m.hsr_distance) || 0 : 0),
+        sprint: (r ? Number(r.sprint_distance) || 0 : 0) + (m ? Number(m.sprint_distance) || 0 : 0),
+        acd: (r ? Number(r.acd_load) || 0 : 0) + (m ? Number(m.acd_load) || 0 : 0),
+      });
+    }
+
+    const playerResult: Record<string, TeamAcwrSeries[]> = {};
+    for (const metric of metrics) {
+      const dailyValues = allDates.map(d => ({ date: d, value: dateMap.get(d)?.[metric] as number ?? 0 }));
+      playerResult[metric] = computeEwma(dailyValues);
+    }
+    result.set(playerId, playerResult as any);
+  }
+
+  return result;
 }
 
 // ── 신체 성숙도 (Maturity) — 선수당 1회 고정값 (players 테이블) ──────────

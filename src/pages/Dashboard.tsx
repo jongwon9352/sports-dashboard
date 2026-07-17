@@ -1,30 +1,229 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart, Bar, AreaChart, Area, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts';
-import { fetchPlayersWithAcwr, fetchTeamDailyAggregates } from '../lib/api';
-import { StatCard } from '../components/StatCard';
-import { getZoneColor, getZoneLabel } from '../utils/calculations';
-import { chartColors, colors } from '../styles/colors';
-import type { PlayerWithAcwr, TeamDailyAggregate } from '../types';
+  fetchPlayersWithAcwr, fetchCalendarEvents, fetchAllPlayersAcwrMultiMetric,
+  type CalendarEvent, type TeamAcwrSeries,
+} from '../lib/api';
+import { getAcwrZone, ZONE_COLOR, METRIC_KEYS } from './TeamDashboard';
+import { colors } from '../styles/colors';
+import type { PlayerWithAcwr } from '../types';
 
-const ZONE_PRIORITY = { danger: 0, caution: 1, insufficient: 2, safe: 3 } as const;
+// ── 날짜 유틸 ──────────────────────────────────────────────────────────
+const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function startOfWeek(d: Date): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() - r.getDay());
+  return r;
+}
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+type CalendarTab = 'month' | 'week' | 'day';
+
+// ── 캘린더 ─────────────────────────────────────────────────────────────
+function CalendarSection({ events }: { events: CalendarEvent[] }) {
+  const [tab, setTab] = useState<CalendarTab>('week');
+  const [cursor, setCursor] = useState(new Date());
+
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const e of events) {
+      if (!map.has(e.date)) map.set(e.date, []);
+      map.get(e.date)!.push(e);
+    }
+    return map;
+  }, [events]);
+
+  const navigate = (dir: 1 | -1) => {
+    if (tab === 'month') setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1));
+    else if (tab === 'week') setCursor(addDays(cursor, dir * 7));
+    else setCursor(addDays(cursor, dir));
+  };
+
+  const titleLabel = tab === 'month'
+    ? `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`
+    : tab === 'week'
+    ? `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`
+    : toDateStr(cursor);
+
+  const EventBlock = ({ e }: { e: CalendarEvent }) => (
+    <div
+      className="text-[11px] px-2 py-1 rounded mb-1 truncate text-white"
+      style={{ background: e.type === 'match' ? colors.green : colors.navy }}
+      title={e.label}
+    >
+      {e.label}
+    </div>
+  );
+
+  return (
+    <div className="chart-card mb-5">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="chart-title !mb-0">캘린더</div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="px-2 py-1 rounded border border-surface-secondary hover:bg-surface-secondary">‹</button>
+          <span className="text-sm font-semibold" style={{ fontFamily: 'var(--font-data)' }}>{titleLabel}</span>
+          <button onClick={() => navigate(1)} className="px-2 py-1 rounded border border-surface-secondary hover:bg-surface-secondary">›</button>
+        </div>
+        <div className="flex gap-2">
+          {([['month', '월간'], ['week', '주간'], ['day', '일정']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                tab === id ? 'bg-purple text-white' : 'border border-surface-secondary hover:bg-surface-secondary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'week' && (
+        <div className="grid grid-cols-7 gap-2">
+          {Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i)).map(d => {
+            const dateStr = toDateStr(d);
+            const isToday = dateStr === toDateStr(new Date());
+            return (
+              <div key={dateStr} className="min-h-[140px] rounded-lg border border-surface-secondary p-2">
+                <div className="text-[10px] text-text-disabled">{DOW[d.getDay()]}</div>
+                <div className={`text-sm font-bold mb-1 ${isToday ? 'text-purple' : ''}`}>{d.getDate()}</div>
+                {(eventsByDate.get(dateStr) ?? []).map((e, i) => <EventBlock key={i} e={e} />)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab === 'month' && (
+        <div className="grid grid-cols-7 gap-2">
+          {DOW.map(d => <div key={d} className="text-[10px] text-text-disabled text-center">{d}</div>)}
+          {Array.from({ length: 42 }, (_, i) => addDays(startOfWeek(startOfMonth(cursor)), i)).map(d => {
+            const dateStr = toDateStr(d);
+            const inMonth = d.getMonth() === cursor.getMonth();
+            const isToday = dateStr === toDateStr(new Date());
+            const dayEvents = eventsByDate.get(dateStr) ?? [];
+            return (
+              <div key={dateStr} className={`min-h-[80px] rounded-lg border border-surface-secondary p-1.5 ${inMonth ? '' : 'opacity-40'}`}>
+                <div className={`text-xs font-bold mb-0.5 ${isToday ? 'text-purple' : ''}`}>{d.getDate()}</div>
+                {dayEvents.slice(0, 2).map((e, i) => <EventBlock key={i} e={e} />)}
+                {dayEvents.length > 2 && <div className="text-[10px] text-text-disabled">+{dayEvents.length - 2}건 더</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab === 'day' && (
+        <div className="space-y-2">
+          {(eventsByDate.get(toDateStr(cursor)) ?? []).length === 0 ? (
+            <p className="text-sm text-text-secondary py-8 text-center">이 날짜에는 등록된 훈련·경기 기록이 없습니다.</p>
+          ) : (
+            (eventsByDate.get(toDateStr(cursor)) ?? []).map((e, i) => (
+              <div key={i} className="rounded-lg p-3 text-sm text-white" style={{ background: e.type === 'match' ? colors.green : colors.navy }}>
+                {e.label}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 선수 현황 바 ───────────────────────────────────────────────────────
+function suggestedLoad(series: TeamAcwrSeries[]): number {
+  const today = series[series.length - 1];
+  const yesterday = series[series.length - 2];
+  const ACUTE_LAMBDA = 0.25;
+  const chronicToday = today?.chronic ?? 0;
+  const acutePrev = yesterday?.acute ?? 0;
+  return Math.max(0, Math.round((chronicToday - (1 - ACUTE_LAMBDA) * acutePrev) / ACUTE_LAMBDA));
+}
+
+function PlayerStatusBar({ players, acwrMap }: {
+  players: PlayerWithAcwr[];
+  acwrMap: Map<string, Record<string, TeamAcwrSeries[]>>;
+}) {
+  const navigate = useNavigate();
+  return (
+    <div className="chart-card">
+      <div className="chart-title">선수 현황</div>
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>선수명</th>
+              {METRIC_KEYS.map(({ key, label }) => <th key={key} className="right">{label} ACWR</th>)}
+              <th className="right">오늘 훈련 제안</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.map(p => {
+              const multi = acwrMap.get(p.id);
+              return (
+                <tr key={p.id} onClick={() => navigate(`/player/${p.id}`)} style={{ cursor: 'pointer' }}>
+                  <td className="name">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: colors.navy }}>
+                        {p.jersey_number ?? '–'}
+                      </div>
+                      {p.name} <span className="text-text-secondary text-xs ml-1">{p.position}</span>
+                    </div>
+                  </td>
+                  {METRIC_KEYS.map(({ key }) => {
+                    const series = multi?.[key] ?? [];
+                    const entry = [...series].reverse().find(d => d.chronic > 0) ?? null;
+                    const val = entry ? +((entry.acute / entry.chronic).toFixed(2)) : null;
+                    const zone = getAcwrZone(val);
+                    return (
+                      <td key={key} className="num font-bold" style={{ color: val != null ? ZONE_COLOR[zone] : undefined }}>
+                        {val != null ? val.toFixed(2) : '—'}
+                      </td>
+                    );
+                  })}
+                  <td className="num font-bold" style={{ color: colors.warning }}>
+                    {multi?.tl ? `${suggestedLoad(multi.tl).toLocaleString()} AU` : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const [players, setPlayers] = useState<PlayerWithAcwr[]>([]);
-  const [teamDaily, setTeamDaily] = useState<TeamDailyAggregate[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [acwrMap, setAcwrMap] = useState<Map<string, Record<string, TeamAcwrSeries[]>>>(new Map());
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
     Promise.all([
       fetchPlayersWithAcwr(),
-      fetchTeamDailyAggregates(60),
-    ]).then(([p, td]) => {
+      fetchCalendarEvents(toDateStr(start), toDateStr(end)),
+      fetchAllPlayersAcwrMultiMetric(90),
+    ]).then(([p, ev, multi]) => {
       setPlayers(p);
-      setTeamDaily(td);
+      setEvents(ev);
+      setAcwrMap(multi as Map<string, Record<string, TeamAcwrSeries[]>>);
       setLoading(false);
     });
   }, []);
@@ -37,155 +236,11 @@ export function Dashboard() {
     );
   }
 
-  const sorted = [...players].sort(
-    (a, b) => ZONE_PRIORITY[a.acwr_zone] - ZONE_PRIORITY[b.acwr_zone],
-  );
-  const dangerCount = players.filter(p => p.acwr_zone === 'danger').length;
-  const cautionCount = players.filter(p => p.acwr_zone === 'caution').length;
-  const safeCount = players.filter(p => p.acwr_zone === 'safe').length;
-
-  const chartDaily = teamDaily.slice(-28).map(d => ({
-    date: d.date.slice(5),
-    td: Math.round(d.td_mean),
-    rpe: +d.rpe_mean.toFixed(1),
-    hsr: Math.round(d.hsr_mean),
-    sprint: Math.round(d.sprint_mean),
-  }));
-
   return (
     <div className="p-6">
-      <div className="sec-title">팀 대시보드</div>
-
-      <div className="grid grid-cols-4 gap-3 mb-5 stat-grid-4">
-        <StatCard label="총 선수" value={players.length} sub="등록 선수" accent={colors.navy} />
-        <StatCard label="안전 구간" value={safeCount} sub="ACWR 0.8–1.3" accent={colors.safe} valueColor={colors.safe} />
-        <StatCard label="주의" value={cautionCount} sub="ACWR 주의 범위" accent={colors.warning} valueColor={colors.warning} />
-        <StatCard label="위험" value={dangerCount} sub="ACWR > 상한" accent={colors.danger} valueColor={colors.danger} />
-      </div>
-
-      <div className="chart-card mb-4">
-        <div className="chart-title">팀 일별 평균 TD (Total Distance)</div>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartDaily}>
-            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-            <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-            <Tooltip
-              formatter={(v) => [`${Number(v).toLocaleString()} m`, '평균 TD']}
-              contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }}
-            />
-            <Bar dataKey="td" fill="rgba(21, 62, 111, 0.26)" radius={[3, 3, 0, 0]} stroke={chartColors.primary} strokeWidth={1} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 mb-5 chart-grid-2">
-        <div className="chart-card">
-          <div className="chart-title">평균 RPE 추이</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartDaily}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis domain={[0, 10]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Area type="monotone" dataKey="rpe" stroke={chartColors.warning} fill="rgba(255, 217, 0, 0.18)" strokeWidth={2} name="평균 RPE" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="chart-card">
-          <div className="chart-title">HSR / Sprint 추이</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartDaily}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Line type="monotone" dataKey="hsr" stroke={chartColors.secondary} strokeWidth={2} dot={false} name="HSR(m)" />
-              <Line type="monotone" dataKey="sprint" stroke={chartColors.tertiary} strokeWidth={2} dot={false} name="Sprint(m)" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="chart-card">
-        <div className="chart-title">선수별 ACWR 현황</div>
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>선수</th>
-                <th>포지션</th>
-                <th>성숙도</th>
-                <th className="right">ACWR</th>
-                <th>상태</th>
-                <th className="right">Monotony</th>
-                <th className="right">Acute</th>
-                <th className="right">Chronic</th>
-                <th className="right">Daily Load</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(player => (
-                <tr key={player.id} onClick={() => navigate(`/player/${player.id}`)}>
-                  <td className="name">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                        style={{ background: getZoneColor(player.acwr_zone) }}
-                      >
-                        {player.jersey_number ?? '–'}
-                      </div>
-                      {player.name}
-                    </div>
-                  </td>
-                  <td>{player.position ?? '-'}</td>
-                  <td><MaturityPill status={player.maturity_status ?? 'Mid'} /></td>
-                  <td className="num" style={{ color: getZoneColor(player.acwr_zone) }}>
-                    {player.acwr_data?.acwr != null ? Number(player.acwr_data.acwr).toFixed(2) : '—'}
-                  </td>
-                  <td>
-                    <span
-                      className="zone-badge"
-                      style={{
-                        color: getZoneColor(player.acwr_zone),
-                        background: `${getZoneColor(player.acwr_zone)}15`,
-                      }}
-                    >
-                      {getZoneLabel(player.acwr_zone)}
-                    </span>
-                  </td>
-                  <td className="num" style={{ color: player.monotony && player.monotony > 2 ? colors.danger : undefined }}>
-                    {player.monotony ? player.monotony.toFixed(2) : '—'}
-                  </td>
-                  <td className="num">
-                    {player.acwr_data?.acute_ewma ? Number(player.acwr_data.acute_ewma).toFixed(0) : '—'}
-                  </td>
-                  <td className="num">
-                    {player.acwr_data?.chronic_ewma ? Number(player.acwr_data.chronic_ewma).toFixed(0) : '—'}
-                  </td>
-                  <td className="num">
-                    {player.acwr_data?.daily_load ? Number(player.acwr_data.daily_load).toFixed(0) : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <div className="sec-title">홈</div>
+      <CalendarSection events={events} />
+      <PlayerStatusBar players={players} acwrMap={acwrMap} />
     </div>
-  );
-}
-
-function MaturityPill({ status }: { status: string }) {
-  const cfg: Record<string, { label: string; bg: string; text: string }> = {
-    Pre: { label: 'Pre', bg: '#E8EEF5', text: colors.navy },
-    Mid: { label: 'Mid', bg: '#FFF6CC', text: '#8A6B00' },
-    Post: { label: 'Post', bg: '#E0F3F0', text: '#006D62' },
-  };
-  const c = cfg[status] ?? cfg.Mid;
-  return (
-    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: c.bg, color: c.text }}>
-      {c.label}
-    </span>
   );
 }
