@@ -7,7 +7,6 @@ import { WeeklyReport } from './pages/WeeklyReport';
 import { AcwrPage } from './pages/AcwrPage';
 import { RpePage } from './pages/RpePage';
 import { Upload } from './pages/Upload';
-import { PlayerProfile } from './pages/PlayerProfile';
 import { Settings } from './pages/Settings';
 import { WeeklyPeriodization } from './pages/WeeklyPeriodization';
 import { RawDataPage } from './pages/RawDataPage';
@@ -39,7 +38,7 @@ function App() {
               <Route path="/upload" element={<Upload />} />
               <Route path="/raw-data" element={<RawDataPage />} />
               <Route path="/physical-data" element={<PhysicalDataPage />} />
-              <Route path="/player/:id" element={<PlayerProfile />} />
+              <Route path="/player/:id" element={<PersonalDashboard />} />
               <Route path="/settings/players" element={<Settings />} />
             </Routes>
           </main>

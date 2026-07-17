@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   BarChart, Bar, Legend, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -618,6 +619,7 @@ function PhysicalTabPanel({ record, bodyComp, maturity, speed }: {
 }
 
 export function PersonalDashboard() {
+  const { id: routePlayerId } = useParams<{ id?: string }>();
   const [players, setPlayers] = useState<PlayerWithAcwr[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -635,7 +637,8 @@ export function PersonalDashboard() {
   useEffect(() => {
     fetchPlayersWithAcwr().then(p => {
       setPlayers(p);
-      if (p.length > 0) setSelectedId(p[0].id);
+      if (routePlayerId && p.some(pl => pl.id === routePlayerId)) setSelectedId(routePlayerId);
+      else if (p.length > 0) setSelectedId(p[0].id);
       setLoading(false);
     });
     fetchTeamAcwrData(210).then(teamData => {
