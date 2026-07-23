@@ -340,11 +340,41 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string, s
 
   const existMap = new Map((existing ?? []).map((e: any) => [e.player_id, e]));
 
+  // 같은 날짜에 오전/오후처럼 세션이 나뉘어 여러 번 업로드되는 경우, 기존 기록을 덮어쓰지 않고
+  // 부하·거리 지표를 합산한다. (같은 파일을 실수로 다시 올린 경우엔 먼저 파일 목록에서 삭제 후
+  // 재업로드해야 중복 합산되지 않는다 — 삭제 시 해당 날짜 기록이 함께 제거된다.)
   const mergedRows = dailyRows.map(row => {
     const prev = existMap.get(row.player_id);
     if (!prev) return row;
-    // 재업로드 시 새 CSV 값으로 덮어쓰기. 수동 설정한 그룹 타입만 유지.
-    return { ...row, group_type: prev.group_type ?? row.group_type };
+    const duration = Number(prev.duration_min || 0) + Number(row.duration_min || 0);
+    const totalDistance = Number(prev.total_distance || 0) + Number(row.total_distance || 0);
+    const prevLoad = prev.daily_training_load != null ? Number(prev.daily_training_load) : null;
+    const rowLoad = row.daily_training_load != null ? Number(row.daily_training_load) : null;
+    const combinedLoad = prevLoad != null || rowLoad != null ? (prevLoad ?? 0) + (rowLoad ?? 0) : null;
+    return {
+      ...row,
+      group_type: prev.group_type ?? row.group_type,
+      duration_min: duration,
+      total_distance: totalDistance,
+      m_per_min: duration > 0 ? +(totalDistance / duration).toFixed(1) : row.m_per_min,
+      speed_zone_1: Number(prev.speed_zone_1 || 0) + Number(row.speed_zone_1 || 0),
+      speed_zone_2: Number(prev.speed_zone_2 || 0) + Number(row.speed_zone_2 || 0),
+      speed_zone_3: Number(prev.speed_zone_3 || 0) + Number(row.speed_zone_3 || 0),
+      speed_zone_4: Number(prev.speed_zone_4 || 0) + Number(row.speed_zone_4 || 0),
+      speed_zone_5: Number(prev.speed_zone_5 || 0) + Number(row.speed_zone_5 || 0),
+      hsr_distance: Number(prev.hsr_distance || 0) + Number(row.hsr_distance || 0),
+      hsr_custom: Number(prev.hsr_custom || 0) + Number(row.hsr_custom || 0),
+      sprint_distance: Number(prev.sprint_distance || 0) + Number(row.sprint_distance || 0),
+      sprint_custom: Number(prev.sprint_custom || 0) + Number(row.sprint_custom || 0),
+      sprint_count: Number(prev.sprint_count || 0) + Number(row.sprint_count || 0),
+      sprint_count_custom: Number(prev.sprint_count_custom || 0) + Number(row.sprint_count_custom || 0),
+      acc_count: Number(prev.acc_count || 0) + Number(row.acc_count || 0),
+      dec_count: Number(prev.dec_count || 0) + Number(row.dec_count || 0),
+      acd_load: Number(prev.acd_load || 0) + Number(row.acd_load || 0),
+      max_speed: Math.max(Number(prev.max_speed || 0), Number(row.max_speed || 0)),
+      daily_training_load: combinedLoad,
+      rpe: duration > 0 && combinedLoad != null ? +(combinedLoad / duration).toFixed(1) : row.rpe,
+    };
   });
 
   const { error } = await client
