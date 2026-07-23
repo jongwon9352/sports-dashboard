@@ -21,12 +21,19 @@ export interface GoogleSheetRpe {
   date: string;
   name: string;
   rpe: number;
+  session: '오전' | '오후' | null;
 }
 
 function parseGoogleTimestamp(ts: string): string {
   const m = ts.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
   if (!m) return '';
   return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+}
+
+function parseGoogleTimestampSession(ts: string): '오전' | '오후' | null {
+  if (ts.includes('오전')) return '오전';
+  if (ts.includes('오후')) return '오후';
+  return null;
 }
 
 export async function fetchGoogleSheetRpe(): Promise<GoogleSheetRpe[]> {
@@ -41,10 +48,11 @@ export async function fetchGoogleSheetRpe(): Promise<GoogleSheetRpe[]> {
     const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
     if (cols.length < 3) continue;
     const date = parseGoogleTimestamp(cols[0]);
+    const session = parseGoogleTimestampSession(cols[0]);
     const rpe = parseFloat(cols[1]);
     const name = cols[2].normalize('NFC').trim();
     if (date && name && !isNaN(rpe)) {
-      results.push({ date, name, rpe });
+      results.push({ date, name, rpe, session });
     }
   }
   return results;
@@ -916,6 +924,82 @@ export async function fetchDailySessionReports(date: string): Promise<DailySessi
         max_speed: r.max_speed,
         rpe: r.rpe,
         daily_training_load: dailyTrainingLoad,
+      };
+    }).filter(r => r.player_id);
+
+    const filename = u.filename as string;
+    const normalizedFilename = filename.normalize('NFC');
+    const label = normalizedFilename.includes('오전') ? '오전' : normalizedFilename.includes('오후') ? '오후' : filename;
+    return { label, rows: rows.sort((a, b) => b.total_distance - a.total_distance) };
+  });
+}
+
+export interface RawDataSessionReport {
+  label: string;
+  rows: RawDataRow[];
+}
+
+export async function fetchDatesWithMultipleSessions(): Promise<Set<string>> {
+  const client = requireSupabase();
+  const { data } = await client
+    .from('csv_uploads')
+    .select('training_date')
+    .eq('file_type', 'daily');
+  const counts = new Map<string, number>();
+  for (const row of (data as R[]) ?? []) {
+    const date = row.training_date as string;
+    if (!date) continue;
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  }
+  return new Set([...counts.entries()].filter(([, c]) => c >= 2).map(([date]) => date));
+}
+
+export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataSessionReport[]> {
+  const client = requireSupabase();
+  const { data: uploads } = await client
+    .from('csv_uploads')
+    .select('filename, csv_content, created_at')
+    .eq('training_date', date)
+    .eq('file_type', 'daily')
+    .order('created_at', { ascending: true });
+
+  if (!uploads || uploads.length < 2) return [];
+
+  const { data: players } = await client
+    .from('players')
+    .select('id, name, jersey_number');
+  const playerMap = new Map((players ?? []).map((p: any) => [normalizeName(p.name as string), p]));
+
+  return (uploads as R[]).map(u => {
+    const parsed = parseDailyCsv(u.csv_content as string);
+    const rows: RawDataRow[] = parsed.filter(r => normalizeName(r.player_name)).map(r => {
+      const meta = playerMap.get(normalizeName(r.player_name));
+      return {
+        id: crypto.randomUUID(),
+        player_id: meta?.id ?? '',
+        training_date: date,
+        player_name: r.player_name,
+        jersey_number: meta?.jersey_number ?? null,
+        group_type: null,
+        rpe: r.rpe,
+        duration_min: r.duration_min,
+        total_distance: r.total_distance,
+        m_per_min: r.m_per_min,
+        hsr_distance: r.hsr_distance,
+        hsr_custom: r.hsr_custom,
+        sprint_distance: r.sprint_distance,
+        sprint_custom: r.sprint_custom,
+        sprint_count: r.sprint_count,
+        sprint_count_custom: r.sprint_count_custom,
+        acc_count: r.acc_count,
+        dec_count: r.dec_count,
+        acd_load: r.acd_load,
+        max_speed: r.max_speed,
+        speed_zone_1: r.speed_zone_1,
+        speed_zone_2: r.speed_zone_2,
+        speed_zone_3: r.speed_zone_3,
+        speed_zone_4: r.speed_zone_4,
+        speed_zone_5: r.speed_zone_5,
       };
     }).filter(r => r.player_id);
 

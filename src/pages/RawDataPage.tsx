@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
+import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, fetchDatesWithMultipleSessions, fetchRawDataSessionsByDate, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
 
 const GROUP_TYPES = ['U15', 'U14', 'U13', 'GK', 'RE'] as const;
 
@@ -38,6 +38,7 @@ export function RawDataPage() {
   const [data, setData] = useState<RawDataRow[]>([]);
   const [sheetRpe, setSheetRpe] = useState<GoogleSheetRpe[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [multiSessionDates, setMultiSessionDates] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -61,39 +62,52 @@ export function RawDataPage() {
   useEffect(() => { loadDates(); }, [loadDates]);
 
   useEffect(() => {
+    fetchDatesWithMultipleSessions().then(setMultiSessionDates).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     fetchGoogleSheetRpe().then(setSheetRpe).catch(() => {});
   }, []);
+
+  const [dateOnly, sessionLabel] = selectedDate.split('::');
+  const isSessionView = Boolean(sessionLabel);
 
   const rpeMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of sheetRpe) {
+      if (isSessionView && r.session !== sessionLabel) continue;
       map.set(`${r.date}|${r.name}`, r.rpe);
     }
     return map;
-  }, [sheetRpe]);
+  }, [sheetRpe, isSessionView, sessionLabel]);
 
   const loadData = useCallback(async () => {
-    if (!selectedDate) {
+    if (!dateOnly) {
       setData([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const rows = await fetchRawDataByDates([selectedDate]);
-      setData(rows);
+      if (sessionLabel) {
+        const sessions = await fetchRawDataSessionsByDate(dateOnly);
+        setData(sessions.find(s => s.label === sessionLabel)?.rows ?? []);
+      } else {
+        const rows = await fetchRawDataByDates([dateOnly]);
+        setData(rows);
+      }
     } catch {
       // silently fail
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [dateOnly, sessionLabel]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 구글 시트 RPE를 DB에 영속화 (시트값과 DB값이 다른 행만)
+  // 구글 시트 RPE를 DB에 영속화 (시트값과 DB값이 다른 행만, 세션 뷰는 읽기 전용이라 제외)
   useEffect(() => {
-    if (!data.length || rpeMap.size === 0) return;
+    if (isSessionView || !data.length || rpeMap.size === 0) return;
     const toSync: { id: string; rpe: number }[] = [];
     for (const row of data) {
       const sheetValue = rpeMap.get(`${row.training_date}|${row.player_name}`);
@@ -108,7 +122,7 @@ export function RawDataPage() {
         return match ? { ...r, rpe: match.rpe } : r;
       }));
     });
-  }, [data, rpeMap]);
+  }, [data, rpeMap, isSessionView]);
 
   const mergedData = useMemo(() => {
     return data.map(row => {
@@ -229,6 +243,12 @@ export function RawDataPage() {
   };
 
   const renderCell = (row: typeof mergedData[0], col: ColDef) => {
+    if (col.key === 'group_type' && isSessionView) {
+      return <span>{row.group_type || '—'}</span>;
+    }
+    if (col.key === 'rpe' && isSessionView) {
+      return <span className={row._rpeSource === 'sheet' ? 'text-cyan-400 font-medium' : ''}>{fmt(row.rpe)}</span>;
+    }
     if (col.key === 'group_type') {
       return (
         <select
@@ -324,9 +344,21 @@ export function RawDataPage() {
           >
             {availableDates.length === 0 && <option value="">날짜 없음</option>}
             {availableDates.map(date => (
-              <option key={date} value={date}>{date}</option>
+              multiSessionDates.has(date) ? (
+                <optgroup key={date} label={date}>
+                  <option value={`${date}::오전`}>{date} (오전)</option>
+                  <option value={`${date}::오후`}>{date} (오후)</option>
+                </optgroup>
+              ) : (
+                <option key={date} value={date}>{date}</option>
+              )
             ))}
           </select>
+          {isSessionView && (
+            <span className="text-xs px-2 py-1 rounded-md border border-yellow-500/50 text-yellow-400">
+              읽기 전용 (세션별 보기)
+            </span>
+          )}
           <span className="text-sm ml-auto" style={{ fontFamily: 'var(--font-data)', color: 'var(--text-secondary)' }}>
             {filtered.length}건
           </span>
@@ -361,14 +393,16 @@ export function RawDataPage() {
               <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
                 <thead>
                   <tr className="border-b border-surface-secondary">
-                    <th className="px-2 py-2.5 text-left w-[36px] sticky top-0 bg-surface">
-                      <input
-                        type="checkbox"
-                        checked={pageAllSelected}
-                        onChange={toggleAll}
-                        className="accent-cyan-400"
-                      />
-                    </th>
+                    {!isSessionView && (
+                      <th className="px-2 py-2.5 text-left w-[36px] sticky top-0 bg-surface">
+                        <input
+                          type="checkbox"
+                          checked={pageAllSelected}
+                          onChange={toggleAll}
+                          className="accent-cyan-400"
+                        />
+                      </th>
+                    )}
                     {COLUMNS.map(col => (
                       <th
                         key={col.key}
@@ -385,14 +419,16 @@ export function RawDataPage() {
                       key={row.id}
                       className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors"
                     >
-                      <td className="px-2 py-2">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(row.id)}
-                          onChange={() => toggleSelect(row.id)}
-                          className="accent-cyan-400"
-                        />
-                      </td>
+                      {!isSessionView && (
+                        <td className="px-2 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(row.id)}
+                            onChange={() => toggleSelect(row.id)}
+                            className="accent-cyan-400"
+                          />
+                        </td>
+                      )}
                       {COLUMNS.map(col => (
                         <td key={col.key} className="px-2.5 py-2 whitespace-nowrap">
                           {renderCell(row, col)}
