@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, fetchDatesWithMultipleSessions, fetchRawDataSessionsByDate, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
+import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, fetchDatesWithMultipleSessions, fetchRawDataSessionsByDate, upsertSessionRpe, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
 
 const GROUP_TYPES = ['U15', 'U14', 'U13', 'GK', 'RE'] as const;
 
@@ -185,13 +185,17 @@ export function RawDataPage() {
     }
   };
 
-  const handleRpeChange = async (rowId: string, value: string) => {
+  const handleRpeChange = async (row: RawDataRow, value: string) => {
     const rpe = parseInt(value);
     if (isNaN(rpe)) return;
-    setSavingRpe(rowId);
+    setSavingRpe(row.id);
     try {
-      await updateRpe(rowId, rpe);
-      setData(prev => prev.map(r => r.id === rowId ? { ...r, rpe } : r));
+      if (isSessionView) {
+        await upsertSessionRpe(dateOnly, sessionLabel as '오전' | '오후', row.player_id, rpe);
+      } else {
+        await updateRpe(row.id, rpe);
+      }
+      setData(prev => prev.map(r => r.id === row.id ? { ...r, rpe } : r));
     } catch {
       alert('RPE 저장 중 오류가 발생했습니다.');
     } finally {
@@ -246,9 +250,6 @@ export function RawDataPage() {
     if (col.key === 'group_type' && isSessionView) {
       return <span>{row.group_type || '—'}</span>;
     }
-    if (col.key === 'rpe' && isSessionView) {
-      return <span className={row._rpeSource === 'sheet' ? 'text-cyan-400 font-medium' : ''}>{fmt(row.rpe)}</span>;
-    }
     if (col.key === 'group_type') {
       return (
         <select
@@ -274,7 +275,7 @@ export function RawDataPage() {
       return (
         <select
           value={row.rpe != null ? String(row.rpe) : ''}
-          onChange={e => handleRpeChange(row.id, e.target.value)}
+          onChange={e => handleRpeChange(row, e.target.value)}
           disabled={savingRpe === row.id}
           className={`w-[52px] px-1 py-0.5 text-sm rounded border bg-[var(--bg)] focus:outline-none focus:border-cyan-400 ${
             row.rpe != null
