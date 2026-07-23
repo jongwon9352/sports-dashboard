@@ -977,6 +977,12 @@ export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataS
     .eq('training_date', date);
   const manualRpeMap = new Map((manualRpe as R[] ?? []).map(m => [`${m.session}|${m.player_id}`, Number(m.rpe)]));
 
+  const { data: manualGroup } = await client
+    .from('session_group_manual')
+    .select('session, player_id, group_type')
+    .eq('training_date', date);
+  const manualGroupMap = new Map((manualGroup as R[] ?? []).map(m => [`${m.session}|${m.player_id}`, m.group_type as string]));
+
   return (uploads as R[]).map(u => {
     const filenameForLabel = (u.filename as string).normalize('NFC');
     const sessionLabel = filenameForLabel.includes('오전') ? '오전' : filenameForLabel.includes('오후') ? '오후' : filenameForLabel;
@@ -984,15 +990,16 @@ export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataS
     const parsed = parseDailyCsv(u.csv_content as string);
     const rows: RawDataRow[] = parsed.filter(r => normalizeName(r.player_name)).map(r => {
       const meta = playerMap.get(normalizeName(r.player_name));
-      const manual = meta?.id ? manualRpeMap.get(`${sessionLabel}|${meta.id}`) : undefined;
+      const manualRpeValue = meta?.id ? manualRpeMap.get(`${sessionLabel}|${meta.id}`) : undefined;
+      const manualGroupValue = meta?.id ? manualGroupMap.get(`${sessionLabel}|${meta.id}`) : undefined;
       return {
         id: crypto.randomUUID(),
         player_id: meta?.id ?? '',
         training_date: date,
         player_name: r.player_name,
         jersey_number: meta?.jersey_number ?? null,
-        group_type: null,
-        rpe: manual ?? r.rpe,
+        group_type: manualGroupValue ?? null,
+        rpe: manualRpeValue ?? r.rpe,
         duration_min: r.duration_min,
         total_distance: r.total_distance,
         m_per_min: r.m_per_min,
@@ -1023,6 +1030,14 @@ export async function upsertSessionRpe(trainingDate: string, session: '오전' |
   const { error } = await client
     .from('session_rpe_manual')
     .upsert({ training_date: trainingDate, session, player_id: playerId, rpe }, { onConflict: 'training_date,session,player_id' });
+  if (error) throw error;
+}
+
+export async function upsertSessionGroup(trainingDate: string, session: '오전' | '오후', playerId: string, groupType: string) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('session_group_manual')
+    .upsert({ training_date: trainingDate, session, player_id: playerId, group_type: groupType }, { onConflict: 'training_date,session,player_id' });
   if (error) throw error;
 }
 

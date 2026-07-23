@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, fetchDatesWithMultipleSessions, fetchRawDataSessionsByDate, upsertSessionRpe, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
+import { fetchRawDataByDates, deleteRawDataRows, fetchAllTrainingDates, fetchGoogleSheetRpe, updateRpe, updateGroupType, fetchDatesWithMultipleSessions, fetchRawDataSessionsByDate, upsertSessionRpe, upsertSessionGroup, type RawDataRow, type GoogleSheetRpe } from '../lib/api';
 
 const GROUP_TYPES = ['U15', 'U14', 'U13', 'GK', 'RE'] as const;
 
@@ -239,22 +239,23 @@ export function RawDataPage() {
 
   const pageAllSelected = pageData.length > 0 && pageData.every(r => selected.has(r.id));
 
-  const handleGroupChange = async (rowId: string, val: string) => {
+  const handleGroupChange = async (row: RawDataRow, val: string) => {
     try {
-      await updateGroupType(rowId, val);
-      setData(prev => prev.map(r => r.id === rowId ? { ...r, group_type: val || null } : r));
+      if (isSessionView) {
+        await upsertSessionGroup(dateOnly, sessionLabel as '오전' | '오후', row.player_id, val);
+      } else {
+        await updateGroupType(row.id, val);
+      }
+      setData(prev => prev.map(r => r.id === row.id ? { ...r, group_type: val || null } : r));
     } catch { /* */ }
   };
 
   const renderCell = (row: typeof mergedData[0], col: ColDef) => {
-    if (col.key === 'group_type' && isSessionView) {
-      return <span>{row.group_type || '—'}</span>;
-    }
     if (col.key === 'group_type') {
       return (
         <select
           value={row.group_type || ''}
-          onChange={e => handleGroupChange(row.id, e.target.value)}
+          onChange={e => handleGroupChange(row, e.target.value)}
           className="w-[52px] px-1 py-0.5 text-[10px] rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
           style={{ fontFamily: 'var(--font-data)' }}
         >
