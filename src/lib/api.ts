@@ -340,11 +340,12 @@ export async function importDailyCsvRows(rows: ParsedDailyRow[], date: string, s
   if (dailyRows.length === 0) return;
 
   const playerIds = [...new Set(dailyRows.map(r => r.player_id as string))];
-  const { data: existing } = await client
+  const { data: existing, error: existingError } = await client
     .from('training_daily')
     .select('player_id, group_type, duration_min, total_distance, m_per_min, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, hsr_distance, hsr_custom, sprint_distance, sprint_custom, sprint_count, sprint_count_custom, acc_count, dec_count, acd_load, max_speed, daily_training_load')
     .eq('training_date', date)
     .in('player_id', playerIds);
+  if (existingError) throw existingError;
 
   const existMap = new Map((existing ?? []).map((e: any) => [e.player_id, e]));
 
@@ -489,7 +490,7 @@ async function fetchMatchTlByPlayerDate(playerIds: string[]): Promise<Map<string
   return map;
 }
 
-async function recalculatePlayerAcwr(playerIds: string[]) {
+export async function recalculatePlayerAcwr(playerIds: string[]) {
   const client = requireSupabase();
   const matchTlMap = await fetchMatchTlByPlayerDate(playerIds);
 
@@ -1521,11 +1522,14 @@ export async function updateRpe(id: string, rpe: number) {
   if (fetchErr) throw fetchErr;
   const duration = Number((row as R)?.duration_min) || 0;
   const dailyLoad = +(rpe * duration).toFixed(1);
-  const { error } = await client
+  const { data: updated, error } = await client
     .from('training_daily')
     .update({ rpe, daily_training_load: dailyLoad })
-    .eq('id', id);
+    .eq('id', id)
+    .select('player_id')
+    .single();
   if (error) throw error;
+  await recalculatePlayerAcwr([(updated as R).player_id as string]);
 }
 
 export async function updateGroupType(id: string, groupType: string) {
