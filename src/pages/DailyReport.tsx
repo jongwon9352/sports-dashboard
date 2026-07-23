@@ -5,7 +5,10 @@ import {
 } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
-import { fetchAvailableDates, fetchDailyReportData, fetchDayTarget, saveDailyReportConfig, fetchDailyReportConfig } from '../lib/api';
+import {
+  fetchAvailableDates, fetchDailyReportData, fetchDayTarget, saveDailyReportConfig, fetchDailyReportConfig,
+  fetchDailySessionReports, type DailySessionReport,
+} from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
@@ -228,17 +231,28 @@ function StackedActionChart({ title, data }: {
 export function DailyReport() {
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [data, setData] = useState<DailyReportRow[]>([]);
+  const [mergedData, setMergedData] = useState<DailyReportRow[]>([]);
+  const [sessions, setSessions] = useState<DailySessionReport[]>([]);
+  const [sessionIdx, setSessionIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useState('');
   const [targets, setTargets] = useState<{ td: number; hsr: number; sprint: number } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
+  // 하루에 운동부하 CSV가 오전/오후처럼 2개 이상 업로드된 날짜는 세션별 탭으로, 아니면 합산된 하루치로 표시
+  const data = sessions.length >= 2 ? sessions[sessionIdx].rows : mergedData;
+
   const loadDateConfig = useCallback(async (date: string) => {
     const config = await fetchDailyReportConfig(date).catch(() => null);
     setLocation(config?.location ?? '');
   }, []);
+
+  const loadReportData = (date: string) => {
+    setSessionIdx(0);
+    fetchDailyReportData(date).then(rows => { setMergedData(rows); setLoading(false); });
+    fetchDailySessionReports(date).then(setSessions);
+  };
 
   useEffect(() => {
     fetchAvailableDates().then(d => {
@@ -247,7 +261,7 @@ export function DailyReport() {
       if (dateToUse) {
         setSelectedDate(dateToUse);
         loadDateConfig(dateToUse);
-        fetchDailyReportData(dateToUse).then(rows => { setData(rows); setLoading(false); });
+        loadReportData(dateToUse);
         fetchDayTarget(dateToUse).then(setTargets);
       } else { setLoading(false); }
     });
@@ -268,7 +282,7 @@ export function DailyReport() {
     setSelectedDate(date);
     setLoading(true);
     await loadDateConfig(date);
-    fetchDailyReportData(date).then(rows => { setData(rows); setLoading(false); });
+    loadReportData(date);
     fetchDayTarget(date).then(setTargets);
   };
 
@@ -437,6 +451,18 @@ export function DailyReport() {
           style={{ fontFamily: 'var(--font-data)' }}>
           {dates.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
+        {sessions.length >= 2 && (
+          <div className="flex gap-2">
+            {sessions.map((s, i) => (
+              <button key={s.label + i} onClick={() => setSessionIdx(i)}
+                className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+                  sessionIdx === i ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                }`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
         {sortedData.length > 0 && (
           <button onClick={handlePDF}
             className="ml-auto px-4 py-1.5 text-sm rounded border border-surface-secondary hover:bg-surface-secondary transition-colors flex items-center gap-1.5">

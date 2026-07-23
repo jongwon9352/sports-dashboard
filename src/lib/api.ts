@@ -11,7 +11,7 @@ import {
   getAcwrZone,
 } from '../utils/calculations';
 import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow, ParsedBodyCompositionRow, ForcedecksRow, NordbordRow, ForceframeRow, SmartspeedRow } from '../utils/csvParser';
-import { parseMaturitySheetCsv, parseSheetTimestampToDate } from '../utils/csvParser';
+import { parseMaturitySheetCsv, parseSheetTimestampToDate, parseDailyCsv } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
@@ -865,6 +865,65 @@ export async function fetchDailyReportData(date: string): Promise<DailyReportRow
   }
 
   return [...rows.values()].sort((a, b) => b.total_distance - a.total_distance);
+}
+
+// 하루에 운동부하 CSV가 오전/오후처럼 여러 번 업로드된 날짜의 세션별 리포트.
+// training_daily는 합산된 값만 남기 때문에, 세션 단위 원본은 csv_uploads에 저장된 csv_content를 그때그때 다시 파싱해서 보여준다.
+export interface DailySessionReport {
+  label: string;
+  rows: DailyReportRow[];
+}
+
+export async function fetchDailySessionReports(date: string): Promise<DailySessionReport[]> {
+  const client = requireSupabase();
+  const { data: uploads } = await client
+    .from('csv_uploads')
+    .select('filename, csv_content, created_at')
+    .eq('training_date', date)
+    .eq('file_type', 'daily')
+    .order('created_at', { ascending: true });
+
+  if (!uploads || uploads.length < 2) return [];
+
+  const { data: players } = await client
+    .from('players')
+    .select('id, name, jersey_number, position, grade');
+  const playerMap = new Map((players ?? []).map((p: any) => [normalizeName(p.name as string), p]));
+
+  return (uploads as R[]).map(u => {
+    const parsed = parseDailyCsv(u.csv_content as string);
+    const rows: DailyReportRow[] = parsed.filter(r => normalizeName(r.player_name)).map(r => {
+      const meta = playerMap.get(normalizeName(r.player_name));
+      const dailyTrainingLoad = r.rpe !== null ? r.duration_min * r.rpe : null;
+      return {
+        player_id: meta?.id ?? '',
+        group_type: meta?.grade ? (GRADE_TO_GROUP[meta.grade as string] ?? null) : null,
+        player_name: r.player_name,
+        jersey_number: meta?.jersey_number ?? null,
+        position: meta?.position ?? null,
+        duration_min: r.duration_min,
+        total_distance: r.total_distance,
+        m_per_min: r.m_per_min,
+        hsr_distance: r.hsr_distance,
+        hsr_custom: r.hsr_custom,
+        sprint_distance: r.sprint_distance,
+        sprint_custom: r.sprint_custom,
+        sprint_count: r.sprint_count,
+        sprint_count_custom: r.sprint_count_custom,
+        acc_count: r.acc_count,
+        dec_count: r.dec_count,
+        acd_load: r.acd_load,
+        max_speed: r.max_speed,
+        rpe: r.rpe,
+        daily_training_load: dailyTrainingLoad,
+      };
+    }).filter(r => r.player_id);
+
+    const filename = u.filename as string;
+    const normalizedFilename = filename.normalize('NFC');
+    const label = normalizedFilename.includes('오전') ? '오전' : normalizedFilename.includes('오후') ? '오후' : filename;
+    return { label, rows: rows.sort((a, b) => b.total_distance - a.total_distance) };
+  });
 }
 
 export async function fetchPlayerAcwrHistory(playerId: string): Promise<AcwrDaily[]> {
