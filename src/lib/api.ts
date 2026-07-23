@@ -899,14 +899,37 @@ export async function fetchDailySessionReports(date: string): Promise<DailySessi
     .select('id, name, jersey_number, position, grade');
   const playerMap = new Map((players ?? []).map((p: any) => [normalizeName(p.name as string), p]));
 
+  const sheetRpe = await fetchGoogleSheetRpe();
+  const sheetRpeMap = new Map(sheetRpe.filter(s => s.date === date).map(s => [`${s.session}|${normalizeName(s.name)}`, s.rpe]));
+
+  const { data: manualRpe } = await client
+    .from('session_rpe_manual')
+    .select('session, player_id, rpe')
+    .eq('training_date', date);
+  const manualRpeMap = new Map((manualRpe as R[] ?? []).map(m => [`${m.session}|${m.player_id}`, Number(m.rpe)]));
+
+  const { data: manualGroup } = await client
+    .from('session_group_manual')
+    .select('session, player_id, group_type')
+    .eq('training_date', date);
+  const manualGroupMap = new Map((manualGroup as R[] ?? []).map(m => [`${m.session}|${m.player_id}`, m.group_type as string]));
+
   return (uploads as R[]).map(u => {
+    const filename = u.filename as string;
+    const normalizedFilename = filename.normalize('NFC');
+    const label = normalizedFilename.includes('오전') ? '오전' : normalizedFilename.includes('오후') ? '오후' : filename;
+
     const parsed = parseDailyCsv(u.csv_content as string);
     const rows: DailyReportRow[] = parsed.filter(r => normalizeName(r.player_name)).map(r => {
       const meta = playerMap.get(normalizeName(r.player_name));
-      const dailyTrainingLoad = r.rpe !== null ? r.duration_min * r.rpe : null;
+      const sheetValue = sheetRpeMap.get(`${label}|${normalizeName(r.player_name)}`);
+      const manualValue = meta?.id ? manualRpeMap.get(`${label}|${meta.id}`) : undefined;
+      const rpe = sheetValue ?? manualValue ?? r.rpe;
+      const dailyTrainingLoad = rpe !== null && rpe !== undefined ? r.duration_min * rpe : null;
+      const manualGroupValue = meta?.id ? manualGroupMap.get(`${label}|${meta.id}`) : undefined;
       return {
         player_id: meta?.id ?? '',
-        group_type: meta?.grade ? (GRADE_TO_GROUP[meta.grade as string] ?? null) : null,
+        group_type: manualGroupValue ?? (meta?.grade ? (GRADE_TO_GROUP[meta.grade as string] ?? null) : null),
         player_name: r.player_name,
         jersey_number: meta?.jersey_number ?? null,
         position: meta?.position ?? null,
@@ -923,14 +946,11 @@ export async function fetchDailySessionReports(date: string): Promise<DailySessi
         dec_count: r.dec_count,
         acd_load: r.acd_load,
         max_speed: r.max_speed,
-        rpe: r.rpe,
+        rpe: rpe ?? null,
         daily_training_load: dailyTrainingLoad,
       };
     }).filter(r => r.player_id);
 
-    const filename = u.filename as string;
-    const normalizedFilename = filename.normalize('NFC');
-    const label = normalizedFilename.includes('오전') ? '오전' : normalizedFilename.includes('오후') ? '오후' : filename;
     return { label, rows: rows.sort((a, b) => b.total_distance - a.total_distance) };
   });
 }
@@ -1025,12 +1045,50 @@ export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataS
   });
 }
 
+// 세션별(오전/오후) RPE·그룹 수정 후, 두 세션을 합산한 하루 기록(training_daily)에도
+// 반영해 데일리 리포트 합산 뷰·주간 리포트·ACWR/Monotony가 기존 방식과 동일하게 갱신되도록 한다.
+async function recomputeMergedTrainingDaily(date: string, playerId: string) {
+  const client = requireSupabase();
+  const sessions = await fetchRawDataSessionsByDate(date);
+  if (sessions.length === 0) return;
+
+  const sheetRpe = await fetchGoogleSheetRpe();
+  const sheetMap = new Map(sheetRpe.filter(s => s.date === date).map(s => [`${s.session}|${normalizeName(s.name)}`, s.rpe]));
+
+  let totalDuration = 0;
+  let totalLoad = 0;
+  let hasAnyRpe = false;
+  for (const s of sessions) {
+    const row = s.rows.find(r => r.player_id === playerId);
+    if (!row) continue;
+    totalDuration += row.duration_min;
+    const sheetValue = sheetMap.get(`${s.label}|${normalizeName(row.player_name)}`);
+    const rpe = sheetValue ?? row.rpe;
+    if (rpe != null) {
+      totalLoad += rpe * row.duration_min;
+      hasAnyRpe = true;
+    }
+  }
+  if (totalDuration === 0 || !hasAnyRpe) return;
+  const rpe = +(totalLoad / totalDuration).toFixed(1);
+
+  const { data: existing } = await client
+    .from('training_daily')
+    .select('id')
+    .eq('training_date', date)
+    .eq('player_id', playerId)
+    .maybeSingle();
+  if (!existing) return;
+  await updateRpe((existing as R).id as string, rpe);
+}
+
 export async function upsertSessionRpe(trainingDate: string, session: '오전' | '오후', playerId: string, rpe: number) {
   const client = requireSupabase();
   const { error } = await client
     .from('session_rpe_manual')
     .upsert({ training_date: trainingDate, session, player_id: playerId, rpe }, { onConflict: 'training_date,session,player_id' });
   if (error) throw error;
+  await recomputeMergedTrainingDaily(trainingDate, playerId);
 }
 
 export async function upsertSessionGroup(trainingDate: string, session: '오전' | '오후', playerId: string, groupType: string) {
@@ -1039,6 +1097,14 @@ export async function upsertSessionGroup(trainingDate: string, session: '오전'
     .from('session_group_manual')
     .upsert({ training_date: trainingDate, session, player_id: playerId, group_type: groupType }, { onConflict: 'training_date,session,player_id' });
   if (error) throw error;
+
+  const { data: existing } = await client
+    .from('training_daily')
+    .select('id')
+    .eq('training_date', trainingDate)
+    .eq('player_id', playerId)
+    .maybeSingle();
+  if (existing) await updateGroupType((existing as R).id as string, groupType);
 }
 
 export async function fetchPlayerAcwrHistory(playerId: string): Promise<AcwrDaily[]> {
