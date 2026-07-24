@@ -2855,32 +2855,6 @@ export async function upsertValdThresholds(rows: ValdThreshold[]): Promise<void>
   if (error) throw error;
 }
 
-// Physical 탭 레이더 차트의 "차트 해석"·"운동 처방" 문구를 LLM으로 생성 (Vercel Serverless Function 경유, API 키는 서버에만 존재)
-export interface AiPhysicalInsightRequest {
-  playerName: string;
-  axes: { key: string; ko: string; en: string; score: number | null; teamAvg: number | null }[];
-  imbalance: { label: string; percent: number } | null;
-  maturityStage: string | null;
-  height: number | null;
-  weight: number | null;
-}
-
-export interface AiPhysicalInsight {
-  interpretation: string;
-  prescriptionTitle: string;
-  prescriptionText: string;
-}
-
-export async function fetchAiPhysicalInsight(req: AiPhysicalInsightRequest): Promise<AiPhysicalInsight> {
-  const res = await fetch('/api/ai-insight', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  if (!res.ok) throw new Error('AI 문구 생성에 실패했습니다.');
-  return res.json();
-}
-
 export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));

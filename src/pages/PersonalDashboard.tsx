@@ -8,7 +8,7 @@ import {
 import {
   fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
-  fetchPlayerAcwrMultiMetric, fetchTeamAcwrData, fetchValdThresholds, fetchAiPhysicalInsight,
+  fetchPlayerAcwrMultiMetric, fetchTeamAcwrData, fetchValdThresholds,
   fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
@@ -18,7 +18,7 @@ import {
   AcwrComboChart, computeTeamLoadRange, METRIC_KEYS, getAcwrZone, ZONE_COLOR, ZONE_LABEL,
 } from './TeamDashboard';
 import type { PlayerWithAcwr, TrainingDaily, MatchData } from '../types';
-import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, ValdThreshold, AiPhysicalInsight } from '../lib/api';
+import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, ValdThreshold } from '../lib/api';
 
 type Tab = 'load' | 'match' | 'physical';
 const TABS: { id: Tab; label: string }[] = [
@@ -739,19 +739,18 @@ const RADAR_INJURY_EXERCISES: Record<string, { name: string; note: string; sets:
 
 const FIFA11_EXERCISE = { name: 'FIFA 11+ 스타일 워밍업', note: '전신(하체 중심)', sets: '1세트', reps: '15~20분', intensity: '저강도, 훈련 전 필수 루틴', purpose: '전반적 부상 예방 목적' };
 
-function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerName, maturityStage, height, weight }: {
+function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerName }: {
   record: PhysicalTestRow | null;
   grade: string | null;
   thresholds: ValdThreshold[];
   teamScores: Record<RadarAxisKey, number | null>[];
   playerName: string;
-  maturityStage: string | null;
-  height: number | null;
-  weight: number | null;
 }) {
-  const [aiInsight, setAiInsight] = useState<AiPhysicalInsight | null>(null);
+  if (!record) {
+    return <div className="chart-card text-center text-text-secondary py-8">피지컬 데이터가 없어 프로필을 표시할 수 없습니다.</div>;
+  }
 
-  const scores = record ? computeRadarScores(record, thresholds, grade) : { strength: null, power: null, speed: null, agility: null, balance: null };
+  const scores = computeRadarScores(record, thresholds, grade);
   const teamAvg = Object.fromEntries(
     RADAR_AXES.map(a => {
       const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
@@ -759,42 +758,15 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
     }),
   ) as Record<RadarAxisKey, number | null>;
 
-  const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
-  const best = [...validAxes].sort((a, b) => scores[b.key]! - scores[a.key]!)[0] ?? null;
-  const worst = [...validAxes].sort((a, b) => scores[a.key]! - scores[b.key]!)[0] ?? null;
-
-  // 팀 평균 대비 격차가 가장 큰(더 낮은) 항목을 처방 우선순위로 선정 (절대 최저점과 다를 수 있음)
-  const relativeWorst = [...validAxes]
-    .filter(a => teamAvg[a.key] != null)
-    .sort((a, b) => (scores[a.key]! - teamAvg[a.key]!) - (scores[b.key]! - teamAvg[b.key]!))[0] ?? worst;
-
-  const worstImbalance = record ? findWorstImbalance(record) : null;
-
-  useEffect(() => {
-    setAiInsight(null);
-    if (!record || !best || !worst) return;
-    let active = true;
-    fetchAiPhysicalInsight({
-      playerName,
-      axes: RADAR_AXES.map(a => ({ key: a.key, ko: a.ko, en: a.en, score: scores[a.key], teamAvg: teamAvg[a.key] })),
-      imbalance: worstImbalance && worstImbalance.imbalance >= 10 ? { label: worstImbalance.label, percent: worstImbalance.imbalance } : null,
-      maturityStage,
-      height,
-      weight,
-    }).then(res => { if (active) setAiInsight(res); }).catch(() => {});
-    return () => { active = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record?.id, playerName]);
-
-  if (!record) {
-    return <div className="chart-card text-center text-text-secondary py-8">피지컬 데이터가 없어 프로필을 표시할 수 없습니다.</div>;
-  }
-
   const chartData = RADAR_AXES.map(a => ({
     subject: a.en,
     개인: scores[a.key] != null ? +scores[a.key]!.toFixed(0) : 0,
     팀평균: teamAvg[a.key] != null ? +teamAvg[a.key]!.toFixed(0) : 0,
   }));
+
+  const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
+  const best = [...validAxes].sort((a, b) => scores[b.key]! - scores[a.key]!)[0] ?? null;
+  const worst = [...validAxes].sort((a, b) => scores[a.key]! - scores[b.key]!)[0] ?? null;
 
   const diffText = (axis: typeof RADAR_AXES[number]) => {
     const s = scores[axis.key]!;
@@ -803,6 +775,13 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
     const diff = Math.round(s - avg);
     return diff === 0 ? '팀 평균과 동일' : `팀 평균보다 ${Math.abs(diff)}점 ${diff > 0 ? '높음' : '낮음'}`;
   };
+
+  // 팀 평균 대비 격차가 가장 큰(더 낮은) 항목을 처방 우선순위로 선정 (절대 최저점과 다를 수 있음)
+  const relativeWorst = [...validAxes]
+    .filter(a => teamAvg[a.key] != null)
+    .sort((a, b) => (scores[a.key]! - teamAvg[a.key]!) - (scores[b.key]! - teamAvg[b.key]!))[0] ?? worst;
+
+  const worstImbalance = findWorstImbalance(record);
 
   return (
     <div className="chart-card">
@@ -831,12 +810,8 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
 
         <div className="space-y-3">
           <div className="rounded-lg border border-surface-secondary p-3">
-            <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">
-              차트 해석 {aiInsight && <span className="text-cyan-500 normal-case font-normal">· AI 생성</span>}
-            </div>
-            {aiInsight ? (
-              <p className="text-sm">{aiInsight.interpretation}</p>
-            ) : best && worst ? (
+            <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">차트 해석</div>
+            {best && worst ? (
               <p className="text-sm">
                 {playerName} 선수는 5개 항목 중 {best.ko}({best.en})가 {Math.round(scores[best.key]!)}점으로 가장 강점이며({diffText(best)}),
                 {' '}{worst.ko}({worst.en})가 {Math.round(scores[worst.key]!)}점으로 상대적으로 보완이 필요합니다({diffText(worst)}).
@@ -848,11 +823,9 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
 
           {relativeWorst && (
             <div className="rounded-lg border border-surface-secondary p-3">
-              <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">
-                운동 처방 {aiInsight && <span className="text-cyan-500 normal-case font-normal">· AI 생성</span>}
-              </div>
-              <p className="text-sm font-bold mb-1">{aiInsight ? aiInsight.prescriptionTitle : RADAR_PRESCRIPTION[relativeWorst.key].title}</p>
-              <p className="text-sm">{aiInsight ? aiInsight.prescriptionText : RADAR_PRESCRIPTION[relativeWorst.key].text}</p>
+              <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">운동 처방</div>
+              <p className="text-sm font-bold mb-1">{RADAR_PRESCRIPTION[relativeWorst.key].title}</p>
+              <p className="text-sm">{RADAR_PRESCRIPTION[relativeWorst.key].text}</p>
             </div>
           )}
 
@@ -958,13 +931,9 @@ function PhysicalTabPanel({ record, bodyComp, maturity, speed, grade, thresholds
   record: PhysicalTestRow | null; bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null; speed: SpeedCustomRow | null;
   grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
-  const latestBody = [...bodyComp].sort((a, b) => a.year - b.year || a.month - b.month).at(-1) ?? null;
   return (
     <div className="space-y-4">
-      <PhysicalRadarSection
-        record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName}
-        maturityStage={maturity?.maturity_stage ?? null} height={latestBody?.height ?? null} weight={latestBody?.weight ?? null}
-      />
+      <PhysicalRadarSection record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
       <AiPrescriptionCards record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} />
       <BodyCompositionSection rows={bodyComp} />
       <MaturitySection row={maturity} />
