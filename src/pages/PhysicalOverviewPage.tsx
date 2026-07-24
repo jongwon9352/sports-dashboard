@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, ReferenceArea, Legend,
-  ComposedChart, Scatter,
+  ComposedChart, Scatter, Area, Line,
 } from 'recharts';
 import {
   fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchValdThresholds,
+  fetchBodyCompositionRecords,
   VALD_METRIC_DEFS, VALD_GRADES, VALD_ACCESSORS,
-  type PhysicalTestRow, type MaturityRow, type SpeedCustomRow, type ValdThreshold,
+  type PhysicalTestRow, type MaturityRow, type SpeedCustomRow, type ValdThreshold, type BodyCompositionRow,
 } from '../lib/api';
 import type { Player, Grade } from '../types';
-import { colors } from '../styles/colors';
+import { colors, chartColors } from '../styles/colors';
 
 // 좌우 차이 % — VALD 표준: (큰 쪽 - 작은 쪽) / 큰 쪽 * 100, 부호는 R 기준
 function imbalancePercent(l: number, r: number): number {
@@ -749,6 +750,262 @@ function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomR
   );
 }
 
+// ── Body composition (팀 전체 월별 신장·체중·BMI 모니터링) ──────────────
+function bodyBmi(height: number | null, weight: number | null): number | null {
+  if (height == null || weight == null || height <= 0) return null;
+  return +(weight / ((height / 100) ** 2)).toFixed(1);
+}
+
+// BMI가 10 미만/45 초과면 구글 시트 자유 형식 파싱이 잘못됐을 가능성이 높은 이상치로 간주
+function isBmiOutlier(bmi: number | null): boolean {
+  return bmi != null && (bmi < 10 || bmi > 45);
+}
+
+function BodyStat({ label, unit, digits, cur, prev }: {
+  label: string; unit: string; digits: number;
+  cur: { avg: number; n: number } | null; prev: { avg: number } | null;
+}) {
+  if (!cur) return null;
+  const delta = prev ? +(cur.avg - prev.avg).toFixed(digits) : null;
+  const dir = delta == null ? 'flat' : delta > 0.005 ? 'up' : delta < -0.005 ? 'down' : 'flat';
+  const dirColor = dir === 'up' ? colors.safe : dir === 'down' ? colors.danger : 'var(--text-secondary)';
+  const sign = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '–';
+  return (
+    <div className="rounded-lg border border-surface-secondary p-3">
+      <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <div className="flex items-baseline gap-2 mt-1">
+        <span className="text-xl font-bold" style={{ fontFamily: 'var(--font-data)' }}>{cur.avg.toFixed(digits)}{unit}</span>
+        {delta != null && (
+          <span className="text-xs font-medium" style={{ color: dirColor, fontFamily: 'var(--font-data)' }}>
+            {sign}{Math.abs(delta).toFixed(digits)}{unit}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-text-secondary mt-0.5">전월 대비 · 측정 {cur.n}명</p>
+    </div>
+  );
+}
+
+function BodySparkline({ values, color }: { values: (number | null)[]; color: string }) {
+  const w = 150, h = 32;
+  const pts = values.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v != null);
+  if (pts.length < 2) return <svg width={w} height={h} />;
+  const min = Math.min(...pts.map(p => p.v));
+  const max = Math.max(...pts.map(p => p.v));
+  const rangeX = (pts[pts.length - 1].i - pts[0].i) || 1;
+  const coords = pts.map(p => {
+    const px = ((p.i - pts[0].i) / rangeX) * (w - 6) + 3;
+    const py = max === min ? h / 2 : h - 4 - ((p.v - min) / (max - min)) * (h - 8);
+    return [px, py] as const;
+  });
+  const path = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const last = coords[coords.length - 1];
+  const areaPath = `${path} L${last[0].toFixed(1)},${h} L${coords[0][0].toFixed(1)},${h} Z`;
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      <path d={areaPath} fill={color} opacity={0.12} />
+      <path d={path} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r={2.4} fill={color} />
+    </svg>
+  );
+}
+
+function BodyCompositionCharts({ rows }: { rows: BodyCompositionRow[] }) {
+  const [search, setSearch] = useState('');
+  const [trendMetric, setTrendMetric] = useState<'h' | 'w' | 'b'>('h');
+
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of rows) set.add(`${row.year}-${row.month}`);
+    return [...set]
+      .map(key => { const [year, month] = key.split('-').map(Number); return { year, month, key }; })
+      .sort((a, b) => a.year - b.year || a.month - b.month);
+  }, [rows]);
+
+  const byPlayer = useMemo(() => {
+    const map = new Map<string, { player_name: string; jersey_number: number | null; cells: Map<string, { height: number | null; weight: number | null }> }>();
+    for (const row of rows) {
+      if (!map.has(row.player_id)) {
+        map.set(row.player_id, { player_name: row.player_name, jersey_number: row.jersey_number, cells: new Map() });
+      }
+      map.get(row.player_id)!.cells.set(`${row.year}-${row.month}`, { height: row.height, weight: row.weight });
+    }
+    return [...map.entries()]
+      .filter(([, p]) => !search || p.player_name.toLowerCase().includes(search.toLowerCase()))
+      .sort(([, a], [, b]) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+  }, [rows, search]);
+
+  const monthlyStats = useMemo(() => {
+    return months.map(m => {
+      const heights: number[] = [], weights: number[] = [], bmis: number[] = [];
+      for (const row of rows) {
+        if (`${row.year}-${row.month}` !== m.key) continue;
+        if (row.height != null) heights.push(row.height);
+        if (row.weight != null) weights.push(row.weight);
+        const b = bodyBmi(row.height, row.weight);
+        if (b != null) bmis.push(b);
+      }
+      const stat = (arr: number[]) => arr.length ? { avg: arr.reduce((a, b) => a + b, 0) / arr.length, min: Math.min(...arr), max: Math.max(...arr), n: arr.length } : null;
+      return { ...m, h: stat(heights), w: stat(weights), b: stat(bmis) };
+    });
+  }, [months, rows]);
+
+  const trendChartData = monthlyStats.map(s => {
+    const st = s[trendMetric];
+    return { month: `${s.month}월`, min: st?.min ?? null, range: st ? +(st.max - st.min).toFixed(2) : null, avg: st ? +st.avg.toFixed(trendMetric === 'b' ? 2 : 1) : null };
+  });
+  const TREND_LABEL = { h: '신장(cm)', w: '체중(kg)', b: 'BMI' } as const;
+
+  const outliers = useMemo(() => {
+    return rows
+      .map(row => ({ row, bmi: bodyBmi(row.height, row.weight) }))
+      .filter(x => isBmiOutlier(x.bmi))
+      .sort((a, b) => a.row.player_name.localeCompare(b.row.player_name));
+  }, [rows]);
+
+  const leaderboard = useMemo(() => {
+    if (months.length < 2) return [];
+    const lastKey = months[months.length - 1].key, prevKey = months[months.length - 2].key;
+    return byPlayer
+      .map(([id, p]) => {
+        const from = p.cells.get(prevKey)?.weight ?? null;
+        const to = p.cells.get(lastKey)?.weight ?? null;
+        if (from == null || to == null) return null;
+        return { id, name: p.player_name, delta: +(to - from).toFixed(2), from, to };
+      })
+      .filter((x): x is { id: string; name: string; delta: number; from: number; to: number } => x != null)
+      .sort((a, b) => b.delta - a.delta)
+      .slice(0, 5);
+  }, [byPlayer, months]);
+  const maxLeaderboardDelta = Math.max(...leaderboard.map(r => r.delta), 0.1);
+
+  if (months.length === 0) {
+    return <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. 데이터 관리 &gt; 피지컬 데이터에서 동기화해주세요.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3 stat-grid-4">
+        <BodyStat label={`평균 신장 (${monthlyStats[monthlyStats.length - 1].month}월)`} unit="cm" digits={1}
+          cur={monthlyStats[monthlyStats.length - 1].h} prev={monthlyStats[monthlyStats.length - 2]?.h ?? null} />
+        <BodyStat label={`평균 체중 (${monthlyStats[monthlyStats.length - 1].month}월)`} unit="kg" digits={1}
+          cur={monthlyStats[monthlyStats.length - 1].w} prev={monthlyStats[monthlyStats.length - 2]?.w ?? null} />
+        <BodyStat label={`평균 BMI (${monthlyStats[monthlyStats.length - 1].month}월)`} unit="" digits={2}
+          cur={monthlyStats[monthlyStats.length - 1].b} prev={monthlyStats[monthlyStats.length - 2]?.b ?? null} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3">
+        <div className="chart-card">
+          <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+            <div className="chart-title !mb-0">팀 성장 추이</div>
+            <div className="flex gap-1 p-0.5 rounded-lg bg-surface-secondary">
+              {(['h', 'w', 'b'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setTrendMetric(m)}
+                  className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${trendMetric === m ? 'bg-surface font-semibold' : 'text-text-secondary'}`}
+                >
+                  {TREND_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[11px] text-text-secondary mb-2">팀 평균 {TREND_LABEL[trendMetric]} 추이 · 음영은 최저~최고 구간</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={trendChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} width={40} />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any, key: any) => key === 'avg' ? [v, '팀 평균'] : [v, key]} />
+              <Area type="monotone" dataKey="min" stackId="band" stroke="none" fill="transparent" />
+              <Area type="monotone" dataKey="range" stackId="band" stroke="none" fill={chartColors.grid} fillOpacity={0.9} name="최저~최고" />
+              <Line type="monotone" dataKey="avg" stroke={colors.navy} strokeWidth={2.5} dot={{ r: 3 }} name="팀 평균" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="chart-card">
+          <div className="chart-title">데이터 이상치 <span className="text-text-secondary font-normal text-xs">({outliers.length}건)</span></div>
+          <p className="text-[11px] text-text-secondary mb-2">셀 값이 자동 파싱 범위를 벗어나 확인이 필요한 항목 (BMI 10 미만 또는 45 초과)</p>
+          {outliers.length === 0 ? (
+            <p className="text-sm text-text-secondary py-2">✅ 이상 없음</p>
+          ) : (
+            <div className="space-y-2 max-h-[170px] overflow-y-auto">
+              {outliers.map((o, i) => (
+                <div key={i} className="rounded-lg p-2.5 bg-red-50 border border-red-200">
+                  <p className="text-xs font-bold">{o.row.player_name} · {o.row.year}.{o.row.month}월</p>
+                  <p className="text-[11px] text-text-secondary mt-0.5">
+                    신장 {o.row.height ?? '—'}cm · 체중 {o.row.weight ?? '—'}kg → BMI {o.bmi} — 시트에서 단위 구분 후 재확인 필요
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {leaderboard.length > 0 && (
+        <div className="chart-card">
+          <div className="chart-title">
+            이달의 변화 TOP 5 <span className="text-text-secondary font-normal text-xs">({months[months.length - 2].month}월 → {months[months.length - 1].month}월, 체중 증가량 기준)</span>
+          </div>
+          <div className="space-y-2 mt-2">
+            {leaderboard.map((r, i) => (
+              <div key={r.id} className="flex items-center gap-3">
+                <span className="w-5 text-text-secondary text-xs" style={{ fontFamily: 'var(--font-data)' }}>{i + 1}</span>
+                <span className="w-20 text-sm font-medium truncate">{r.name}</span>
+                <span className="w-28 text-sm font-semibold" style={{ color: colors.safe, fontFamily: 'var(--font-data)' }}>+{r.delta}kg</span>
+                <span className="w-28 text-xs text-text-secondary" style={{ fontFamily: 'var(--font-data)' }}>{r.from.toFixed(1)} → {r.to.toFixed(1)}kg</span>
+                <div className="flex-1 h-1.5 rounded bg-surface-secondary overflow-hidden">
+                  <div className="h-full rounded" style={{ width: `${(r.delta / maxLeaderboardDelta) * 100}%`, background: colors.safe }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <div className="text-xs font-bold text-text-secondary uppercase tracking-wide">선수별 추이 ({byPlayer.length}명)</div>
+          <input
+            type="text"
+            placeholder="이름 검색..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
+            style={{ fontFamily: 'var(--font-data)' }}
+          />
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
+          {byPlayer.map(([playerId, p]) => {
+            const heights = months.map(m => p.cells.get(m.key)?.height ?? null);
+            const weights = months.map(m => p.cells.get(m.key)?.weight ?? null);
+            const lastHeight = [...heights].reverse().find(v => v != null) ?? null;
+            const lastWeight = [...weights].reverse().find(v => v != null) ?? null;
+            const flagged = outliers.some(o => o.row.player_id === playerId);
+            return (
+              <div key={playerId} className={`rounded-lg border p-2.5 ${flagged ? 'border-red-300' : 'border-surface-secondary'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold">{p.player_name}</span>
+                  {flagged && <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">확인필요</span>}
+                </div>
+                <div className="flex gap-3 text-[11px] text-text-secondary mt-1">
+                  <span>키 <b className="text-[var(--text)]">{lastHeight ?? '—'}</b>cm</span>
+                  <span>체중 <b className="text-[var(--text)]">{lastWeight ?? '—'}</b>kg</span>
+                </div>
+                <BodySparkline values={heights} color={colors.navy} />
+                <BodySparkline values={weights} color={colors.wine} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Tab = 'vald' | 'body' | 'speed' | 'maturity';
 
 export function PhysicalOverviewPage() {
@@ -758,17 +1015,19 @@ export function PhysicalOverviewPage() {
   const [maturityRows, setMaturityRows] = useState<MaturityRow[]>([]);
   const [speedCustomRows, setSpeedCustomRows] = useState<SpeedCustomRow[]>([]);
   const [thresholds, setThresholds] = useState<ValdThreshold[]>([]);
+  const [bodyRows, setBodyRows] = useState<BodyCompositionRow[]>([]);
   const [gradeFilter, setGradeFilter] = useState<string>(VALD_GRADES[0]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords(), fetchSpeedCustomRecords(), fetchValdThresholds()])
-      .then(([p, records, maturity, speed, th]) => {
+    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords(), fetchSpeedCustomRecords(), fetchValdThresholds(), fetchBodyCompositionRecords()])
+      .then(([p, records, maturity, speed, th, body]) => {
         setPlayers(p);
         setAllRecords(records);
         setMaturityRows(maturity);
         setSpeedCustomRows(speed);
         setThresholds(th);
+        setBodyRows(body);
         setLoading(false);
       });
   }, []);
@@ -859,9 +1118,13 @@ export function PhysicalOverviewPage() {
         ) : (
           <SpeedCustomCharts rows={speedCustomRows} players={players} maturityRows={maturityRows} />
         )
-      ) : (
-        <p className="text-sm text-text-secondary text-center py-16">준비 중입니다.</p>
-      )}
+      ) : tab === 'body' ? (
+        loading ? (
+          <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
+        ) : (
+          <BodyCompositionCharts rows={bodyRows} />
+        )
+      ) : null}
     </div>
   );
 }
