@@ -345,6 +345,7 @@ export interface BodySheetMonthEntry {
   weight: number | null;
 }
 export interface BodySheetRow {
+  timestamp: string;
   player_name: string;
   entries: BodySheetMonthEntry[];
 }
@@ -363,6 +364,7 @@ export function parseBodySheetCsv(csvText: string): BodySheetRow[] {
   }
 
   return rows.slice(1).map(row => ({
+    timestamp: row[0] || '',
     player_name: row[1] || '',
     entries: monthCols.map(({ index, month }) => ({ month, ...parseHeightWeightFreeText(row[index] || '') })),
   })).filter(r => r.player_name);

@@ -2634,6 +2634,17 @@ export async function syncBodyCompositionFromGoogleSheet(): Promise<BodySyncResu
   const rows = parseBodySheetCsv(text);
   if (rows.length === 0) return { updatedCount: 0, unmatchedNames: [] };
 
+  // 같은 선수가 여러 번 응답했다면 최신 타임스탬프만 사용 (중복 시 동일 (player_id,year,month)를 한 배치에
+  // 두 번 upsert하게 되어 "ON CONFLICT DO UPDATE cannot affect row a second time" 오류가 발생하기 때문)
+  const latestByName = new Map<string, typeof rows[number]>();
+  for (const row of rows) {
+    const name = normalizeName(row.player_name);
+    const prev = latestByName.get(name);
+    if (!prev || (parseSheetTimestampToDate(row.timestamp) ?? '') > (parseSheetTimestampToDate(prev.timestamp) ?? '')) {
+      latestByName.set(name, row);
+    }
+  }
+
   const client = requireSupabase();
   const { data: players, error } = await client.from('players').select('id, name');
   if (error) throw error;
@@ -2643,8 +2654,8 @@ export async function syncBodyCompositionFromGoogleSheet(): Promise<BodySyncResu
   const growthRows: { player_id: string; year: number; month: number; height: number | null; weight: number | null }[] = [];
   const unmatchedNames: string[] = [];
 
-  for (const row of rows) {
-    const playerId = playerMap.get(normalizeName(row.player_name));
+  for (const [name, row] of latestByName) {
+    const playerId = playerMap.get(name);
     if (!playerId) {
       unmatchedNames.push(row.player_name);
       continue;
