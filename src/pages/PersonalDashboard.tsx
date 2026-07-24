@@ -3,11 +3,12 @@ import { useParams } from 'react-router-dom';
 import {
   BarChart, Bar, Legend, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from 'recharts';
 import {
   fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
-  fetchPlayerAcwrMultiMetric, fetchTeamAcwrData,
+  fetchPlayerAcwrMultiMetric, fetchTeamAcwrData, fetchValdThresholds,
   fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
@@ -17,7 +18,7 @@ import {
   AcwrComboChart, computeTeamLoadRange, METRIC_KEYS, getAcwrZone, ZONE_COLOR, ZONE_LABEL,
 } from './TeamDashboard';
 import type { PlayerWithAcwr, TrainingDaily, MatchData } from '../types';
-import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow } from '../lib/api';
+import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, ValdThreshold } from '../lib/api';
 
 type Tab = 'load' | 'match' | 'physical';
 const TABS: { id: Tab; label: string }[] = [
@@ -604,11 +605,336 @@ function PhysicalInsightBox({ record, maturity, speed }: { record: PhysicalTestR
   );
 }
 
-function PhysicalTabPanel({ record, bodyComp, maturity, speed }: {
+// ── 피지컬 프로필 레이더 차트 (Strength/Power/Speed/Agility/Balance) ──────
+// 데이터 관리에서 입력한 학년별 임계값(vald_thresholds)의 최저~최고 구간을 0~100점으로 환산해 사용한다.
+type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'balance';
+const RADAR_AXES: { key: RadarAxisKey; ko: string; en: string }[] = [
+  { key: 'strength', ko: '근력', en: 'Strength' },
+  { key: 'power', ko: '순발력', en: 'Power' },
+  { key: 'speed', ko: '스피드', en: 'Speed' },
+  { key: 'agility', ko: '민첩성', en: 'Agility' },
+  { key: 'balance', ko: '밸런스', en: 'Balance' },
+];
+const STRENGTH_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'];
+const POWER_METRIC_KEYS = ['cmj_height', 'squat_jump_height'];
+const SPEED_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
+const AGILITY_METRIC_KEYS = ['cod_run', 'cod_ball'];
+
+function scoreForMetric(metricKey: string, value: number | null, thresholds: ValdThreshold[], grade: string | null): number | null {
+  if (value == null) return null;
+  const t = thresholds.find(x => x.metric_key === metricKey && x.grade === grade)
+    ?? thresholds.find(x => x.metric_key === metricKey && x.grade === '전체');
+  if (!t || t.min_value == null || t.max_value == null || t.max_value === t.min_value) return null;
+  const def = VALD_METRIC_DEFS.find(d => d.key === metricKey);
+  const ratio = def?.invert
+    ? (t.max_value - value) / (t.max_value - t.min_value)
+    : (value - t.min_value) / (t.max_value - t.min_value);
+  return Math.max(0, Math.min(100, ratio * 100));
+}
+
+function avgScoreForGroup(keys: string[], record: PhysicalTestRow, thresholds: ValdThreshold[], grade: string | null): number | null {
+  const scores = keys
+    .map(k => scoreForMetric(k, computeValdValue(k, record), thresholds, grade))
+    .filter((s): s is number => s != null);
+  if (scores.length === 0) return null;
+  return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+
+function balanceScore(record: PhysicalTestRow): number | null {
+  const imbalances: number[] = [];
+  for (const key of STRENGTH_METRIC_KEYS) {
+    const acc = VALD_ACCESSORS[key];
+    if (!acc.left || !acc.right) continue;
+    const l = acc.left(record);
+    const r = acc.right(record);
+    if (l == null || r == null) continue;
+    imbalances.push(Math.abs(imbalancePercent(l, r)));
+  }
+  if (imbalances.length === 0) return null;
+  const avgImbalance = imbalances.reduce((a, b) => a + b, 0) / imbalances.length;
+  return Math.max(0, Math.min(100, 100 - avgImbalance * 5));
+}
+
+function computeRadarScores(record: PhysicalTestRow | null, thresholds: ValdThreshold[], grade: string | null): Record<RadarAxisKey, number | null> {
+  if (!record) return { strength: null, power: null, speed: null, agility: null, balance: null };
+  return {
+    strength: avgScoreForGroup(STRENGTH_METRIC_KEYS, record, thresholds, grade),
+    power: avgScoreForGroup(POWER_METRIC_KEYS, record, thresholds, grade),
+    speed: avgScoreForGroup(SPEED_METRIC_KEYS, record, thresholds, grade),
+    agility: avgScoreForGroup(AGILITY_METRIC_KEYS, record, thresholds, grade),
+    balance: balanceScore(record),
+  };
+}
+
+function findWorstImbalance(record: PhysicalTestRow | null): { key: string; label: string; imbalance: number } | null {
+  if (!record) return null;
+  let worst: { key: string; label: string; imbalance: number } | null = null;
+  for (const key of STRENGTH_METRIC_KEYS) {
+    const acc = VALD_ACCESSORS[key];
+    const def = VALD_METRIC_DEFS.find(d => d.key === key);
+    if (!acc.left || !acc.right || !def) continue;
+    const l = acc.left(record);
+    const r = acc.right(record);
+    if (l == null || r == null) continue;
+    const imb = Math.abs(imbalancePercent(l, r));
+    if (!worst || imb > worst.imbalance) worst = { key, label: def.label, imbalance: imb };
+  }
+  return worst;
+}
+
+const RADAR_PRESCRIPTION: Record<RadarAxisKey, { title: string; text: string }> = {
+  strength: { title: '근력 (Strength) 보완', text: '팀 평균 대비 근력(Nordic Curl·Hip Ab/Add·Ham Iso)이 낮습니다. 하체·고관절 근력 강화 훈련이 필요합니다.' },
+  power: { title: '순발력 (Power) 보완', text: '팀 평균 대비 순발력(CMJ·Squat Jump)이 낮습니다. 플라이오메트릭·폭발적 근력 훈련이 필요합니다.' },
+  speed: { title: '스피드 (Speed) 보완', text: '팀 평균 대비 스피드(5·10·30m 스프린트)가 낮습니다. 가속 구간 스프린트 기술 훈련이 필요합니다.' },
+  agility: { title: '민첩성 (Agility) 보완', text: '팀 평균 대비 민첩성(방향전환)이 낮습니다. 방향전환 기술과 감속 능력 훈련이 필요합니다.' },
+  balance: { title: '밸런스 (Balance) 보완', text: '팀 평균 대비 밸런스(방향전환·좌우 균형)가 낮습니다. 편측 안정화·코어 훈련과 방향전환 기술 훈련이 필요합니다.' },
+};
+
+const RADAR_REINFORCE_EXERCISES: Record<RadarAxisKey, { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string }[]> = {
+  strength: [
+    { name: 'Nordic Hamstring Curl', note: '햄스트링 근력', sets: '3세트', reps: '6~8회', intensity: '중강도', purpose: '햄스트링 편심성 근력 보강 목적' },
+    { name: 'Copenhagen Plank', note: '내전근·고관절', sets: '3세트', reps: '20~30초 × 좌우', intensity: '중강도', purpose: '고관절 내전·외전근 보강 목적' },
+    { name: 'Bulgarian Split Squat', note: '하체 편측 근력', sets: '3세트', reps: '8회 × 좌우', intensity: '중~고강도, 덤벨 병행 가능', purpose: '편측 하체 근력 보강 목적' },
+  ],
+  power: [
+    { name: 'Depth Jump', note: '반응 파워', sets: '3세트', reps: '5회', intensity: '고강도', purpose: '착지 후 폭발적 반응력 보강 목적' },
+    { name: 'Box Jump', note: '수직 파워', sets: '4세트', reps: '5회', intensity: '고강도', purpose: '수직 점프 파워 보강 목적' },
+    { name: 'Squat Jump (부하)', note: '최대근력 기반 파워', sets: '3세트', reps: '6회', intensity: '중~고강도', purpose: 'EUR 개선 및 최대근력 훈련 목적' },
+  ],
+  speed: [
+    { name: '가속 스프린트 드릴', note: '0~10m 가속력', sets: '5세트', reps: '10m × 5회', intensity: '고강도', purpose: '초기 가속 구간 스피드 보강 목적' },
+    { name: 'Resisted Sprint (썰매)', note: '가속 파워', sets: '4세트', reps: '20m × 4회', intensity: '고강도', purpose: '가속 구간 근력·스피드 보강 목적' },
+    { name: 'Flying Sprint', note: '최고 속도 구간', sets: '3세트', reps: '20m(가속 후) × 3회', intensity: '고강도', purpose: '최고 속도 구간 스피드 보강 목적' },
+  ],
+  agility: [
+    { name: '방향전환 래더 드릴', note: '민첩성·무게중심 제어', sets: '4세트', reps: '10초', intensity: '중강도', purpose: '방향전환 반응 속도 보강 목적' },
+    { name: '5-10-5 Pro Agility Drill', note: '급가속·급감속', sets: '4세트', reps: '1회 × 좌우', intensity: '고강도', purpose: '방향전환 민첩성 보강 목적' },
+    { name: 'Reactive Cone Drill (볼 포함)', note: '경기 상황 민첩성', sets: '3세트', reps: '30초', intensity: '중~고강도', purpose: '볼 소유 상황 방향전환 보강 목적' },
+  ],
+  balance: [
+    { name: 'Single-leg RDL', note: '편측 밸런스·고관절', sets: '3세트', reps: '8회 × 좌우', intensity: '저~중강도, 덤벨 병행 가능', purpose: '밸런스 보강 목적' },
+    { name: 'Bosu 밸런스 스쿼트', note: '고유수용성감각', sets: '3세트', reps: '10회', intensity: '저강도', purpose: '밸런스 보강 목적' },
+    { name: '방향전환 래더 드릴', note: '민첩성·무게중심 제어', sets: '4세트', reps: '10초', intensity: '중강도', purpose: '밸런스 보강 목적' },
+  ],
+};
+
+const RADAR_INJURY_EXERCISES: Record<string, { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string }[]> = {
+  hip_abduction: [
+    { name: 'Side-lying Hip Abduction', note: '고관절 외전근(약한 쪽 우선)', sets: '3세트', reps: '12~15회', intensity: '저강도, 밴드 저항 추가 가능', purpose: 'Hip Abduction 좌우 불균형 완화 목적' },
+    { name: 'Lateral Band Walk', note: '고관절·둔근', sets: '3세트', reps: '10걸음 × 좌우', intensity: '중강도', purpose: 'Hip Abduction 좌우 불균형 완화 목적' },
+  ],
+  hip_adduction: [
+    { name: 'Copenhagen Plank', note: '내전근(약한 쪽 우선)', sets: '3세트', reps: '20~30초 × 좌우', intensity: '중강도', purpose: 'Hip Adduction 좌우 불균형 완화 목적' },
+    { name: 'Adductor Squeeze', note: '내전근', sets: '3세트', reps: '10회 × 8초 유지', intensity: '저~중강도', purpose: 'Hip Adduction 좌우 불균형 완화 목적' },
+  ],
+  nordic_curl: [
+    { name: 'Nordic Hamstring Curl (편측 강조)', note: '햄스트링(약한 쪽 우선)', sets: '3세트', reps: '6회 × 좌우', intensity: '중강도', purpose: 'Nordic Curl 좌우 불균형 완화 목적' },
+    { name: 'Single-leg RDL', note: '햄스트링·밸런스', sets: '3세트', reps: '8회 × 좌우', intensity: '저~중강도', purpose: 'Nordic Curl 좌우 불균형 완화 목적' },
+  ],
+  ham_iso: [
+    { name: 'Hamstring Iso Prone Hold (편측 강조)', note: '햄스트링 등척성(약한 쪽 우선)', sets: '3세트', reps: '20~30초 × 좌우', intensity: '중강도', purpose: 'Ham Iso 좌우 불균형 완화 목적' },
+    { name: 'Nordic Hamstring Curl', note: '햄스트링', sets: '3세트', reps: '6회', intensity: '중강도', purpose: 'Ham Iso 좌우 불균형 완화 목적' },
+  ],
+};
+
+const FIFA11_EXERCISE = { name: 'FIFA 11+ 스타일 워밍업', note: '전신(하체 중심)', sets: '1세트', reps: '15~20분', intensity: '저강도, 훈련 전 필수 루틴', purpose: '전반적 부상 예방 목적' };
+
+function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerName }: {
+  record: PhysicalTestRow | null;
+  grade: string | null;
+  thresholds: ValdThreshold[];
+  teamScores: Record<RadarAxisKey, number | null>[];
+  playerName: string;
+}) {
+  if (!record) {
+    return <div className="chart-card text-center text-text-secondary py-8">피지컬 데이터가 없어 프로필을 표시할 수 없습니다.</div>;
+  }
+
+  const scores = computeRadarScores(record, thresholds, grade);
+  const teamAvg = Object.fromEntries(
+    RADAR_AXES.map(a => {
+      const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
+      return [a.key, vals.length > 0 ? vals.reduce((x, y) => x + y, 0) / vals.length : null];
+    }),
+  ) as Record<RadarAxisKey, number | null>;
+
+  const chartData = RADAR_AXES.map(a => ({
+    subject: a.en,
+    개인: scores[a.key] != null ? +scores[a.key]!.toFixed(0) : 0,
+    팀평균: teamAvg[a.key] != null ? +teamAvg[a.key]!.toFixed(0) : 0,
+  }));
+
+  const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
+  const best = [...validAxes].sort((a, b) => scores[b.key]! - scores[a.key]!)[0] ?? null;
+  const worst = [...validAxes].sort((a, b) => scores[a.key]! - scores[b.key]!)[0] ?? null;
+
+  const diffText = (axis: typeof RADAR_AXES[number]) => {
+    const s = scores[axis.key]!;
+    const avg = teamAvg[axis.key];
+    if (avg == null) return '';
+    const diff = Math.round(s - avg);
+    return diff === 0 ? '팀 평균과 동일' : `팀 평균보다 ${Math.abs(diff)}점 ${diff > 0 ? '높음' : '낮음'}`;
+  };
+
+  // 팀 평균 대비 격차가 가장 큰(더 낮은) 항목을 처방 우선순위로 선정 (절대 최저점과 다를 수 있음)
+  const relativeWorst = [...validAxes]
+    .filter(a => teamAvg[a.key] != null)
+    .sort((a, b) => (scores[a.key]! - teamAvg[a.key]!) - (scores[b.key]! - teamAvg[b.key]!))[0] ?? worst;
+
+  const worstImbalance = findWorstImbalance(record);
+
+  return (
+    <div className="chart-card">
+      <div className="chart-title">피지컬 프로필 (STRENGTH · POWER · SPEED · AGILITY · BALANCE)</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <ResponsiveContainer width="100%" height={280}>
+            <RadarChart data={chartData}>
+              <PolarGrid stroke={chartColors.grid} />
+              <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
+              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} />
+              <Radar name="개인" dataKey="개인" stroke={colors.danger} fill={colors.danger} fillOpacity={0.35} />
+              <Radar name="팀 평균" dataKey="팀평균" stroke={colors.navy} fill={colors.navy} fillOpacity={0.08} strokeDasharray="4 3" />
+              <Legend />
+            </RadarChart>
+          </ResponsiveContainer>
+          <div className="grid grid-cols-5 gap-2 stat-grid-4 mt-1">
+            {RADAR_AXES.map(a => (
+              <div key={a.key} className="text-center">
+                <p className="text-[10px] text-text-disabled" style={{ fontFamily: 'var(--font-data)' }}>{a.en}</p>
+                <p className="text-lg font-bold" style={{ color: colors.danger }}>{scores[a.key] != null ? Math.round(scores[a.key]!) : '—'}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-lg border border-surface-secondary p-3">
+            <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">차트 해석</div>
+            {best && worst ? (
+              <p className="text-sm">
+                {playerName} 선수는 5개 항목 중 {best.ko}({best.en})가 {Math.round(scores[best.key]!)}점으로 가장 강점이며({diffText(best)}),
+                {' '}{worst.ko}({worst.en})가 {Math.round(scores[worst.key]!)}점으로 상대적으로 보완이 필요합니다({diffText(worst)}).
+              </p>
+            ) : (
+              <p className="text-sm text-text-secondary">임계값(데이터 관리)이 입력되지 않아 점수를 계산할 수 없습니다.</p>
+            )}
+          </div>
+
+          {relativeWorst && (
+            <div className="rounded-lg border border-surface-secondary p-3">
+              <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">운동 처방</div>
+              <p className="text-sm font-bold mb-1">{RADAR_PRESCRIPTION[relativeWorst.key].title}</p>
+              <p className="text-sm">{RADAR_PRESCRIPTION[relativeWorst.key].text}</p>
+            </div>
+          )}
+
+          <div className={`rounded-lg border p-3 ${worstImbalance && worstImbalance.imbalance >= 10 ? 'border-red-200 bg-red-50' : 'border-surface-secondary'}`}>
+            <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">부상 예방</div>
+            {worstImbalance && worstImbalance.imbalance >= 10 ? (
+              <p className="text-sm text-red-700">
+                {worstImbalance.label} 좌우 불균형이 {worstImbalance.imbalance.toFixed(1)}%로 부상 위험 기준(10%)을 넘습니다 —
+                방향전환 시 무게중심 제어와 편측 부상(햄스트링·서혜부) 위험이 높아질 수 있어 편측 보강 훈련을 우선하세요.
+              </p>
+            ) : (
+              <p className="text-sm text-text-secondary">✅ 좌우 불균형이 안정적인 범위입니다.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AiPrescriptionCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  return (
+    <div className="chart-card">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">{icon}</span>
+        <span className="chart-title !mb-0">{title}</span>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function ExerciseItem({ ex }: { ex: { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string } }) {
+  return (
+    <div className="rounded-lg border border-surface-secondary p-3">
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <span className="text-sm font-bold">{ex.name}</span>
+        <span className="text-[11px] text-text-secondary whitespace-nowrap">{ex.note}</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-1.5">
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">{ex.sets}</span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">{ex.reps}</span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">{ex.intensity}</span>
+      </div>
+      <p className="text-[12px] text-text-secondary">{ex.purpose}</p>
+    </div>
+  );
+}
+
+function AiPrescriptionCards({ record, grade, thresholds, teamScores }: {
+  record: PhysicalTestRow | null; grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
+}) {
+  if (!record) return null;
+  const scores = computeRadarScores(record, thresholds, grade);
+  const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
+  const teamAvg = Object.fromEntries(
+    RADAR_AXES.map(a => {
+      const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
+      return [a.key, vals.length > 0 ? vals.reduce((x, y) => x + y, 0) / vals.length : null];
+    }),
+  ) as Record<RadarAxisKey, number | null>;
+  const relativeWorst = [...validAxes]
+    .filter(a => teamAvg[a.key] != null)
+    .sort((a, b) => (scores[a.key]! - teamAvg[a.key]!) - (scores[b.key]! - teamAvg[b.key]!))[0] ?? null;
+
+  const worstImbalance = findWorstImbalance(record);
+  const injuryExercises = worstImbalance && worstImbalance.imbalance >= 10
+    ? [...(RADAR_INJURY_EXERCISES[worstImbalance.key] ?? []), FIFA11_EXERCISE]
+    : [FIFA11_EXERCISE];
+
+  return (
+    <div>
+      <div className="text-xs text-text-disabled uppercase tracking-[2px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>AI 운동 처방</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <AiPrescriptionCard icon="💪" title="보강">
+          {relativeWorst
+            ? RADAR_REINFORCE_EXERCISES[relativeWorst.key].map((ex, i) => <ExerciseItem key={i} ex={ex} />)
+            : <p className="text-sm text-text-secondary">임계값 데이터가 없어 추천할 수 없습니다.</p>}
+        </AiPrescriptionCard>
+        <AiPrescriptionCard icon="🛡️" title="부상 예방">
+          {injuryExercises.map((ex, i) => <ExerciseItem key={i} ex={ex} />)}
+        </AiPrescriptionCard>
+        <AiPrescriptionCard icon="🚀" title="퍼포먼스 향상">
+          <div className="rounded-lg border border-surface-secondary p-3">
+            <div className="flex items-baseline justify-between gap-2 mb-1.5">
+              <span className="text-sm font-bold">포지션별 반응 훈련</span>
+              <span className="text-[11px] text-text-secondary whitespace-nowrap">경기 전술 적용력</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">3세트</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">10분</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">중강도</span>
+            </div>
+            <p className="text-[12px] text-text-secondary">경기 데이터가 안정적이라 현재 루틴을 유지하며 전술 적용력을 강화하세요.</p>
+          </div>
+        </AiPrescriptionCard>
+      </div>
+    </div>
+  );
+}
+
+function PhysicalTabPanel({ record, bodyComp, maturity, speed, grade, thresholds, teamScores, playerName }: {
   record: PhysicalTestRow | null; bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+  grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
   return (
     <div className="space-y-4">
+      <PhysicalRadarSection record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
+      <AiPrescriptionCards record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} />
       <BodyCompositionSection rows={bodyComp} />
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
@@ -633,6 +959,8 @@ export function PersonalDashboard() {
   const [speed, setSpeed] = useState<SpeedCustomRow | null>(null);
   const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
+  const [valdThresholds, setValdThresholds] = useState<ValdThreshold[]>([]);
+  const [teamLatestPhysical, setTeamLatestPhysical] = useState<Map<string, PhysicalTestRow>>(new Map());
 
   useEffect(() => {
     fetchPlayersWithAcwr().then(p => {
@@ -647,6 +975,7 @@ export function PersonalDashboard() {
       );
       setTeamLoadRange(range);
     });
+    fetchValdThresholds().then(setValdThresholds);
   }, []);
 
   useEffect(() => {
@@ -667,6 +996,11 @@ export function PersonalDashboard() {
       setMatches(matchData);
       const own = physicalRows.filter(r => r.player_id === selectedId).sort((a, b) => b.test_date.localeCompare(a.test_date));
       setPhysicalRecord(own[0] ?? null);
+      const latestByPlayer = new Map<string, PhysicalTestRow>();
+      for (const r of [...physicalRows].sort((a, b) => a.test_date.localeCompare(b.test_date))) {
+        latestByPlayer.set(r.player_id, r);
+      }
+      setTeamLatestPhysical(latestByPlayer);
       setBodyComp(bodyRows.filter(r => r.player_id === selectedId));
       setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
       setSpeed(speedRows.find(r => r.player_id === selectedId) ?? null);
@@ -675,6 +1009,9 @@ export function PersonalDashboard() {
   }, [selectedId]);
 
   const player = players.find(p => p.id === selectedId) ?? null;
+  const teamRadarScores = players.map(p =>
+    computeRadarScores(teamLatestPhysical.get(p.id) ?? null, valdThresholds, p.grade ?? null),
+  );
 
   if (loading) {
     return <div className="p-8 text-text-secondary text-center">Loading...</div>;
@@ -748,7 +1085,18 @@ export function PersonalDashboard() {
 
         {player && tab === 'load' && <LoadTab dailyData={dailyData} multiMetric={multiMetric} teamLoadRange={teamLoadRange} />}
         {tab === 'match' && <PersonalMatchTab matches={matches} />}
-        {tab === 'physical' && <PhysicalTabPanel record={physicalRecord} bodyComp={bodyComp} maturity={maturity} speed={speed} />}
+        {tab === 'physical' && (
+          <PhysicalTabPanel
+            record={physicalRecord}
+            bodyComp={bodyComp}
+            maturity={maturity}
+            speed={speed}
+            grade={player?.grade ?? null}
+            thresholds={valdThresholds}
+            teamScores={teamRadarScores}
+            playerName={player?.name ?? ''}
+          />
+        )}
       </div>
     </div>
   );
