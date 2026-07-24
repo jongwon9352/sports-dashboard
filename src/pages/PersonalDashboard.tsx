@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   BarChart, Bar, Legend, LineChart, Line,
@@ -927,8 +927,61 @@ function AiPrescriptionCards({ record, grade, thresholds, teamScores }: {
   );
 }
 
-function PhysicalTabPanel({ record, bodyComp, maturity, speed, grade, thresholds, teamScores, playerName }: {
-  record: PhysicalTestRow | null; bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+// 팀 전체 기준 "이달의 변화" TOP 5 (최근 두 달 사이 체중 증가량) — 개인 대시보드에서도 팀 맥락을 참고할 수 있도록 표시
+function MonthlyChangeLeaderboard({ allBodyComp, selectedId }: { allBodyComp: BodyCompositionRow[]; selectedId: string }) {
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of allBodyComp) set.add(`${row.year}-${row.month}`);
+    return [...set]
+      .map(key => { const [year, month] = key.split('-').map(Number); return { year, month, key }; })
+      .sort((a, b) => a.year - b.year || a.month - b.month);
+  }, [allBodyComp]);
+
+  const leaderboard = useMemo(() => {
+    if (months.length < 2) return [];
+    const lastKey = months[months.length - 1].key, prevKey = months[months.length - 2].key;
+    const byPlayer = new Map<string, { name: string; from: number | null; to: number | null }>();
+    for (const row of allBodyComp) {
+      if (!byPlayer.has(row.player_id)) byPlayer.set(row.player_id, { name: row.player_name, from: null, to: null });
+      const key = `${row.year}-${row.month}`;
+      if (key === prevKey) byPlayer.get(row.player_id)!.from = row.weight;
+      if (key === lastKey) byPlayer.get(row.player_id)!.to = row.weight;
+    }
+    return [...byPlayer.entries()]
+      .map(([id, p]) => (p.from == null || p.to == null) ? null : { id, name: p.name, delta: +(p.to - p.from).toFixed(2), from: p.from, to: p.to })
+      .filter((x): x is { id: string; name: string; delta: number; from: number; to: number } => x != null)
+      .sort((a, b) => b.delta - a.delta)
+      .slice(0, 5);
+  }, [allBodyComp, months]);
+
+  if (leaderboard.length === 0) return null;
+  const maxDelta = Math.max(...leaderboard.map(r => r.delta), 0.1);
+
+  return (
+    <div className="chart-card">
+      <div className="chart-title">
+        이달의 변화 TOP 5 <span className="text-text-secondary font-normal text-xs">({months[months.length - 2].month}월 → {months[months.length - 1].month}월, 팀 전체 체중 증가량 기준)</span>
+      </div>
+      <div className="space-y-2 mt-2">
+        {leaderboard.map((r, i) => (
+          <div key={r.id} className={`flex items-center gap-3 ${r.id === selectedId ? 'bg-cyan-50 -mx-2 px-2 py-1 rounded-lg' : ''}`}>
+            <span className="w-5 text-text-secondary text-xs" style={{ fontFamily: 'var(--font-data)' }}>{i + 1}</span>
+            <span className="w-20 text-sm font-medium truncate">{r.name}</span>
+            <span className="w-28 text-sm font-semibold" style={{ color: colors.safe, fontFamily: 'var(--font-data)' }}>+{r.delta}kg</span>
+            <span className="w-28 text-xs text-text-secondary" style={{ fontFamily: 'var(--font-data)' }}>{r.from.toFixed(1)} → {r.to.toFixed(1)}kg</span>
+            <div className="flex-1 h-1.5 rounded bg-surface-secondary overflow-hidden">
+              <div className="h-full rounded" style={{ width: `${(r.delta / maxDelta) * 100}%`, background: colors.safe }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PhysicalTabPanel({ record, bodyComp, allBodyComp, selectedId, maturity, speed, grade, thresholds, teamScores, playerName }: {
+  record: PhysicalTestRow | null; bodyComp: BodyCompositionRow[]; allBodyComp: BodyCompositionRow[]; selectedId: string;
+  maturity: MaturityRow | null; speed: SpeedCustomRow | null;
   grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
   return (
@@ -936,6 +989,7 @@ function PhysicalTabPanel({ record, bodyComp, maturity, speed, grade, thresholds
       <PhysicalRadarSection record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
       <AiPrescriptionCards record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} />
       <BodyCompositionSection rows={bodyComp} />
+      <MonthlyChangeLeaderboard allBodyComp={allBodyComp} selectedId={selectedId} />
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
       <SpeedCustomSection row={speed} />
@@ -961,6 +1015,7 @@ export function PersonalDashboard() {
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
   const [valdThresholds, setValdThresholds] = useState<ValdThreshold[]>([]);
   const [teamLatestPhysical, setTeamLatestPhysical] = useState<Map<string, PhysicalTestRow>>(new Map());
+  const [allBodyComp, setAllBodyComp] = useState<BodyCompositionRow[]>([]);
 
   useEffect(() => {
     fetchPlayersWithAcwr().then(p => {
@@ -1001,6 +1056,7 @@ export function PersonalDashboard() {
         latestByPlayer.set(r.player_id, r);
       }
       setTeamLatestPhysical(latestByPlayer);
+      setAllBodyComp(bodyRows);
       setBodyComp(bodyRows.filter(r => r.player_id === selectedId));
       setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
       setSpeed(speedRows.find(r => r.player_id === selectedId) ?? null);
@@ -1089,6 +1145,8 @@ export function PersonalDashboard() {
           <PhysicalTabPanel
             record={physicalRecord}
             bodyComp={bodyComp}
+            allBodyComp={allBodyComp}
+            selectedId={selectedId}
             maturity={maturity}
             speed={speed}
             grade={player?.grade ?? null}
