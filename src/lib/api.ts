@@ -11,11 +11,12 @@ import {
   getAcwrZone,
 } from '../utils/calculations';
 import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow, ParsedBodyCompositionRow, ForcedecksRow, NordbordRow, ForceframeRow, SmartspeedRow } from '../utils/csvParser';
-import { parseMaturitySheetCsv, parseSheetTimestampToDate, parseDailyCsv } from '../utils/csvParser';
+import { parseMaturitySheetCsv, parseSheetTimestampToDate, parseDailyCsv, parseBodySheetCsv } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
 const GOOGLE_SHEET_MATURITY_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqPvqKWf2mgJBub7W6ZlU4RInG4GeYF37brcZmCiO0bT7wnF3JEPp2GekynyxTARrl1IYbNJpLJ3Iy/pub?gid=1965396254&single=true&output=csv';
+const GOOGLE_SHEET_BODY_URL = 'https://docs.google.com/spreadsheets/d/1dV8bxty3ScTlDkn2jLcZbIcvuIQjaWduQjmuz5gbQcM/export?format=csv&gid=953747735';
 
 export interface GoogleSheetRpe {
   date: string;
@@ -2617,6 +2618,51 @@ export async function syncMaturityFromGoogleSheet(): Promise<MaturitySyncResult>
   }
 
   return { updatedCount, unmatchedNames };
+}
+
+// 구글 시트(월별 신장·체중 자동 기록)에서 growth_tracking으로 동기화한다.
+// 시트 헤더의 "N월" 열은 올해(진행 연도) 기록으로 간주한다.
+export interface BodySyncResult {
+  updatedCount: number;
+  unmatchedNames: string[];
+}
+
+export async function syncBodyCompositionFromGoogleSheet(): Promise<BodySyncResult> {
+  const res = await fetch(GOOGLE_SHEET_BODY_URL);
+  if (!res.ok) throw new Error('구글 시트를 불러올 수 없습니다.');
+  const text = await res.text();
+  const rows = parseBodySheetCsv(text);
+  if (rows.length === 0) return { updatedCount: 0, unmatchedNames: [] };
+
+  const client = requireSupabase();
+  const { data: players, error } = await client.from('players').select('id, name');
+  if (error) throw error;
+  const playerMap = new Map(((players as R[]) ?? []).map(p => [normalizeName(p.name as string), p.id as string]));
+
+  const year = new Date().getFullYear();
+  const growthRows: { player_id: string; year: number; month: number; height: number | null; weight: number | null }[] = [];
+  const unmatchedNames: string[] = [];
+
+  for (const row of rows) {
+    const playerId = playerMap.get(normalizeName(row.player_name));
+    if (!playerId) {
+      unmatchedNames.push(row.player_name);
+      continue;
+    }
+    for (const entry of row.entries) {
+      if (entry.height == null && entry.weight == null) continue;
+      growthRows.push({ player_id: playerId, year, month: entry.month, height: entry.height, weight: entry.weight });
+    }
+  }
+
+  if (growthRows.length === 0) return { updatedCount: 0, unmatchedNames };
+
+  const { error: upsertError } = await client
+    .from('growth_tracking')
+    .upsert(growthRows, { onConflict: 'player_id,year,month' });
+  if (upsertError) throw upsertError;
+
+  return { updatedCount: growthRows.length, unmatchedNames };
 }
 
 // 선택한 선수들의 신체 성숙도 입력값을 초기화(명단에서 제외 효과)

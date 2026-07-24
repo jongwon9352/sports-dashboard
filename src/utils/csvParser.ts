@@ -324,6 +324,50 @@ export function parseBodyCompositionCsv(csvText: string): ParsedBodyCompositionR
   })).filter(r => r.player_name);
 }
 
+// "159cm,40kg" / "156cm 41kg" / "169cm59kg" / "177.8 70kg" / "170kg.59kg"(오타) 등
+// 자유 형식으로 입력된 셀에서 키(cm)·몸무게(kg)를 추출한다.
+function parseHeightWeightFreeText(raw: string): { height: number | null; weight: number | null } {
+  if (!raw) return { height: null, weight: null };
+  const kgMatches = [...raw.matchAll(/(\d+\.?\d*)\s*kg/gi)];
+  const weight = kgMatches.length > 0 ? parseFloat(kgMatches[kgMatches.length - 1][1]) : null;
+  const cmMatches = [...raw.matchAll(/(\d+\.?\d*)\s*cm/gi)];
+  let height = cmMatches.length > 0 ? parseFloat(cmMatches[0][1]) : null;
+  if (height == null) {
+    const allNums = [...raw.matchAll(/\d+\.?\d*/g)].map(m => parseFloat(m[0]));
+    if (allNums.length >= 2) height = allNums[0];
+  }
+  return { height: height != null && !isNaN(height) ? height : null, weight: weight != null && !isNaN(weight) ? weight : null };
+}
+
+export interface BodySheetMonthEntry {
+  month: number;
+  height: number | null;
+  weight: number | null;
+}
+export interface BodySheetRow {
+  player_name: string;
+  entries: BodySheetMonthEntry[];
+}
+
+// 구글 시트(월별 신장/체중 자동 기록): 타임스탬프,이름,1월,2월,3월,... — 열이 늘어날 때마다 새 월이 추가됨
+export function parseBodySheetCsv(csvText: string): BodySheetRow[] {
+  const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length < 2) return [];
+
+  const header = rows[0];
+  const monthCols: { index: number; month: number }[] = [];
+  for (let i = 2; i < header.length; i++) {
+    const m = header[i]?.match(/(\d+)월/);
+    if (m) monthCols.push({ index: i, month: parseInt(m[1]) });
+  }
+
+  return rows.slice(1).map(row => ({
+    player_name: row[1] || '',
+    entries: monthCols.map(({ index, month }) => ({ month, ...parseHeightWeightFreeText(row[index] || '') })),
+  })).filter(r => r.player_name);
+}
+
 // ── VALD 계측기 CSV 파서 (ForceDecks / NordBord / ForceFrame / SmartSpeed) ──
 function stripTeamPrefix(name: string): string {
   return name.replace(/^대전U?\d*\s*/, '').trim();

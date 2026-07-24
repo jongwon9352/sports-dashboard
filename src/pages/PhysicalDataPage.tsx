@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
-  fetchBodyCompositionRecords, fetchSpeedCustomRecords, updateSpeedCustomOverride,
+  fetchBodyCompositionRecords, syncBodyCompositionFromGoogleSheet, fetchSpeedCustomRecords, updateSpeedCustomOverride,
   fetchMaturityRecords, syncMaturityFromGoogleSheet, clearMaturityData,
   fetchKhamisRocheCoefficients, fetchValdThresholds, upsertValdThresholds, computeValdValue,
   VALD_METRIC_DEFS, VALD_GRADES,
@@ -473,60 +473,124 @@ function ValdTab() {
 }
 
 // ── Body composition 탭 ────────────────────────────────────────────────
+function bodyBmi(height: number | null, weight: number | null): number | null {
+  if (height == null || weight == null || height <= 0) return null;
+  return +(weight / ((height / 100) ** 2)).toFixed(1);
+}
+
 function BodyCompositionTab() {
   const [data, setData] = useState<BodyCompositionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncMsg, setLastSyncMsg] = useState('');
+
+  const load = () => {
+    setLoading(true);
+    fetchBodyCompositionRecords().then(setData).finally(() => setLoading(false));
+  };
+
+  const runSync = async (silent: boolean) => {
+    setSyncing(true);
+    try {
+      const result = await syncBodyCompositionFromGoogleSheet();
+      load();
+      const msg = result.unmatchedNames.length > 0
+        ? `${result.updatedCount}건 반영 (매칭 안 됨: ${result.unmatchedNames.join(', ')})`
+        : `${result.updatedCount}건 반영`;
+      setLastSyncMsg(msg);
+      if (!silent) alert(msg);
+    } catch {
+      setLastSyncMsg('동기화 실패');
+      if (!silent) alert('구글 시트 동기화 중 오류가 발생했습니다.');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
-    fetchBodyCompositionRecords().then(setData).finally(() => setLoading(false));
+    load();
+    runSync(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = useMemo(() => {
-    return data.filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+  // 존재하는 모든 (연도, 월) 조합을 시간순으로 정렬해 열로 사용 — 시트에 새 달이 추가되면 자동으로 늘어난다.
+  const months = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of data) set.add(`${row.year}-${row.month}`);
+    return [...set]
+      .map(key => { const [year, month] = key.split('-').map(Number); return { year, month, key }; })
+      .sort((a, b) => a.year - b.year || a.month - b.month);
+  }, [data]);
+
+  const byPlayer = useMemo(() => {
+    const map = new Map<string, { player_name: string; jersey_number: number | null; cells: Map<string, { height: number | null; weight: number | null }> }>();
+    for (const row of data) {
+      if (!map.has(row.player_id)) {
+        map.set(row.player_id, { player_name: row.player_name, jersey_number: row.jersey_number, cells: new Map() });
+      }
+      map.get(row.player_id)!.cells.set(`${row.year}-${row.month}`, { height: row.height, weight: row.weight });
+    }
+    return [...map.entries()]
+      .filter(([, p]) => !search || p.player_name.toLowerCase().includes(search.toLowerCase()))
+      .sort(([, a], [, b]) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
   }, [data, search]);
 
   return (
     <>
-      <input
-        type="text"
-        placeholder="이름 검색..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px] mb-2"
-        style={{ fontFamily: 'var(--font-data)' }}
-      />
+      <div className="flex items-center gap-3 flex-wrap mb-2">
+        <input
+          type="text"
+          placeholder="이름 검색..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
+          style={{ fontFamily: 'var(--font-data)' }}
+        />
+        <button
+          onClick={() => runSync(false)}
+          disabled={syncing}
+          className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-50"
+        >
+          {syncing ? '동기화 중...' : '지금 다시 동기화'}
+        </button>
+        {lastSyncMsg && <span className="text-[11px] text-text-secondary">{lastSyncMsg}</span>}
+      </div>
       <p className="text-[11px] text-text-secondary mb-3">
-        선수당 월 1건씩 누적됩니다. 데이터 관리 &gt; 업로드에서 "체성분/body" 포함 파일명의 CSV를 올리면 자동으로 반영됩니다.
+        구글 시트(월별 신장·체중 자동 기록)에서 동기화됩니다. 탭 진입 시 자동 반영되며, 시트에 새 달이 추가되면 열도 자동으로 늘어납니다.
       </p>
 
       {loading ? (
         <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
-      ) : filtered.length === 0 ? (
-        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다. CSV 업로드로 채워주세요.</p>
+      ) : byPlayer.length === 0 ? (
+        <p className="text-sm text-text-secondary text-center py-16">데이터가 없습니다.</p>
       ) : (
         <div className="bg-surface rounded-xl shadow-[var(--shadow-1)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
               <thead>
                 <tr className="border-b border-surface-secondary">
-                  {['이름', '포지션', '연도', '월', '신장(cm)', '체중(kg)'].map(h => (
-                    <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
-                      {h}
-                    </th>
-                  ))}
+                  <th rowSpan={2} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface align-bottom">이름</th>
+                  <th colSpan={months.length} className="px-2.5 py-1.5 text-center text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">월별 신장(cm)</th>
+                  <th colSpan={months.length} className="px-2.5 py-1.5 text-center text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">월별 체중(kg)</th>
+                  <th colSpan={months.length} className="px-2.5 py-1.5 text-center text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">월별 BMI</th>
+                </tr>
+                <tr className="border-b border-surface-secondary">
+                  {months.map(m => <th key={`h-${m.key}`} className="px-2 py-2 text-center text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-6 bg-surface">{m.month}월</th>)}
+                  {months.map(m => <th key={`w-${m.key}`} className="px-2 py-2 text-center text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-6 bg-surface">{m.month}월</th>)}
+                  {months.map(m => <th key={`b-${m.key}`} className="px-2 py-2 text-center text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-6 bg-surface">{m.month}월</th>)}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(row => (
-                  <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
-                    <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.year}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.month}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.height)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{fmt(row.weight)}</td>
+                {byPlayer.map(([playerId, p]) => (
+                  <tr key={playerId} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium">{p.player_name}</td>
+                    {months.map(m => <td key={`h-${m.key}`} className="px-2 py-2 text-center whitespace-nowrap">{fmt(p.cells.get(m.key)?.height ?? null)}</td>)}
+                    {months.map(m => <td key={`w-${m.key}`} className="px-2 py-2 text-center whitespace-nowrap">{fmt(p.cells.get(m.key)?.weight ?? null)}</td>)}
+                    {months.map(m => {
+                      const cell = p.cells.get(m.key);
+                      return <td key={`b-${m.key}`} className="px-2 py-2 text-center whitespace-nowrap">{fmt(bodyBmi(cell?.height ?? null, cell?.weight ?? null))}</td>;
+                    })}
                   </tr>
                 ))}
               </tbody>
