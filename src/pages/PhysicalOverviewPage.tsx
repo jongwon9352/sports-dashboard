@@ -251,6 +251,246 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
   );
 }
 
+// ── VALD 종합 분석 / 운동 처방 인사이트 (현재 탭·차수 필터 기준) ─────────
+// 참고자료: VALD "2024/25 Premier League Report"(NordBord/ForceFrame/ForceDecks 규범 데이터),
+// Chumanov et al. (2007, J Biomech) — 내전근이 스윙기 대퇴이두근 스트레치를 줄이는 역할("제4의 햄스트링"),
+// Bourne et al. (2020, BJSM) — 고관절 내전/외전 좌우 불균형과 서혜부 부상 위험의 연관성
+interface ValdInsightData {
+  n: number;
+  lrStats: Record<string, { n: number; avg: number; dangerPlayers: { name: string; pct: number }[] }>;
+  eurTiers: { label: string; count: number }[];
+  eurTotal: number;
+  compoundImbalance: { name: string; labels: string[] }[];
+  nordicVsIso: { name: string; nordic: number; iso: number }[];
+  adductorNordicRisk: { name: string; hipAdd: number; nordic: number }[];
+  belowMin: Record<string, string[]>;
+}
+
+const LR_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'] as const;
+const FLAT_METRIC_KEYS = ['cmj_height', 'cmj_peak_force', 'squat_jump_height', 'squat_jump_peak_force', 'sprint_5m', 'sprint_10m', 'sprint_30m', 'cod_run', 'cod_ball'];
+
+function computeValdInsight(entries: { name: string; records: PhysicalTestRow[] }[], thresholds: ValdThreshold[], grade: string): ValdInsightData {
+  const byMetric = new Map<string, ValdItem[]>();
+  for (const m of VALD_METRIC_DEFS) byMetric.set(m.key, buildValdItems(m.key, m.invert, entries));
+  const thresholdFor = (key: string) => thresholds.find(t => t.metric_key === key && t.grade === grade) ?? null;
+
+  const lrStats: ValdInsightData['lrStats'] = {};
+  const imbalanceCount = new Map<string, string[]>();
+  for (const key of LR_METRIC_KEYS) {
+    const items = byMetric.get(key) ?? [];
+    const n = items.length;
+    const avg = n ? items.reduce((s, i) => s + i.value, 0) / n : 0;
+    const dangerPlayers = items.filter(i => imbalanceZone(i.imbalance) === 'danger').map(i => ({ name: i.name, pct: i.imbalance! }));
+    lrStats[key] = { n, avg, dangerPlayers };
+    const label = VALD_METRIC_DEFS.find(m => m.key === key)!.label;
+    for (const p of dangerPlayers) {
+      if (!imbalanceCount.has(p.name)) imbalanceCount.set(p.name, []);
+      imbalanceCount.get(p.name)!.push(label);
+    }
+  }
+  const compoundImbalance = [...imbalanceCount.entries()].filter(([, labels]) => labels.length >= 2).map(([name, labels]) => ({ name, labels }));
+
+  const nordicList = byMetric.get('nordic_curl') ?? [];
+  const isoList = byMetric.get('ham_iso') ?? [];
+  const nordicMap = new Map(nordicList.map(i => [i.name, i.value]));
+  const nordicVsIso: ValdInsightData['nordicVsIso'] = [];
+  for (const i of isoList) {
+    const nordic = nordicMap.get(i.name);
+    if (nordic != null && i.value > nordic) nordicVsIso.push({ name: i.name, nordic, iso: i.value });
+  }
+
+  const hipAddList = byMetric.get('hip_adduction') ?? [];
+  const avgHipAdd = hipAddList.length ? hipAddList.reduce((s, i) => s + i.value, 0) / hipAddList.length : 0;
+  const avgNordic = nordicList.length ? nordicList.reduce((s, i) => s + i.value, 0) / nordicList.length : 0;
+  const nordicByName = new Map(nordicList.map(i => [i.name, i.value]));
+  const adductorNordicRisk: ValdInsightData['adductorNordicRisk'] = [];
+  for (const i of hipAddList) {
+    const nordic = nordicByName.get(i.name);
+    if (nordic != null && i.value < avgHipAdd && nordic < avgNordic) adductorNordicRisk.push({ name: i.name, hipAdd: i.value, nordic });
+  }
+
+  const eurDef = VALD_METRIC_DEFS.find(m => m.key === 'eur')!;
+  const eurItems = byMetric.get('eur') ?? [];
+  const eurTiers = eurDef.tiers!.map((t, idx) => ({ label: t.label, count: eurItems.filter(i => tierIndexOf(i.value, eurDef.tiers!) === idx).length }));
+
+  const belowMin: Record<string, string[]> = {};
+  for (const key of FLAT_METRIC_KEYS) {
+    const th = thresholdFor(key);
+    const items = byMetric.get(key) ?? [];
+    belowMin[key] = th?.min_value != null ? items.filter(i => i.value < th.min_value!).map(i => i.name) : [];
+  }
+
+  return { n: entries.length, lrStats, eurTiers, eurTotal: eurItems.length, compoundImbalance, nordicVsIso, adductorNordicRisk, belowMin };
+}
+
+function ValdAnalysisInsightBox({ data, grade, round }: { data: ValdInsightData; grade: string; round: string }) {
+  if (data.n === 0) return null;
+  const imbalancedMetrics = LR_METRIC_KEYS
+    .map(key => ({ key, label: VALD_METRIC_DEFS.find(m => m.key === key)!.label, ...data.lrStats[key] }))
+    .filter(s => s.dangerPlayers.length > 0);
+  const belowMinEntries = FLAT_METRIC_KEYS
+    .map(key => ({ key, label: VALD_METRIC_DEFS.find(m => m.key === key)!.label, names: data.belowMin[key] ?? [] }))
+    .filter(e => e.names.length > 0);
+
+  return (
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4">
+      <p className="text-sm font-medium mb-2.5">VALD 종합 분석 <span className="text-xs font-normal text-text-secondary">({grade} · {round === '전체' ? '전체(개인 최고 기록)' : `${round}차`} · {data.n}명)</span></p>
+
+      <p className="text-[13px] leading-relaxed text-text-secondary mb-3">
+        현재 필터 기준 {data.n}명의 VALD 측정 데이터를 학년별 임계값(최대·평균·최저) 및 좌우 불균형 기준(±10%)과 대조해 종합 분석했습니다.
+      </p>
+
+      {data.compoundImbalance.length > 0 && (
+        <div className="rounded-lg border px-3 py-2 mb-2.5 text-xs" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#991b1b' }}>
+          <b>복합 좌우 불균형(2개 항목 이상) — 우선 관리 대상:</b>{' '}
+          {data.compoundImbalance.map(p => `${p.name}(${p.labels.join(', ')})`).join('; ')}
+        </div>
+      )}
+
+      {imbalancedMetrics.length > 0 && (
+        <div className="mb-2.5">
+          <p className="text-xs font-medium mb-1">항목별 좌우 불균형(10% 이상)</p>
+          <div className="flex flex-col gap-1">
+            {imbalancedMetrics.map(s => (
+              <p key={s.key} className="text-xs text-text-secondary leading-relaxed">
+                <b className="text-[var(--text)]">{s.label}</b>: {s.dangerPlayers.map(p => `${p.name} ${p.pct.toFixed(1)}%`).join(', ')}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.nordicVsIso.length > 0 && (
+        <div className="rounded-lg border px-3 py-2 mb-2.5 text-xs" style={{ background: '#fffbeb', borderColor: '#fcd34d', color: '#92400e' }}>
+          <b>Nordic 대비 ISO Prone 역전 — 정밀 확인 필요:</b>{' '}
+          {data.nordicVsIso.map(p => `${p.name}(ISO ${p.iso.toFixed(0)}N > Nordic ${p.nordic.toFixed(0)}N)`).join(', ')}.
+          {' '}편심성(Nordic) 근력은 통상 등척성(ISO Prone)보다 높게 나타나는데, 역전되면 Nordic 검사 수행 미숙·신경억제·부하 부족 등을 의심할 수 있습니다.
+        </div>
+      )}
+
+      {data.adductorNordicRisk.length > 0 && (
+        <div className="rounded-lg border px-3 py-2 mb-2.5 text-xs" style={{ background: '#eff6ff', borderColor: '#93c5fd', color: '#1e3a8a' }}>
+          <b>고관절 내전근 + Nordic 동반 약화(햄스트링 부상 위험군):</b>{' '}
+          {data.adductorNordicRisk.map(p => `${p.name}`).join(', ')}.
+          {' '}내전근(특히 대내전근)은 스윙기 대퇴이두근의 과신전을 억제하는 "제4의 햄스트링" 역할을 하므로, 두 항목이 함께 낮으면 햄스트링 손상 위험이 높아질 수 있습니다.
+        </div>
+      )}
+
+      {data.eurTotal > 0 && (
+        <div className="mb-2.5">
+          <p className="text-xs font-medium mb-1">EUR(신장성 활용 비율) 분포 · {data.eurTotal}명</p>
+          <p className="text-xs text-text-secondary leading-relaxed">
+            {data.eurTiers.map(t => `${t.label.split(' · ')[0]} ${t.count}명`).join(' · ')}
+          </p>
+        </div>
+      )}
+
+      {belowMinEntries.length > 0 && (
+        <div className="mb-1">
+          <p className="text-xs font-medium mb-1">학년 임계값 최저 기준 미달 항목</p>
+          <div className="flex flex-col gap-1">
+            {belowMinEntries.map(e => (
+              <p key={e.key} className="text-xs text-text-secondary leading-relaxed">
+                <b className="text-[var(--text)]">{e.label}</b>: {e.names.join(', ')}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-text-disabled mt-2.5 leading-relaxed">
+        참고자료: VALD &ldquo;2024/25 Premier League Report&rdquo;(NordBord·ForceFrame·ForceDecks 규범 데이터, 성인 프로 기준이라 절대값 비교보다 해석 참고용) ·
+        Chumanov et al. (2007) J Biomech — 내전근의 햄스트링 스트레치 완충 역할 ·
+        Bourne et al. (2020) Br J Sports Med — 고관절 내전/외전 좌우 불균형과 서혜부 부상 위험
+      </p>
+    </div>
+  );
+}
+
+const EXERCISE_LIBRARY: Record<string, { name: string; detail: string }[]> = {
+  imbalance: [
+    { name: '단측(편측) Nordic Curl', detail: '3세트 x 6-8회, 약한 쪽부터 좌우 번갈아 · 좌우 불균형 교정' },
+    { name: '단측 힙 쓰러스트', detail: '3세트 x 10회, 약한 쪽 우선 실시 · 고관절 신전근 좌우 균형' },
+  ],
+  nordicVsIso: [
+    { name: 'Nordic Curl 자세 교정 재측정', detail: '코칭 큐(엉덩이-무릎-어깨 일직선) 후 재검사, 필요 시 보조 밴드로 난이도 조절' },
+    { name: '햄스트링 등척성 유지(ISO Hold)', detail: '3세트 x 20-30초, 통증·신경억제 여부 모니터링' },
+  ],
+  adductorNordic: [
+    { name: 'Copenhagen Adduction (장경간)', detail: '3세트 x 8-10회 좌우 · 내전근 강화, 햄스트링 부상 예방' },
+    { name: 'Nordic Curl', detail: '3세트 x 6-8회 · 편심성 햄스트링 근력 동시 보강' },
+  ],
+  eurLow: [
+    { name: '반응성 플라이오메트릭(Depth Jump 등)', detail: '3-4세트 x 5회 · 폭발적 힘 발휘 능력(EUR) 향상' },
+  ],
+  eurHigh: [
+    { name: '최대근력 스쿼트/스티프레그 데드리프트', detail: '4-5세트 x 3-5회, 고강도(≥85%1RM) · 최대근력 기반 훈련' },
+  ],
+  sprintPower: [
+    { name: '가속 스프린트 + 저항 스프린트(썰매)', detail: '4-6회 x 10-20m · 가속력·스프린트 파워 향상' },
+  ],
+};
+
+function ValdPrescriptionInsightBox({ data, grade, round }: { data: ValdInsightData; grade: string; round: string }) {
+  if (data.n === 0) return null;
+  const eurLowCount = data.eurTiers[0]?.count ?? 0;
+  const eurHighCount = data.eurTiers[2]?.count ?? 0;
+  const sprintFlags = ['sprint_5m', 'sprint_10m', 'sprint_30m'].flatMap(k => data.belowMin[k] ?? []);
+  const sprintFlagNames = [...new Set(sprintFlags)];
+
+  const focusGroups: { title: string; color: string; players: string; exercises: { name: string; detail: string }[] }[] = [];
+  if (data.compoundImbalance.length > 0) {
+    focusGroups.push({ title: '좌우 불균형 교정', color: colors.wine, players: data.compoundImbalance.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.imbalance });
+  }
+  if (data.nordicVsIso.length > 0) {
+    focusGroups.push({ title: 'Nordic 검사 수행/신경근 점검', color: colors.warning, players: data.nordicVsIso.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.nordicVsIso });
+  }
+  if (data.adductorNordicRisk.length > 0) {
+    focusGroups.push({ title: '햄스트링 부상 예방(내전근+Nordic 보강)', color: colors.navy, players: data.adductorNordicRisk.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.adductorNordic });
+  }
+  if (sprintFlagNames.length > 0) {
+    focusGroups.push({ title: '스프린트 파워 향상', color: colors.green, players: sprintFlagNames.join(', '), exercises: EXERCISE_LIBRARY.sprintPower });
+  }
+
+  return (
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4">
+      <p className="text-sm font-medium mb-2.5">운동 처방 인사이트 <span className="text-xs font-normal text-text-secondary">({grade} · {round === '전체' ? '전체(개인 최고 기록)' : `${round}차`})</span></p>
+
+      {focusGroups.length === 0 ? (
+        <p className="text-[13px] text-text-secondary">현재 필터 기준 특별히 우선 개입이 필요한 항목이 발견되지 않았습니다. 기존 훈련 강도를 유지하세요.</p>
+      ) : (
+        <div className="flex flex-col gap-2.5 mb-3">
+          {focusGroups.map(g => (
+            <div key={g.title} className="bg-bg p-2.5" style={{ borderLeft: `3px solid ${g.color}` }}>
+              <div className="flex justify-between items-baseline mb-1">
+                <span className="text-xs font-medium">{g.title}</span>
+                <span className="text-[11px] text-text-disabled">{g.players}</span>
+              </div>
+              <ul className="text-[11.5px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
+                {g.exercises.map(ex => <li key={ex.name}><b className="text-[var(--text)]">{ex.name}</b> — {ex.detail}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="border-t border-surface-secondary pt-2.5">
+        <p className="text-xs font-medium mb-1.5">팀 전체 EUR 기반 훈련 방향</p>
+        <p className="text-[13px] leading-relaxed text-text-secondary">
+          {eurLowCount > 0 && <>EUR 1.1 이하 <b>{eurLowCount}명</b>은 반응성 플라이오메트릭 위주로 폭발적 힘 발휘 능력을 보강하세요. </>}
+          {eurHighCount > 0 && <>EUR 1.15 이상 <b>{eurHighCount}명</b>은 최대근력 훈련 비중을 늘려 편심-동심 균형을 맞추세요. </>}
+          {eurLowCount === 0 && eurHighCount === 0 && '현재 EUR 분포는 대체로 적정 훈련 비율(1.1~1.15) 구간에 있습니다.'}
+        </p>
+      </div>
+
+      <p className="text-[11px] text-text-disabled mt-2.5 leading-relaxed">
+        참고자료: VALD &ldquo;2024/25 Premier League Report&rdquo; · Chumanov et al. (2007) J Biomech · Bourne et al. (2020) Br J Sports Med.
+        본 처방은 일반적 가이드라인이며, 개인별 통증·병력이 있는 경우 전문 트레이너·의료진과 상의해 조정하세요.
+      </p>
+    </div>
+  );
+}
+
 const STAGE_COLOR: Record<string, string> = {
   '성장 급증기 전': colors.navy,
   '성장 급증기': colors.green,
@@ -1087,6 +1327,8 @@ export function PhysicalOverviewPage() {
       .filter(e => e.records.length > 0);
   }, [players, gradeFilter, playerRecordsMap, roundFilter]);
 
+  const valdInsight = useMemo(() => computeValdInsight(valdEntries, thresholds, gradeFilter), [valdEntries, thresholds, gradeFilter]);
+
   const toggleMetric = (key: string) => {
     setSelectedMetrics(prev => {
       const next = new Set(prev);
@@ -1240,25 +1482,29 @@ export function PhysicalOverviewPage() {
           ) : valdEntries.length === 0 ? (
             <p className="text-sm text-text-secondary text-center py-16">해당 학년/차수의 VALD 측정 기록이 없습니다.</p>
           ) : (
-            VALD_METRIC_DEFS.map(metric => (
-              <ValdMetricSection
-                key={metric.key}
-                metricKey={metric.key}
-                label={metric.label}
-                unit={metric.unit}
-                invert={metric.invert}
-                hasLR={metric.hasLR}
-                note={metric.note}
-                tiers={metric.tiers}
-                dotPlot={metric.dotPlot}
-                entries={valdEntries}
-                threshold={thresholds.find(t => t.metric_key === metric.key && t.grade === gradeFilter) ?? null}
-                sectionRef={el => { sectionRefs.current[metric.key] = el; }}
-                selectable={pdfSelectMode}
-                checked={selectedMetrics.has(metric.key)}
-                onToggle={() => toggleMetric(metric.key)}
-              />
-            ))
+            <>
+              <ValdAnalysisInsightBox data={valdInsight} grade={gradeFilter} round={roundFilter} />
+              <ValdPrescriptionInsightBox data={valdInsight} grade={gradeFilter} round={roundFilter} />
+              {VALD_METRIC_DEFS.map(metric => (
+                <ValdMetricSection
+                  key={metric.key}
+                  metricKey={metric.key}
+                  label={metric.label}
+                  unit={metric.unit}
+                  invert={metric.invert}
+                  hasLR={metric.hasLR}
+                  note={metric.note}
+                  tiers={metric.tiers}
+                  dotPlot={metric.dotPlot}
+                  entries={valdEntries}
+                  threshold={thresholds.find(t => t.metric_key === metric.key && t.grade === gradeFilter) ?? null}
+                  sectionRef={el => { sectionRefs.current[metric.key] = el; }}
+                  selectable={pdfSelectMode}
+                  checked={selectedMetrics.has(metric.key)}
+                  onToggle={() => toggleMetric(metric.key)}
+                />
+              ))}
+            </>
           )}
         </>
       ) : tab === 'maturity' ? (
