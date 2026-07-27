@@ -1102,12 +1102,11 @@ export function PhysicalOverviewPage() {
     try {
       const CAPTURE_W = 1200;
       const pdfW = 210, pdfH = 297;
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pages: { imgData: string; aspect: number }[] = [];
 
-      for (let i = 0; i < metrics.length; i++) {
-        const el = sectionRefs.current[metrics[i].key];
+      for (const metric of metrics) {
+        const el = sectionRefs.current[metric.key];
         if (!el) continue;
-        if (i > 0) pdf.addPage('a4', 'portrait');
 
         const origCss = el.style.cssText;
         el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:12px;`;
@@ -1115,19 +1114,31 @@ export function PhysicalOverviewPage() {
         const origCheckboxDisplay = checkbox?.style.display;
         if (checkbox) checkbox.style.display = 'none';
 
-        await new Promise(r => setTimeout(r, 250));
-        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: CAPTURE_W });
-
-        el.style.cssText = origCss;
-        if (checkbox && origCheckboxDisplay !== undefined) checkbox.style.display = origCheckboxDisplay;
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
-        const imgAspect = canvas.width / canvas.height;
-        let dW = pdfW - 10, dH = (pdfW - 10) / imgAspect;
-        if (dH > pdfH - 10) { dH = pdfH - 10; dW = (pdfH - 10) * imgAspect; }
-        pdf.addImage(imgData, 'JPEG', (pdfW - dW) / 2, 5, dW, dH);
+        try {
+          await new Promise(r => setTimeout(r, 250));
+          // 특정 차트가 렌더링 지연으로 무한 대기하더라도 전체 내보내기가 멈추지 않도록 20초 제한
+          const canvas = await Promise.race([
+            html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: CAPTURE_W, imageTimeout: 15000 }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 20000)),
+          ]);
+          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height });
+        } catch (err) {
+          console.warn(`VALD PDF: ${metric.key} 캡처 실패`, err);
+        } finally {
+          el.style.cssText = origCss;
+          if (checkbox && origCheckboxDisplay !== undefined) checkbox.style.display = origCheckboxDisplay;
+        }
       }
 
+      if (pages.length === 0) { alert('PDF로 캡처할 수 있는 항목이 없습니다.'); return; }
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      pages.forEach((p, i) => {
+        if (i > 0) pdf.addPage('a4', 'portrait');
+        let dW = pdfW - 10, dH = (pdfW - 10) / p.aspect;
+        if (dH > pdfH - 10) { dH = pdfH - 10; dW = (pdfH - 10) * p.aspect; }
+        pdf.addImage(p.imgData, 'JPEG', (pdfW - dW) / 2, 5, dW, dH);
+      });
       pdf.save(`VALD_리포트_${gradeFilter}_${roundFilter === ALL_ROUNDS ? '전체' : roundFilter}.pdf`);
       setPdfSelectMode(false);
     } finally {
