@@ -1412,74 +1412,58 @@ export function PhysicalOverviewPage() {
     setPdfExporting(true);
     try {
       const pdfW = 210, pdfH = 297;
-      const pages: { imgData: string; aspect: number; fullPage: boolean }[] = [];
+      const pages: { imgData: string; aspect: number }[] = [];
       const failedLabels: string[] = [];
 
       for (const metric of metrics) {
         const el = sectionRefs.current[metric.key];
         if (!el) continue;
 
-        // 캡처 전 차트 요소 폭을 강제로 바꾸면 Recharts가 두 번(축소·복원) 재렌더링되어
-        // 항목이 많을 때 누적 지연으로 일부 캡처가 시간 내에 끝나지 못했다. 차트는 화면에
-        // 이미 그려진 크기 그대로 캡처. 반면 텍스트 위주인 인사이트 박스는 화면 폭 그대로
-        // 캡처하면 가로로 넓고 세로로 짧아 PDF 페이지에서 공백이 크게 남으므로, 좁은 폭으로
-        // 강제 리플로우시켜 A4 페이지 비율에 가깝게 만든다(재렌더링 비용이 큰 차트가 아니라
-        // 텍스트라 리플로우 비용이 작아 안전).
-        const isInsight = metric.key.startsWith('insight_');
+        // 캡처 전 요소 폭을 강제로 바꾸면 Recharts 차트가 두 번(축소·복원) 재렌더링되어
+        // 항목이 많을 때 누적 지연으로 일부 캡처가 시간 내에 끝나지 못했다.
+        // 화면에 이미 그려진 크기 그대로 캡처해 불필요한 재렌더링을 없앤다.
         const checkbox = el.querySelector('input[type=checkbox]') as HTMLElement | null;
         const origCheckboxDisplay = checkbox?.style.display;
         if (checkbox) checkbox.style.display = 'none';
-        const origCss = el.style.cssText;
-        if (isInsight) el.style.cssText = 'width:700px;min-width:700px;max-width:700px;';
 
         try {
-          if (isInsight) await new Promise(r => setTimeout(r, 100));
           // 특정 차트가 렌더링 지연으로 무한 대기하더라도 전체 내보내기가 멈추지 않도록 30초 제한
           const canvas = await Promise.race([
             html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, imageTimeout: 15000 }),
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 30000)),
           ]);
-          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height, fullPage: isInsight });
+          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height });
         } catch (err) {
           console.warn(`VALD PDF: ${metric.key} 캡처 실패`, err);
           failedLabels.push(metric.label);
         } finally {
           if (checkbox && origCheckboxDisplay !== undefined) checkbox.style.display = origCheckboxDisplay;
-          if (isInsight) el.style.cssText = origCss;
         }
       }
 
       if (pages.length === 0) { alert('PDF로 캡처할 수 있는 항목이 없습니다.'); return; }
 
-      // 차트 항목(전체 차트 + TOP10)은 페이지당 2개씩 위/아래로 배치하되,
-      // 텍스트 위주인 인사이트 박스는 차트와 가로세로 비율이 달라 반페이지에 맞추면
-      // 공백이 크게 남으므로 페이지 전체 크기로 따로 배치한다.
+      // 항목마다 실제 높이가 제각각이라, 페이지를 절반씩 고정 분할하면 짧은 항목 주위에
+      // 큰 공백이 남는다. 대신 위에서부터 실제 높이만큼 순서대로 채우고, 다음 항목이
+      // 남은 공간에 들어가지 않을 때만 새 페이지로 넘겨 빈 공간을 최소화한다.
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const margin = 8;
-      const slotH = (pdfH - margin * 3) / 2;
       const availW = pdfW - margin * 2;
+      const maxH = pdfH - margin * 2;
+      let cursorY = margin;
       let isFirstPage = true;
-      let chartSlot = 0;
       pages.forEach(p => {
-        if (p.fullPage) {
-          if (!isFirstPage) pdf.addPage('a4', 'portrait');
-          const availH = pdfH - margin * 2;
-          let dW = availW, dH = availW / p.aspect;
-          if (dH > availH) { dH = availH; dW = availH * p.aspect; }
-          const x = (pdfW - dW) / 2;
-          const y = margin + (availH - dH) / 2;
-          pdf.addImage(p.imgData, 'JPEG', x, y, dW, dH);
-          chartSlot = 0;
-        } else {
-          if (!isFirstPage && chartSlot === 0) pdf.addPage('a4', 'portrait');
-          let dW = availW, dH = availW / p.aspect;
-          if (dH > slotH) { dH = slotH; dW = slotH * p.aspect; }
-          const x = (pdfW - dW) / 2;
-          const y = margin + chartSlot * (slotH + margin) + (slotH - dH) / 2;
-          pdf.addImage(p.imgData, 'JPEG', x, y, dW, dH);
-          chartSlot = chartSlot === 0 ? 1 : 0;
+        let dW = availW, dH = availW / p.aspect;
+        if (dH > maxH) { dH = maxH; dW = maxH * p.aspect; }
+        if (isFirstPage) {
+          isFirstPage = false;
+        } else if (cursorY + dH > pdfH - margin) {
+          pdf.addPage('a4', 'portrait');
+          cursorY = margin;
         }
-        isFirstPage = false;
+        const x = (pdfW - dW) / 2;
+        pdf.addImage(p.imgData, 'JPEG', x, cursorY, dW, dH);
+        cursorY += dH + margin;
       });
       pdf.save(`VALD_리포트_${gradeFilter}_${roundFilter === ALL_ROUNDS ? '전체' : roundFilter}.pdf`);
       if (failedLabels.length > 0) alert(`다음 항목은 캡처에 실패해 PDF에서 제외되었습니다:\n${failedLabels.join(', ')}`);
