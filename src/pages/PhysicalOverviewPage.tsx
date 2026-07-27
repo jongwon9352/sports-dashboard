@@ -150,7 +150,7 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
           <div className="overflow-x-auto">
             <div style={{ minWidth: Math.max(600, displayItems.length * 32) }}>
               <ResponsiveContainer width="100%" height={320}>
-                <ComposedChart data={displayItems} margin={{ bottom: 60 }}>
+                <ComposedChart data={displayItems} margin={{ bottom: 80 }}>
                   <CartesianGrid stroke={colors.grid} vertical={false} />
                   <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
                   <YAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
@@ -169,7 +169,7 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={displayItems} margin={{ bottom: 60 }}>
+            <BarChart data={displayItems} margin={{ bottom: 80 }}>
               <CartesianGrid stroke={colors.grid} vertical={false} />
               <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} unit={unit} />
@@ -233,7 +233,7 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
           <BarChart data={top10} layout="vertical" margin={{ left: 20 }}>
             <CartesianGrid stroke={colors.grid} horizontal={false} />
             <XAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
-            <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Tooltip formatter={(v: any) => `${Number(v).toFixed(2)}${unit}`} />
             <Bar dataKey="value" fill={colors.green} radius={[0, 3, 3, 0]}>
@@ -1132,12 +1132,19 @@ export function PhysicalOverviewPage() {
 
       if (pages.length === 0) { alert('PDF로 캡처할 수 있는 항목이 없습니다.'); return; }
 
+      // 페이지당 항목 2개(전체 차트 + TOP10 포함)씩 위/아래로 배치
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const margin = 8;
+      const slotH = (pdfH - margin * 3) / 2;
+      const availW = pdfW - margin * 2;
       pages.forEach((p, i) => {
-        if (i > 0) pdf.addPage('a4', 'portrait');
-        let dW = pdfW - 10, dH = (pdfW - 10) / p.aspect;
-        if (dH > pdfH - 10) { dH = pdfH - 10; dW = (pdfH - 10) * p.aspect; }
-        pdf.addImage(p.imgData, 'JPEG', (pdfW - dW) / 2, 5, dW, dH);
+        const slot = i % 2;
+        if (i > 0 && slot === 0) pdf.addPage('a4', 'portrait');
+        let dW = availW, dH = availW / p.aspect;
+        if (dH > slotH) { dH = slotH; dW = slotH * p.aspect; }
+        const x = (pdfW - dW) / 2;
+        const y = margin + slot * (slotH + margin) + (slotH - dH) / 2;
+        pdf.addImage(p.imgData, 'JPEG', x, y, dW, dH);
       });
       pdf.save(`VALD_리포트_${gradeFilter}_${roundFilter === ALL_ROUNDS ? '전체' : roundFilter}.pdf`);
       if (failedLabels.length > 0) alert(`다음 항목은 캡처에 실패해 PDF에서 제외되었습니다:\n${failedLabels.join(', ')}`);
