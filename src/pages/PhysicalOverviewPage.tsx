@@ -1100,32 +1100,32 @@ export function PhysicalOverviewPage() {
     if (metrics.length === 0) return;
     setPdfExporting(true);
     try {
-      const CAPTURE_W = 1200;
       const pdfW = 210, pdfH = 297;
       const pages: { imgData: string; aspect: number }[] = [];
+      const failedLabels: string[] = [];
 
       for (const metric of metrics) {
         const el = sectionRefs.current[metric.key];
         if (!el) continue;
 
-        const origCss = el.style.cssText;
-        el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:12px;`;
+        // 캡처 전 요소 폭을 강제로 바꾸면 Recharts가 두 번(축소·복원) 재렌더링되어
+        // 항목이 많을 때 누적 지연으로 일부 캡처가 시간 내에 끝나지 못했다.
+        // 화면에 이미 그려진 크기 그대로 캡처해 불필요한 재렌더링을 없앤다.
         const checkbox = el.querySelector('input[type=checkbox]') as HTMLElement | null;
         const origCheckboxDisplay = checkbox?.style.display;
         if (checkbox) checkbox.style.display = 'none';
 
         try {
-          await new Promise(r => setTimeout(r, 250));
-          // 특정 차트가 렌더링 지연으로 무한 대기하더라도 전체 내보내기가 멈추지 않도록 20초 제한
+          // 특정 차트가 렌더링 지연으로 무한 대기하더라도 전체 내보내기가 멈추지 않도록 30초 제한
           const canvas = await Promise.race([
-            html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: CAPTURE_W, imageTimeout: 15000 }),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 20000)),
+            html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, imageTimeout: 15000 }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 30000)),
           ]);
           pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height });
         } catch (err) {
           console.warn(`VALD PDF: ${metric.key} 캡처 실패`, err);
+          failedLabels.push(metric.label);
         } finally {
-          el.style.cssText = origCss;
           if (checkbox && origCheckboxDisplay !== undefined) checkbox.style.display = origCheckboxDisplay;
         }
       }
@@ -1140,6 +1140,7 @@ export function PhysicalOverviewPage() {
         pdf.addImage(p.imgData, 'JPEG', (pdfW - dW) / 2, 5, dW, dH);
       });
       pdf.save(`VALD_리포트_${gradeFilter}_${roundFilter === ALL_ROUNDS ? '전체' : roundFilter}.pdf`);
+      if (failedLabels.length > 0) alert(`다음 항목은 캡처에 실패해 PDF에서 제외되었습니다:\n${failedLabels.join(', ')}`);
       setPdfSelectMode(false);
     } finally {
       setPdfExporting(false);
