@@ -267,6 +267,10 @@ interface ValdInsightData {
 }
 
 const LR_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'] as const;
+const INSIGHT_ITEMS = [
+  { key: 'insight_analysis', label: 'VALD 종합 분석' },
+  { key: 'insight_prescription', label: '운동 처방 인사이트' },
+];
 const FLAT_METRIC_KEYS = ['cmj_height', 'cmj_peak_force', 'squat_jump_height', 'squat_jump_peak_force', 'sprint_5m', 'sprint_10m', 'sprint_30m', 'cod_run', 'cod_ball'];
 
 function computeValdInsight(entries: { name: string; records: PhysicalTestRow[] }[], thresholds: ValdThreshold[], grade: string): ValdInsightData {
@@ -323,33 +327,70 @@ function computeValdInsight(entries: { name: string; records: PhysicalTestRow[] 
   return { n: entries.length, lrStats, eurTiers, eurTotal: eurItems.length, compoundImbalance, nordicVsIso, adductorNordicRisk, belowMin };
 }
 
-function ValdAnalysisInsightBox({ data, grade, round }: { data: ValdInsightData; grade: string; round: string }) {
+// 코치가 바로 이해할 수 있도록 검사명 옆에 붙이는 쉬운 설명
+const METRIC_PLAIN_LABEL: Record<string, string> = {
+  nordic_curl: 'Nordic Curl (뒷허벅지 당기는 힘)',
+  hip_abduction: 'Hip Abduction (엉덩이 바깥쪽 힘)',
+  hip_adduction: 'Hip Adduction (허벅지 안쪽 힘)',
+  ham_iso: 'Hamstring Iso Prone (뒷허벅지 버티는 힘)',
+};
+
+function InsightStatCard({ label, count, unit, desc, color }: { label: string; count: number; unit: string; desc: string; color: string }) {
+  return (
+    <div className="rounded-lg border border-surface-secondary p-2.5" style={{ borderLeft: `3px solid ${color}` }}>
+      <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <p className="text-xl font-bold mt-0.5" style={{ fontFamily: 'var(--font-data)', color }}>{count}<span className="text-xs font-normal text-text-secondary">{unit}</span></p>
+      <p className="text-[11px] text-text-secondary mt-0.5 leading-snug">{desc}</p>
+    </div>
+  );
+}
+
+function ValdAnalysisInsightBox({ data, grade, round, sectionRef, selectable, checked, onToggle }: {
+  data: ValdInsightData; grade: string; round: string;
+  sectionRef?: (el: HTMLDivElement | null) => void; selectable?: boolean; checked?: boolean; onToggle?: () => void;
+}) {
   if (data.n === 0) return null;
   const imbalancedMetrics = LR_METRIC_KEYS
-    .map(key => ({ key, label: VALD_METRIC_DEFS.find(m => m.key === key)!.label, ...data.lrStats[key] }))
+    .map(key => ({ key, label: METRIC_PLAIN_LABEL[key], ...data.lrStats[key] }))
     .filter(s => s.dangerPlayers.length > 0);
   const belowMinEntries = FLAT_METRIC_KEYS
     .map(key => ({ key, label: VALD_METRIC_DEFS.find(m => m.key === key)!.label, names: data.belowMin[key] ?? [] }))
     .filter(e => e.names.length > 0);
+  const belowMinPlayerCount = new Set(belowMinEntries.flatMap(e => e.names)).size;
+  const [eurLow, eurMid, eurHigh] = data.eurTiers.map(t => t.count);
 
   return (
-    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4">
-      <p className="text-sm font-medium mb-2.5">VALD 종합 분석 <span className="text-xs font-normal text-text-secondary">({grade} · {round === '전체' ? '전체(개인 최고 기록)' : `${round}차`} · {data.n}명)</span></p>
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4" ref={sectionRef}>
+      <p className="text-sm font-medium mb-2.5 flex items-center gap-2">
+        {selectable && <input type="checkbox" checked={checked} onChange={onToggle} className="w-3.5 h-3.5 accent-cyan-500" />}
+        VALD 종합 분석 <span className="text-xs font-normal text-text-secondary">({grade} · {round === '전체' ? '전체(개인 최고 기록)' : `${round}차`} · {data.n}명)</span>
+      </p>
 
       <p className="text-[13px] leading-relaxed text-text-secondary mb-3">
-        현재 필터 기준 {data.n}명의 VALD 측정 데이터를 학년별 임계값(최대·평균·최저) 및 좌우 불균형 기준(±10%)과 대조해 종합 분석했습니다.
+        VALD 측정 장비로 잰 근력·순발력 검사 결과를 팀 기준(학년 평균)과 비교해, 지도자가 바로 챙겨야 할 선수와 훈련 방향을 정리했습니다.
       </p>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3.5">
+        <InsightStatCard label="양쪽 힘 차이 큰 선수" count={data.compoundImbalance.length} unit="명" color={colors.wine}
+          desc="여러 검사에서 좌우 힘 차이가 10% 이상 — 부상 위험 우선 관리" />
+        <InsightStatCard label="햄스트링 부상 위험군" count={data.adductorNordicRisk.length} unit="명" color={colors.navy}
+          desc="허벅지 안쪽 힘 + 뒷허벅지 힘이 모두 평균 이하" />
+        <InsightStatCard label="검사 결과 재확인 필요" count={data.nordicVsIso.length} unit="명" color={colors.warning}
+          desc="뒷허벅지 검사 두 종류의 결과가 반대로 나옴" />
+        <InsightStatCard label="기준 미달 항목 있는 선수" count={belowMinPlayerCount} unit="명" color={colors.muted}
+          desc="점프·스프린트 등에서 학년 최저 기준보다 낮음" />
+      </div>
 
       {data.compoundImbalance.length > 0 && (
         <div className="rounded-lg border px-3 py-2 mb-2.5 text-xs" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#991b1b' }}>
-          <b>복합 좌우 불균형(2개 항목 이상) — 우선 관리 대상:</b>{' '}
-          {data.compoundImbalance.map(p => `${p.name}(${p.labels.join(', ')})`).join('; ')}
+          <b>양쪽 힘 차이가 큰 선수(2개 항목 이상, 우선 관리):</b>{' '}
+          {data.compoundImbalance.map(p => `${p.name}(${p.labels.map(l => METRIC_PLAIN_LABEL[VALD_METRIC_DEFS.find(m => m.label === l)?.key ?? ''] ?? l).join(', ')})`).join('; ')}
         </div>
       )}
 
       {imbalancedMetrics.length > 0 && (
         <div className="mb-2.5">
-          <p className="text-xs font-medium mb-1">항목별 좌우 불균형(10% 이상)</p>
+          <p className="text-xs font-medium mb-1">검사별 좌우 힘 차이 10% 이상인 선수</p>
           <div className="flex flex-col gap-1">
             {imbalancedMetrics.map(s => (
               <p key={s.key} className="text-xs text-text-secondary leading-relaxed">
@@ -362,32 +403,30 @@ function ValdAnalysisInsightBox({ data, grade, round }: { data: ValdInsightData;
 
       {data.nordicVsIso.length > 0 && (
         <div className="rounded-lg border px-3 py-2 mb-2.5 text-xs" style={{ background: '#fffbeb', borderColor: '#fcd34d', color: '#92400e' }}>
-          <b>Nordic 대비 ISO Prone 역전 — 정밀 확인 필요:</b>{' '}
-          {data.nordicVsIso.map(p => `${p.name}(ISO ${p.iso.toFixed(0)}N > Nordic ${p.nordic.toFixed(0)}N)`).join(', ')}.
-          {' '}편심성(Nordic) 근력은 통상 등척성(ISO Prone)보다 높게 나타나는데, 역전되면 Nordic 검사 수행 미숙·신경억제·부하 부족 등을 의심할 수 있습니다.
+          <b>햄스트링 검사 결과 재확인 필요:</b> {data.nordicVsIso.map(p => p.name).join(', ')}.
+          {' '}보통은 당기는 힘(Nordic)이 버티는 힘(ISO Prone)보다 커야 하는데 반대로 나왔습니다. 측정 자세가 부정확했거나, 컨디션 저하·근육 억제가 원인일 수 있으니 재측정을 권장합니다.
         </div>
       )}
 
       {data.adductorNordicRisk.length > 0 && (
         <div className="rounded-lg border px-3 py-2 mb-2.5 text-xs" style={{ background: '#eff6ff', borderColor: '#93c5fd', color: '#1e3a8a' }}>
-          <b>고관절 내전근 + Nordic 동반 약화(햄스트링 부상 위험군):</b>{' '}
-          {data.adductorNordicRisk.map(p => `${p.name}`).join(', ')}.
-          {' '}내전근(특히 대내전근)은 스윙기 대퇴이두근의 과신전을 억제하는 "제4의 햄스트링" 역할을 하므로, 두 항목이 함께 낮으면 햄스트링 손상 위험이 높아질 수 있습니다.
+          <b>햄스트링 부상 위험군(허벅지 안쪽 힘 + 뒷허벅지 힘 모두 약함):</b> {data.adductorNordicRisk.map(p => p.name).join(', ')}.
+          {' '}허벅지 안쪽 근육은 달릴 때 뒷허벅지가 과하게 늘어나는 것을 막아주는 역할을 하는데, 두 곳이 함께 약하면 햄스트링 부상 위험이 커질 수 있습니다.
         </div>
       )}
 
       {data.eurTotal > 0 && (
         <div className="mb-2.5">
-          <p className="text-xs font-medium mb-1">EUR(신장성 활용 비율) 분포 · {data.eurTotal}명</p>
+          <p className="text-xs font-medium mb-1">점프할 때 힘 쓰는 방식 분포 · {data.eurTotal}명</p>
           <p className="text-xs text-text-secondary leading-relaxed">
-            {data.eurTiers.map(t => `${t.label.split(' · ')[0]} ${t.count}명`).join(' · ')}
+            순간적으로 튀어 오르는 유형(순발력형) <b>{eurLow}명</b> · 적정 비율 <b>{eurMid}명</b> · 힘으로 버티는 유형(근력형) <b>{eurHigh}명</b>
           </p>
         </div>
       )}
 
       {belowMinEntries.length > 0 && (
         <div className="mb-1">
-          <p className="text-xs font-medium mb-1">학년 임계값 최저 기준 미달 항목</p>
+          <p className="text-xs font-medium mb-1">학년 최저 기준보다 낮게 측정된 항목</p>
           <div className="flex flex-col gap-1">
             {belowMinEntries.map(e => (
               <p key={e.key} className="text-xs text-text-secondary leading-relaxed">
@@ -431,30 +470,52 @@ const EXERCISE_LIBRARY: Record<string, { name: string; detail: string }[]> = {
   ],
 };
 
-function ValdPrescriptionInsightBox({ data, grade, round }: { data: ValdInsightData; grade: string; round: string }) {
+function ValdPrescriptionInsightBox({ data, grade, round, sectionRef, selectable, checked, onToggle }: {
+  data: ValdInsightData; grade: string; round: string;
+  sectionRef?: (el: HTMLDivElement | null) => void; selectable?: boolean; checked?: boolean; onToggle?: () => void;
+}) {
   if (data.n === 0) return null;
   const eurLowCount = data.eurTiers[0]?.count ?? 0;
   const eurHighCount = data.eurTiers[2]?.count ?? 0;
   const sprintFlags = ['sprint_5m', 'sprint_10m', 'sprint_30m'].flatMap(k => data.belowMin[k] ?? []);
   const sprintFlagNames = [...new Set(sprintFlags)];
 
-  const focusGroups: { title: string; color: string; players: string; exercises: { name: string; detail: string }[] }[] = [];
+  const focusGroups: { title: string; reason: string; color: string; players: string; exercises: { name: string; detail: string }[] }[] = [];
   if (data.compoundImbalance.length > 0) {
-    focusGroups.push({ title: '좌우 불균형 교정', color: colors.wine, players: data.compoundImbalance.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.imbalance });
+    focusGroups.push({
+      title: '좌우 힘 차이 교정', reason: '여러 검사에서 좌우 힘 차이가 큰 선수 — 부상 예방을 위해 약한 쪽부터 우선 보강',
+      color: colors.wine, players: data.compoundImbalance.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.imbalance,
+    });
   }
   if (data.nordicVsIso.length > 0) {
-    focusGroups.push({ title: 'Nordic 검사 수행/신경근 점검', color: colors.warning, players: data.nordicVsIso.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.nordicVsIso });
+    focusGroups.push({
+      title: '햄스트링 검사 재점검', reason: '검사 결과가 반대로 나온 선수 — 자세를 교정해 다시 측정',
+      color: colors.warning, players: data.nordicVsIso.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.nordicVsIso,
+    });
   }
   if (data.adductorNordicRisk.length > 0) {
-    focusGroups.push({ title: '햄스트링 부상 예방(내전근+Nordic 보강)', color: colors.navy, players: data.adductorNordicRisk.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.adductorNordic });
+    focusGroups.push({
+      title: '햄스트링 부상 예방 보강', reason: '허벅지 안쪽 힘 + 뒷허벅지 힘이 함께 약한 선수 — 두 부위를 같이 강화',
+      color: colors.navy, players: data.adductorNordicRisk.map(p => p.name).join(', '), exercises: EXERCISE_LIBRARY.adductorNordic,
+    });
   }
   if (sprintFlagNames.length > 0) {
-    focusGroups.push({ title: '스프린트 파워 향상', color: colors.green, players: sprintFlagNames.join(', '), exercises: EXERCISE_LIBRARY.sprintPower });
+    focusGroups.push({
+      title: '스프린트 파워 향상', reason: '단거리 스프린트 기록이 학년 최저 기준보다 낮은 선수',
+      color: colors.green, players: sprintFlagNames.join(', '), exercises: EXERCISE_LIBRARY.sprintPower,
+    });
   }
 
   return (
-    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4">
-      <p className="text-sm font-medium mb-2.5">운동 처방 인사이트 <span className="text-xs font-normal text-text-secondary">({grade} · {round === '전체' ? '전체(개인 최고 기록)' : `${round}차`})</span></p>
+    <div className="bg-surface rounded-xl border border-surface-secondary p-4 mb-4" ref={sectionRef}>
+      <p className="text-sm font-medium mb-2.5 flex items-center gap-2">
+        {selectable && <input type="checkbox" checked={checked} onChange={onToggle} className="w-3.5 h-3.5 accent-cyan-500" />}
+        운동 처방 인사이트 <span className="text-xs font-normal text-text-secondary">({grade} · {round === '전체' ? '전체(개인 최고 기록)' : `${round}차`})</span>
+      </p>
+
+      <p className="text-[13px] leading-relaxed text-text-secondary mb-3">
+        위 &ldquo;VALD 종합 분석&rdquo;에서 발견된 문제점별로 바로 훈련에 적용할 수 있는 보강 운동을 정리했습니다.
+      </p>
 
       {focusGroups.length === 0 ? (
         <p className="text-[13px] text-text-secondary">현재 필터 기준 특별히 우선 개입이 필요한 항목이 발견되지 않았습니다. 기존 훈련 강도를 유지하세요.</p>
@@ -462,10 +523,11 @@ function ValdPrescriptionInsightBox({ data, grade, round }: { data: ValdInsightD
         <div className="flex flex-col gap-2.5 mb-3">
           {focusGroups.map(g => (
             <div key={g.title} className="bg-bg p-2.5" style={{ borderLeft: `3px solid ${g.color}` }}>
-              <div className="flex justify-between items-baseline mb-1">
+              <div className="flex justify-between items-baseline mb-0.5 flex-wrap gap-x-3">
                 <span className="text-xs font-medium">{g.title}</span>
                 <span className="text-[11px] text-text-disabled">{g.players}</span>
               </div>
+              <p className="text-[11px] text-text-secondary mb-1.5">{g.reason}</p>
               <ul className="text-[11.5px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
                 {g.exercises.map(ex => <li key={ex.name}><b className="text-[var(--text)]">{ex.name}</b> — {ex.detail}</li>)}
               </ul>
@@ -475,11 +537,11 @@ function ValdPrescriptionInsightBox({ data, grade, round }: { data: ValdInsightD
       )}
 
       <div className="border-t border-surface-secondary pt-2.5">
-        <p className="text-xs font-medium mb-1.5">팀 전체 EUR 기반 훈련 방향</p>
+        <p className="text-xs font-medium mb-1.5">팀 전체 점프 훈련 방향</p>
         <p className="text-[13px] leading-relaxed text-text-secondary">
-          {eurLowCount > 0 && <>EUR 1.1 이하 <b>{eurLowCount}명</b>은 반응성 플라이오메트릭 위주로 폭발적 힘 발휘 능력을 보강하세요. </>}
-          {eurHighCount > 0 && <>EUR 1.15 이상 <b>{eurHighCount}명</b>은 최대근력 훈련 비중을 늘려 편심-동심 균형을 맞추세요. </>}
-          {eurLowCount === 0 && eurHighCount === 0 && '현재 EUR 분포는 대체로 적정 훈련 비율(1.1~1.15) 구간에 있습니다.'}
+          {eurLowCount > 0 && <>순간적으로 튀어 오르는 유형(순발력형) <b>{eurLowCount}명</b>은 반응성 점프(플라이오메트릭) 훈련 비중을 늘려주세요. </>}
+          {eurHighCount > 0 && <>힘으로 버티는 유형(근력형) <b>{eurHighCount}명</b>은 무거운 중량의 근력 훈련 비중을 늘려주세요. </>}
+          {eurLowCount === 0 && eurHighCount === 0 && '현재 대부분 선수가 적정 훈련 비율 구간에 있어 특별한 조정이 필요하지 않습니다.'}
         </p>
       </div>
 
@@ -1338,12 +1400,12 @@ export function PhysicalOverviewPage() {
   };
 
   const startPdfSelect = () => {
-    setSelectedMetrics(new Set(VALD_METRIC_DEFS.map(m => m.key)));
+    setSelectedMetrics(new Set([...INSIGHT_ITEMS.map(i => i.key), ...VALD_METRIC_DEFS.map(m => m.key)]));
     setPdfSelectMode(true);
   };
 
   const handleValdPdfExport = useCallback(async () => {
-    const metrics = VALD_METRIC_DEFS.filter(m => selectedMetrics.has(m.key));
+    const metrics = [...INSIGHT_ITEMS, ...VALD_METRIC_DEFS].filter(m => selectedMetrics.has(m.key));
     if (metrics.length === 0) return;
     setPdfExporting(true);
     try {
@@ -1483,8 +1545,16 @@ export function PhysicalOverviewPage() {
             <p className="text-sm text-text-secondary text-center py-16">해당 학년/차수의 VALD 측정 기록이 없습니다.</p>
           ) : (
             <>
-              <ValdAnalysisInsightBox data={valdInsight} grade={gradeFilter} round={roundFilter} />
-              <ValdPrescriptionInsightBox data={valdInsight} grade={gradeFilter} round={roundFilter} />
+              <ValdAnalysisInsightBox
+                data={valdInsight} grade={gradeFilter} round={roundFilter}
+                sectionRef={el => { sectionRefs.current['insight_analysis'] = el; }}
+                selectable={pdfSelectMode} checked={selectedMetrics.has('insight_analysis')} onToggle={() => toggleMetric('insight_analysis')}
+              />
+              <ValdPrescriptionInsightBox
+                data={valdInsight} grade={gradeFilter} round={roundFilter}
+                sectionRef={el => { sectionRefs.current['insight_prescription'] = el; }}
+                selectable={pdfSelectMode} checked={selectedMetrics.has('insight_prescription')} onToggle={() => toggleMetric('insight_prescription')}
+              />
               {VALD_METRIC_DEFS.map(metric => (
                 <ValdMetricSection
                   key={metric.key}
