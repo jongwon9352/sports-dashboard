@@ -1419,25 +1419,33 @@ export function PhysicalOverviewPage() {
         const el = sectionRefs.current[metric.key];
         if (!el) continue;
 
-        // 캡처 전 요소 폭을 강제로 바꾸면 Recharts가 두 번(축소·복원) 재렌더링되어
-        // 항목이 많을 때 누적 지연으로 일부 캡처가 시간 내에 끝나지 못했다.
-        // 화면에 이미 그려진 크기 그대로 캡처해 불필요한 재렌더링을 없앤다.
+        // 캡처 전 차트 요소 폭을 강제로 바꾸면 Recharts가 두 번(축소·복원) 재렌더링되어
+        // 항목이 많을 때 누적 지연으로 일부 캡처가 시간 내에 끝나지 못했다. 차트는 화면에
+        // 이미 그려진 크기 그대로 캡처. 반면 텍스트 위주인 인사이트 박스는 화면 폭 그대로
+        // 캡처하면 가로로 넓고 세로로 짧아 PDF 페이지에서 공백이 크게 남으므로, 좁은 폭으로
+        // 강제 리플로우시켜 A4 페이지 비율에 가깝게 만든다(재렌더링 비용이 큰 차트가 아니라
+        // 텍스트라 리플로우 비용이 작아 안전).
+        const isInsight = metric.key.startsWith('insight_');
         const checkbox = el.querySelector('input[type=checkbox]') as HTMLElement | null;
         const origCheckboxDisplay = checkbox?.style.display;
         if (checkbox) checkbox.style.display = 'none';
+        const origCss = el.style.cssText;
+        if (isInsight) el.style.cssText = 'width:700px;min-width:700px;max-width:700px;';
 
         try {
+          if (isInsight) await new Promise(r => setTimeout(r, 100));
           // 특정 차트가 렌더링 지연으로 무한 대기하더라도 전체 내보내기가 멈추지 않도록 30초 제한
           const canvas = await Promise.race([
             html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, imageTimeout: 15000 }),
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 30000)),
           ]);
-          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height, fullPage: metric.key.startsWith('insight_') });
+          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height, fullPage: isInsight });
         } catch (err) {
           console.warn(`VALD PDF: ${metric.key} 캡처 실패`, err);
           failedLabels.push(metric.label);
         } finally {
           if (checkbox && origCheckboxDisplay !== undefined) checkbox.style.display = origCheckboxDisplay;
+          if (isInsight) el.style.cssText = origCss;
         }
       }
 
