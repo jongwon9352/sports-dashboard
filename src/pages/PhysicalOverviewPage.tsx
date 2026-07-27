@@ -102,7 +102,12 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
   if (items.length === 0) {
     return (
       <div className="mb-5" ref={sectionRef}>
-        <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+        <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2 flex items-center gap-2" style={{ fontFamily: 'var(--font-data)' }}>
+          {selectable && (
+            <input type="checkbox" checked={checked} onChange={onToggle} className="w-3.5 h-3.5 accent-cyan-500" />
+          )}
+          {label}
+        </p>
         <p className="text-sm text-text-disabled text-center py-8 bg-surface rounded-xl border border-surface-secondary">데이터 없음</p>
       </div>
     );
