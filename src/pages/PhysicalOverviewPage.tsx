@@ -1412,7 +1412,7 @@ export function PhysicalOverviewPage() {
     setPdfExporting(true);
     try {
       const pdfW = 210, pdfH = 297;
-      const pages: { imgData: string; aspect: number }[] = [];
+      const pages: { imgData: string; aspect: number; fullPage: boolean }[] = [];
       const failedLabels: string[] = [];
 
       for (const metric of metrics) {
@@ -1432,7 +1432,7 @@ export function PhysicalOverviewPage() {
             html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, imageTimeout: 15000 }),
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error('capture timeout')), 30000)),
           ]);
-          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height });
+          pages.push({ imgData: canvas.toDataURL('image/jpeg', 0.92), aspect: canvas.width / canvas.height, fullPage: metric.key.startsWith('insight_') });
         } catch (err) {
           console.warn(`VALD PDF: ${metric.key} 캡처 실패`, err);
           failedLabels.push(metric.label);
@@ -1443,19 +1443,35 @@ export function PhysicalOverviewPage() {
 
       if (pages.length === 0) { alert('PDF로 캡처할 수 있는 항목이 없습니다.'); return; }
 
-      // 페이지당 항목 2개(전체 차트 + TOP10 포함)씩 위/아래로 배치
+      // 차트 항목(전체 차트 + TOP10)은 페이지당 2개씩 위/아래로 배치하되,
+      // 텍스트 위주인 인사이트 박스는 차트와 가로세로 비율이 달라 반페이지에 맞추면
+      // 공백이 크게 남으므로 페이지 전체 크기로 따로 배치한다.
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const margin = 8;
       const slotH = (pdfH - margin * 3) / 2;
       const availW = pdfW - margin * 2;
-      pages.forEach((p, i) => {
-        const slot = i % 2;
-        if (i > 0 && slot === 0) pdf.addPage('a4', 'portrait');
-        let dW = availW, dH = availW / p.aspect;
-        if (dH > slotH) { dH = slotH; dW = slotH * p.aspect; }
-        const x = (pdfW - dW) / 2;
-        const y = margin + slot * (slotH + margin) + (slotH - dH) / 2;
-        pdf.addImage(p.imgData, 'JPEG', x, y, dW, dH);
+      let isFirstPage = true;
+      let chartSlot = 0;
+      pages.forEach(p => {
+        if (p.fullPage) {
+          if (!isFirstPage) pdf.addPage('a4', 'portrait');
+          const availH = pdfH - margin * 2;
+          let dW = availW, dH = availW / p.aspect;
+          if (dH > availH) { dH = availH; dW = availH * p.aspect; }
+          const x = (pdfW - dW) / 2;
+          const y = margin + (availH - dH) / 2;
+          pdf.addImage(p.imgData, 'JPEG', x, y, dW, dH);
+          chartSlot = 0;
+        } else {
+          if (!isFirstPage && chartSlot === 0) pdf.addPage('a4', 'portrait');
+          let dW = availW, dH = availW / p.aspect;
+          if (dH > slotH) { dH = slotH; dW = slotH * p.aspect; }
+          const x = (pdfW - dW) / 2;
+          const y = margin + chartSlot * (slotH + margin) + (slotH - dH) / 2;
+          pdf.addImage(p.imgData, 'JPEG', x, y, dW, dH);
+          chartSlot = chartSlot === 0 ? 1 : 0;
+        }
+        isFirstPage = false;
       });
       pdf.save(`VALD_리포트_${gradeFilter}_${roundFilter === ALL_ROUNDS ? '전체' : roundFilter}.pdf`);
       if (failedLabels.length > 0) alert(`다음 항목은 캡처에 실패해 PDF에서 제외되었습니다:\n${failedLabels.join(', ')}`);
