@@ -3075,7 +3075,16 @@ export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear:
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
 
-  const physicalRows = validRows.map(row => {
+  // 선수·날짜·종목별로 여러 회차 중 최고 기록(최대 점프 높이)만 사용
+  const bestByKey = new Map<string, ForcedecksRow>();
+  for (const row of validRows) {
+    const key = `${normalizeName(row.player_name)}__${row.test_date}__${row.metric}`;
+    const prev = bestByKey.get(key);
+    if (!prev || row.jumpHeight > prev.jumpHeight) bestByKey.set(key, row);
+  }
+  const dedupedRows = Array.from(bestByKey.values());
+
+  const physicalRows = dedupedRows.map(row => {
     const base: Record<string, unknown> = {
       player_id: playerMap.get(normalizeName(row.player_name)),
       test_date: row.test_date,
