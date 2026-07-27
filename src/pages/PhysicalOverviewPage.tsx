@@ -335,9 +335,11 @@ const METRIC_PLAIN_LABEL: Record<string, string> = {
   ham_iso: 'Hamstring Iso Prone (뒷허벅지 버티는 힘)',
 };
 
+// PDF 캡처(html2canvas)는 CSS Grid를 안정적으로 지원하지 않아, 부모 컨테이너를 flex로 두고
+// 각 카드에 고정 비율 basis를 줘서 캡처 시에도 항상 가로로 나열되도록 한다.
 function InsightStatCard({ label, count, unit, desc, color }: { label: string; count: number; unit: string; desc: string; color: string }) {
   return (
-    <div className="rounded-lg border border-surface-secondary p-2.5" style={{ borderLeft: `3px solid ${color}` }}>
+    <div className="rounded-lg border border-surface-secondary p-2.5" style={{ borderLeft: `3px solid ${color}`, flex: '1 1 200px' }}>
       <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
       <p className="text-xl font-bold mt-0.5" style={{ fontFamily: 'var(--font-data)', color }}>{count}<span className="text-xs font-normal text-text-secondary">{unit}</span></p>
       <p className="text-[11px] text-text-secondary mt-0.5 leading-snug">{desc}</p>
@@ -370,7 +372,7 @@ function ValdAnalysisInsightBox({ data, grade, round, sectionRef, selectable, ch
         VALD 측정 장비로 잰 근력·순발력 검사 결과를 팀 기준(학년 평균)과 비교해, 지도자가 바로 챙겨야 할 선수와 훈련 방향을 정리했습니다.
       </p>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3.5">
+      <div className="flex flex-wrap gap-2.5 mb-3.5">
         <InsightStatCard label="양쪽 힘 차이 큰 선수" count={data.compoundImbalance.length} unit="명" color={colors.wine}
           desc="여러 검사에서 좌우 힘 차이가 10% 이상 — 부상 위험 우선 관리" />
         <InsightStatCard label="햄스트링 부상 위험군" count={data.adductorNordicRisk.length} unit="명" color={colors.navy}
