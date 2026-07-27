@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, ReferenceArea, Legend,
   ComposedChart, Scatter, Area, Line,
 } from 'recharts';
+import html2canvas from 'html2canvas-pro';
+import { jsPDF } from 'jspdf';
 import {
   fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchValdThresholds,
-  fetchBodyCompositionRecords,
+  fetchBodyCompositionRecords, computeValdValue,
   VALD_METRIC_DEFS, VALD_GRADES, VALD_ACCESSORS,
   type PhysicalTestRow, type MaturityRow, type SpeedCustomRow, type ValdThreshold, type BodyCompositionRow,
 } from '../lib/api';
@@ -20,16 +22,25 @@ function imbalancePercent(l: number, r: number): number {
 
 interface ValdItem { name: string; L: number | null; R: number | null; value: number; imbalance: number | null }
 
-function buildValdItems(metricKey: string, rows: { name: string; record: PhysicalTestRow }[]): ValdItem[] {
+// entries의 records가 1개(특정 차수 선택)면 그 기록을, 여러 개(전체 선택)면 항목별 최고 기록을 사용
+function buildValdItems(metricKey: string, invert: boolean | undefined, entries: { name: string; records: PhysicalTestRow[] }[]): ValdItem[] {
   const acc = VALD_ACCESSORS[metricKey];
   const items: ValdItem[] = [];
-  for (const { name, record } of rows) {
+  for (const { name, records } of entries) {
+    let best: PhysicalTestRow | null = null;
+    let bestVal: number | null = null;
+    for (const r of records) {
+      const v = computeValdValue(metricKey, r);
+      if (v == null) continue;
+      if (bestVal == null || (invert ? v < bestVal : v > bestVal)) { bestVal = v; best = r; }
+    }
+    if (!best) continue;
     if (acc.value) {
-      const v = acc.value(record);
+      const v = acc.value(best);
       if (v != null) items.push({ name, L: null, R: null, value: v, imbalance: null });
     } else if (acc.left && acc.right) {
-      const l = acc.left(record);
-      const r = acc.right(record);
+      const l = acc.left(best);
+      const r = acc.right(best);
       if (l != null && r != null) items.push({ name, L: l, R: r, value: (l + r) / 2, imbalance: imbalancePercent(l, r) });
       else if (l != null || r != null) items.push({ name, L: l, R: r, value: (l ?? r)!, imbalance: null });
     }
@@ -66,12 +77,13 @@ function ValdDot({ cx, cy, payload, threshold }: any) {
   return <circle cx={cx} cy={cy} r={5} fill={fill} stroke="#fff" strokeWidth={1.5} />;
 }
 
-function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers, dotPlot, rows, threshold }: {
+function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers, dotPlot, entries, threshold, sectionRef, selectable, checked, onToggle }: {
   metricKey: string; label: string; unit: string; invert?: boolean; hasLR?: boolean; note?: string;
   tiers?: { max: number; label: string }[]; dotPlot?: boolean;
-  rows: { name: string; record: PhysicalTestRow }[]; threshold: ValdThreshold | null;
+  entries: { name: string; records: PhysicalTestRow[] }[]; threshold: ValdThreshold | null;
+  sectionRef?: (el: HTMLDivElement | null) => void; selectable?: boolean; checked?: boolean; onToggle?: () => void;
 }) {
-  const items = useMemo(() => buildValdItems(metricKey, rows), [metricKey, rows]);
+  const items = useMemo(() => buildValdItems(metricKey, invert, entries), [metricKey, invert, entries]);
   // 구간(tiers)이 있는 항목(예: EUR)은 오름차순, 닷플롯 항목(스프린트 등)은 기록 좋은 순으로 정렬
   const displayItems = useMemo(() => {
     if (tiers) return [...items].sort((a, b) => a.value - b.value);
@@ -89,7 +101,7 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
 
   if (items.length === 0) {
     return (
-      <div className="mb-5">
+      <div className="mb-5" ref={sectionRef}>
         <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
         <p className="text-sm text-text-disabled text-center py-8 bg-surface rounded-xl border border-surface-secondary">데이터 없음</p>
       </div>
@@ -97,8 +109,11 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
   }
 
   return (
-    <div className="mb-5">
-      <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>
+    <div className="mb-5" ref={sectionRef}>
+      <p className="text-xs text-text-disabled uppercase tracking-[1px] mb-2 flex items-center gap-2" style={{ fontFamily: 'var(--font-data)' }}>
+        {selectable && (
+          <input type="checkbox" checked={checked} onChange={onToggle} className="w-3.5 h-3.5 accent-cyan-500" />
+        )}
         {label}{unit ? ` (${unit})` : ''} · {items.length}명
       </p>
       {note && (
@@ -1018,6 +1033,12 @@ export function PhysicalOverviewPage() {
   const [bodyRows, setBodyRows] = useState<BodyCompositionRow[]>([]);
   const [gradeFilter, setGradeFilter] = useState<string>(VALD_GRADES[0]);
   const [loading, setLoading] = useState(true);
+  const ALL_ROUNDS = '전체';
+  const [roundFilter, setRoundFilter] = useState<string>(ALL_ROUNDS);
+  const [pdfSelectMode, setPdfSelectMode] = useState(false);
+  const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set());
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords(), fetchSpeedCustomRecords(), fetchValdThresholds(), fetchBodyCompositionRecords()])
@@ -1032,19 +1053,87 @@ export function PhysicalOverviewPage() {
       });
   }, []);
 
-  // VALD 팀 비교: 선수별 최신 측정 기록 1건 + 학년 필터
-  const teamValdRows = useMemo(() => {
-    const latestByPlayer = new Map<string, PhysicalTestRow>();
+  // 차수(test_round) 목록: 최신순, "전체"(개인 최고 기록) 포함
+  const roundOptions = useMemo(() => {
+    const rounds = [...new Set(allRecords.map(r => r.test_round).filter((r): r is string => r != null))];
+    rounds.sort((a, b) => b.localeCompare(a));
+    return [ALL_ROUNDS, ...rounds];
+  }, [allRecords]);
+
+  const playerRecordsMap = useMemo(() => {
+    const map = new Map<string, PhysicalTestRow[]>();
     for (const r of allRecords) {
-      const prev = latestByPlayer.get(r.player_id);
-      if (!prev || r.test_date > prev.test_date) latestByPlayer.set(r.player_id, r);
+      if (!map.has(r.player_id)) map.set(r.player_id, []);
+      map.get(r.player_id)!.push(r);
     }
+    return map;
+  }, [allRecords]);
+
+  // VALD 팀 비교: 학년 필터 + 차수 필터(전체 선택 시 선수별 전 차수 기록 모두 전달 → 항목별 최고 기록 사용)
+  const valdEntries = useMemo(() => {
     const gradeMap = new Map(players.map(p => [p.id, p.grade as string]));
     return players
       .filter(p => gradeFilter === '전체' || gradeMap.get(p.id) === gradeFilter)
-      .map(p => ({ name: p.name, record: latestByPlayer.get(p.id) }))
-      .filter((x): x is { name: string; record: PhysicalTestRow } => x.record != null);
-  }, [allRecords, players, gradeFilter]);
+      .map(p => {
+        const all = playerRecordsMap.get(p.id) ?? [];
+        const records = roundFilter === ALL_ROUNDS ? all : all.filter(r => r.test_round === roundFilter);
+        return { name: p.name, records };
+      })
+      .filter(e => e.records.length > 0);
+  }, [players, gradeFilter, playerRecordsMap, roundFilter]);
+
+  const toggleMetric = (key: string) => {
+    setSelectedMetrics(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const startPdfSelect = () => {
+    setSelectedMetrics(new Set(VALD_METRIC_DEFS.map(m => m.key)));
+    setPdfSelectMode(true);
+  };
+
+  const handleValdPdfExport = useCallback(async () => {
+    const metrics = VALD_METRIC_DEFS.filter(m => selectedMetrics.has(m.key));
+    if (metrics.length === 0) return;
+    setPdfExporting(true);
+    try {
+      const CAPTURE_W = 1200;
+      const pdfW = 210, pdfH = 297;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      for (let i = 0; i < metrics.length; i++) {
+        const el = sectionRefs.current[metrics[i].key];
+        if (!el) continue;
+        if (i > 0) pdf.addPage('a4', 'portrait');
+
+        const origCss = el.style.cssText;
+        el.style.cssText = `width:${CAPTURE_W}px;min-width:${CAPTURE_W}px;max-width:${CAPTURE_W}px;overflow:visible;background:#fff;color:#222;padding:12px;`;
+        const checkbox = el.querySelector('input[type=checkbox]') as HTMLElement | null;
+        const origCheckboxDisplay = checkbox?.style.display;
+        if (checkbox) checkbox.style.display = 'none';
+
+        await new Promise(r => setTimeout(r, 250));
+        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: CAPTURE_W });
+
+        el.style.cssText = origCss;
+        if (checkbox && origCheckboxDisplay !== undefined) checkbox.style.display = origCheckboxDisplay;
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        const imgAspect = canvas.width / canvas.height;
+        let dW = pdfW - 10, dH = (pdfW - 10) / imgAspect;
+        if (dH > pdfH - 10) { dH = pdfH - 10; dW = (pdfH - 10) * imgAspect; }
+        pdf.addImage(imgData, 'JPEG', (pdfW - dW) / 2, 5, dW, dH);
+      }
+
+      pdf.save(`VALD_리포트_${gradeFilter}_${roundFilter === ALL_ROUNDS ? '전체' : roundFilter}.pdf`);
+      setPdfSelectMode(false);
+    } finally {
+      setPdfExporting(false);
+    }
+  }, [selectedMetrics, gradeFilter, roundFilter]);
 
   const tabBtn = (id: Tab, label: string) => (
     <button
@@ -1070,24 +1159,62 @@ export function PhysicalOverviewPage() {
 
       {tab === 'vald' ? (
         <>
-          <div className="flex gap-2 mb-4">
-            {VALD_GRADES.map(g => (
-              <button
-                key={g}
-                onClick={() => setGradeFilter(g)}
-                className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                  gradeFilter === g ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
-                }`}
+          <div className="flex gap-2 mb-4 flex-wrap items-center justify-between">
+            <div className="flex gap-2 flex-wrap items-center">
+              {VALD_GRADES.map(g => (
+                <button
+                  key={g}
+                  onClick={() => setGradeFilter(g)}
+                  className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+                    gradeFilter === g ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+              <select
+                value={roundFilter}
+                onChange={e => setRoundFilter(e.target.value)}
+                className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
               >
-                {g}
+                {roundOptions.map(r => (
+                  <option key={r} value={r}>{r === ALL_ROUNDS ? '전체 (개인 최고 기록)' : `${r}차`}</option>
+                ))}
+              </select>
+            </div>
+
+            {pdfSelectMode ? (
+              <div className="flex gap-2 items-center">
+                <span className="text-xs text-text-secondary">{selectedMetrics.size}개 선택됨</span>
+                <button
+                  onClick={handleValdPdfExport}
+                  disabled={pdfExporting || selectedMetrics.size === 0}
+                  className="px-3 py-1.5 text-xs rounded-md bg-cyan-500 text-white hover:bg-cyan-600 transition-colors disabled:opacity-50"
+                >
+                  {pdfExporting ? 'PDF 생성 중...' : 'PDF로 내보내기'}
+                </button>
+                <button
+                  onClick={() => setPdfSelectMode(false)}
+                  disabled={pdfExporting}
+                  className="px-3 py-1.5 text-xs rounded-md border border-surface-secondary hover:bg-surface-secondary transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startPdfSelect}
+                className="px-3 py-1.5 text-xs rounded-md border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 transition-colors"
+              >
+                📄 PDF 다운로드
               </button>
-            ))}
+            )}
           </div>
 
           {loading ? (
             <p className="text-sm text-text-secondary text-center py-16">로딩 중...</p>
-          ) : teamValdRows.length === 0 ? (
-            <p className="text-sm text-text-secondary text-center py-16">해당 학년의 VALD 측정 기록이 없습니다.</p>
+          ) : valdEntries.length === 0 ? (
+            <p className="text-sm text-text-secondary text-center py-16">해당 학년/차수의 VALD 측정 기록이 없습니다.</p>
           ) : (
             VALD_METRIC_DEFS.map(metric => (
               <ValdMetricSection
@@ -1100,8 +1227,12 @@ export function PhysicalOverviewPage() {
                 note={metric.note}
                 tiers={metric.tiers}
                 dotPlot={metric.dotPlot}
-                rows={teamValdRows}
+                entries={valdEntries}
                 threshold={thresholds.find(t => t.metric_key === metric.key && t.grade === gradeFilter) ?? null}
+                sectionRef={el => { sectionRefs.current[metric.key] = el; }}
+                selectable={pdfSelectMode}
+                checked={selectedMetrics.has(metric.key)}
+                onToggle={() => toggleMetric(metric.key)}
               />
             ))
           )}
