@@ -2084,6 +2084,8 @@ export interface MdProfileRow {
   load: number;
   acc: number;
   dec: number;
+  /** 팀이 그 MD 코드에서 실제로 기록한 평균 RPE. 주기화 생성기가 강도(%) 근거로 쓴다. */
+  rpe: number;
 }
 
 export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
@@ -2117,7 +2119,7 @@ export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
   }
 
   const avg = (rows: R[], key: string) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0) / rows.length;
-  const byCode = new Map<string, { td: number; hsr: number; sprint: number; load: number; acc: number; dec: number }[]>();
+  const byCode = new Map<string, { td: number; hsr: number; sprint: number; load: number; acc: number; dec: number; rpe: number }[]>();
   for (const [date, rows] of byDate) {
     const code = mdCodeForDays(date, matchDays).code;
     if (!code) continue;
@@ -2125,6 +2127,7 @@ export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
     const load = tlRows.length > 0
       ? tlRows.reduce((s, r) => s + Number(r.rpe) * Number(r.duration_min), 0) / tlRows.length
       : 0;
+    const rpe = tlRows.length > 0 ? tlRows.reduce((s, r) => s + Number(r.rpe), 0) / tlRows.length : 0;
     if (!byCode.has(code)) byCode.set(code, []);
     byCode.get(code)!.push({
       td: avg(rows, 'total_distance'),
@@ -2133,6 +2136,7 @@ export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
       load,
       acc: avg(rows, 'acc_count'),
       dec: avg(rows, 'dec_count'),
+      rpe,
     });
   }
 
@@ -2147,6 +2151,7 @@ export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
       load: Math.round(mean(days.map(d => d.load))),
       acc: Math.round(mean(days.map(d => d.acc))),
       dec: Math.round(mean(days.map(d => d.dec))),
+      rpe: Math.round(mean(days.map(d => d.rpe)) * 100) / 100,
     }))
     .sort((a, b) => mdCodeOrder(a.code) - mdCodeOrder(b.code));
 }

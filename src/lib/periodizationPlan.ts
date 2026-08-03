@@ -141,10 +141,19 @@ export function buildWeeklyPlan(inputs: WeeklyPlanInputs): { weekTopic: string; 
   const dates = weekDates(inputs.weekStart);
   let measuredCount = 0;
 
+  // 강도(%)의 기준을 표준 템플릿이 아니라 우리 팀이 실제 기록한 RPE로 바꾼다.
+  // 경기일 RPE는 훈련 강도 기준으로 쓸 수 없으므로(경기는 항상 최고 강도) 제외하고,
+  // 훈련일 중 우리 팀이 가장 힘들게 뛴 MD 코드를 100% 기준점으로 삼는다.
+  const peakTrainingRpe = Math.max(
+    0,
+    ...inputs.mdProfile.filter(r => r.code !== 'MD' && r.rpe > 0).map(r => r.rpe),
+  ) || null;
+
   const days: DayPlan[] = dates.map(date => {
     const code = mdCodeForDays(date, matchDays).code;
     const meta = code ? MD_META[code] ?? REST_META : REST_META;
     const day = emptyDayPlan();
+    const measured = code ? inputs.mdProfile.find(r => r.code === code) : undefined;
 
     day.periodization = code ?? '휴식';
     day.perio_code = meta.key;
@@ -155,12 +164,13 @@ export function buildWeeklyPlan(inputs: WeeklyPlanInputs): { weekTopic: string; 
 
     day.time = meta.minutes;
     // 경기는 강도 조절 대상이 아니다 — 토픽 배율을 적용하지 않는다.
-    const intensity = meta.focus === 'match'
-      ? meta.intensityPct
-      : Math.min(100, Math.round(meta.intensityPct * scale.intensity));
+    // 훈련일은 실측 RPE가 있으면 그 상대 강도(%)를, 없으면 표준 템플릿 값을 기준으로 삼는다.
+    const basePct = (measured && measured.rpe > 0 && peakTrainingRpe)
+      ? Math.round((measured.rpe / peakTrainingRpe) * 100)
+      : meta.intensityPct;
+    const intensity = meta.focus === 'match' ? meta.intensityPct : Math.min(100, Math.round(basePct * scale.intensity));
     day.intensity = `${intensity}%`;
 
-    const measured = inputs.mdProfile.find(r => r.code === code);
     if (!measured) return day; // 실측 없는 코드는 수치를 지어내지 않고 비워 둔다
 
     measuredCount++;
@@ -176,7 +186,9 @@ export function buildWeeklyPlan(inputs: WeeklyPlanInputs): { weekTopic: string; 
 
   const matchCount = days.filter(d => d.periodization === 'MD').length;
   const matchNote = matchCount === 0 ? ' · 경기 없음' : matchCount > 1 ? ` · 경기 ${matchCount}회` : ' · 경기 1회';
-  const basisNote = measuredCount > 0 ? ` · MD별 팀 실측 ${measuredCount}일 반영` : ' · 실측 데이터 없음(수치 미기입)';
+  const basisNote = measuredCount > 0
+    ? ` · MD별 팀 실측 ${measuredCount}일 반영${peakTrainingRpe ? ' (강도도 실측 RPE 기준)' : ''}`
+    : ' · 실측 데이터 없음(수치 미기입)';
 
   return { weekTopic: `${inputs.topic} — ${scale.note}${matchNote}${basisNote}`, days };
 }

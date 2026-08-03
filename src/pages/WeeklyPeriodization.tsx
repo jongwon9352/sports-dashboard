@@ -490,7 +490,7 @@ export function WeeklyPeriodization() {
         <span className="text-[11px] text-text-secondary leading-snug flex-1 min-w-[280px]">
           {TOPIC_SCALE[energyTopic].note} · 볼륨 ×{TOPIC_SCALE[energyTopic].volume.toFixed(2)} · 강도 ×{TOPIC_SCALE[energyTopic].intensity.toFixed(2)}
           <br />
-          경기 일정에서 MD 코드를 계산해 배치합니다 · 목표 수치는 팀의 MD별 실측 평균 기준 · 생성 후 아래 표에서 검토·수정 후 저장하세요.
+          경기 일정에서 MD 코드를 계산해 배치합니다 · 목표 수치와 강도(%)는 우리 팀의 데일리·위클리 리포트 실측(MD별 평균 RPE·부하) 기준 · 생성 후 아래 표에서 검토·수정 후 저장하세요.
         </span>
       </div>
 
