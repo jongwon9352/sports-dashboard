@@ -2001,6 +2001,77 @@ export async function clearCalendarOverride(planDate: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── 월간 캘린더 자동 내용의 재료 ────────────────────────────────────────
+// 경기가 없는 날도 대부분 훈련일이다. 훈련 기록(데일리 리포트의 원천)과 주간 주기화
+// 계획을 함께 읽어야 캘린더가 "기록 없음"으로 비지 않는다.
+
+/** 실제 훈련이 있었던 날짜 → 참여 인원 */
+export async function fetchTrainingDays(from: string, to: string): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (!supabase) return result;
+  const seen = new Map<string, Set<string>>();
+  let offset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: chunk } = await supabase
+      .from('training_daily')
+      .select('training_date, player_id')
+      .gte('training_date', from)
+      .lte('training_date', to)
+      .range(offset, offset + PAGE - 1);
+    if (!chunk || chunk.length === 0) break;
+    for (const r of chunk as R[]) {
+      const d = r.training_date as string;
+      if (!seen.has(d)) seen.set(d, new Set());
+      seen.get(d)!.add(String(r.player_id));
+    }
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  for (const [d, players] of seen) result.set(d, players.size);
+  return result;
+}
+
+/** 주간 주기화에 적어 둔 날짜별 훈련 목표(Physical Goal) */
+export async function fetchPlannedGoals(from: string, to: string): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (!supabase) return result;
+
+  // 범위를 덮는 월요일 목록.
+  // 여기서는 mondayOfDate()를 쓰지 않는다 — 그 함수는 로컬 Date를 toISOString()으로
+  // 되돌려 KST에서 하루 밀린 일요일을 내놓기 때문에 week_start와 맞지 않는다.
+  const mondays: string[] = [];
+  {
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const start = Date.UTC(fy, fm - 1, fd);
+    const dow = new Date(start).getUTCDay(); // 0=일
+    let m = start - ((dow + 6) % 7) * 86_400_000;
+    while (new Date(m).toISOString().slice(0, 10) <= to) {
+      mondays.push(new Date(m).toISOString().slice(0, 10));
+      m += 7 * 86_400_000;
+    }
+  }
+  if (mondays.length === 0) return result;
+
+  const { data } = await supabase
+    .from('weekly_periodization')
+    .select('week_start, days')
+    .in('week_start', mondays);
+
+  for (const row of (data ?? []) as R[]) {
+    let parsed: unknown = row.days;
+    while (typeof parsed === 'string') parsed = JSON.parse(parsed);
+    if (!Array.isArray(parsed)) continue;
+    const [y, mo, d] = (row.week_start as string).split('-').map(Number);
+    const base = Date.UTC(y, mo - 1, d);
+    parsed.forEach((plan: DayPlan, i: number) => {
+      const goal = (plan?.physical_goal ?? '').trim();
+      if (goal) result.set(new Date(base + i * 86_400_000).toISOString().slice(0, 10), goal);
+    });
+  }
+  return result;
+}
+
 // ── MD 코드별 팀 실측 프로파일 ──────────────────────────────────────────
 // 주기화 자동 생성의 목표 수치 근거. 남의 팀 주기화표 숫자를 베끼지 않고, 우리 팀이 그 MD
 // 코드에서 실제로 뛴 평균을 목표로 삼는다.

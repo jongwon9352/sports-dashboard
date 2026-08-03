@@ -9,6 +9,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchMatchSchedule, fetchCalendarOverrides, fetchMatchDates,
+  fetchTrainingDays, fetchPlannedGoals,
   saveCalendarOverride, clearCalendarOverride, insertMatchSchedule, deleteMatchSchedule,
   type MatchScheduleRow, type CalendarDayOverride,
 } from '../lib/api';
@@ -46,6 +47,8 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
   const [pastMatches, setPastMatches] = useState<PastMatch[]>([]);
   const [fixtures, setFixtures] = useState<MatchScheduleRow[]>([]);
   const [overrides, setOverrides] = useState<CalendarDayOverride[]>([]);
+  const [trainingDays, setTrainingDays] = useState<Map<string, number>>(new Map());
+  const [plannedGoals, setPlannedGoals] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,14 +67,18 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
     setLoading(true);
     setError(null);
     try {
-      const [past, fx, ov] = await Promise.all([
+      const [past, fx, ov, td, goals] = await Promise.all([
         fetchMatchDates(),
         fetchMatchSchedule(),
         fetchCalendarOverrides(isoDate(rangeStart), isoDate(rangeEnd)),
+        fetchTrainingDays(isoDate(rangeStart), isoDate(rangeEnd)),
+        fetchPlannedGoals(isoDate(rangeStart), isoDate(rangeEnd)),
       ]);
       setPastMatches(past);
       setFixtures(fx);
       setOverrides(ov);
+      setTrainingDays(td);
+      setPlannedGoals(goals);
     } catch (e) {
       setError(e instanceof Error ? e.message : '캘린더를 불러오지 못했습니다');
     }
@@ -113,11 +120,18 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
 
   const todayIso = isoDate(now);
 
+  // 경기 > 훈련 기록 순으로 보여준다. 훈련일에는 주간 주기화에 적어 둔 목표와
+  // 실제 참여 인원을 함께 붙여, 계획과 기록을 한 칸에서 확인할 수 있게 한다.
   function autoContentOf(iso: string) {
     const fx = fixtureByDate.get(iso);
     if (fx?.length) return fx.map(f => `${f.event_type}\n${f.opponent} (${f.home ? 'H' : 'A'})`).join('\n');
     const past = pastByDate.get(iso);
     if (past?.length) return past.map(p => `${p.event_type}\n${p.opponent}`).join('\n');
+
+    const goal = plannedGoals.get(iso);
+    const players = trainingDays.get(iso);
+    if (players) return goal ? `${goal}\n훈련 ${players}명` : `훈련 ${players}명`;
+    if (goal) return `${goal}\n(기록 없음)`;
     return '기록 없음';
   }
 
