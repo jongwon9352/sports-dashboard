@@ -10,6 +10,8 @@ import {
   fetchDailySessionReports, type DailySessionReport,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
+import { mdCodeFor } from '../lib/mdCode';
+import { useMatchDates } from '../lib/useMatchDates';
 import { colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
 
@@ -237,6 +239,8 @@ export function DailyReport() {
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useState('');
   const [targets, setTargets] = useState<{ td: number; hsr: number; sprint: number } | null>(null);
+  const matchDates = useMatchDates();
+  const mdCode = selectedDate ? mdCodeFor(selectedDate, matchDates).code : null;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
@@ -481,7 +485,10 @@ export function DailyReport() {
               <div className="text-center mb-3">
                 <div className="chart-title mb-1">- 선수별 데이터 -</div>
                 <div className="pdf-header-info flex items-center justify-center gap-8 flex-wrap" style={{ fontSize: 13 }}>
-                  <span>일시: {formatKoreanDate(selectedDate)}</span>
+                  <span>
+                    일시: {formatKoreanDate(selectedDate)}
+                    {mdCode && <span className="ml-1.5 font-semibold" style={{ color: 'var(--color-purple)' }}>[{mdCode}]</span>}
+                  </span>
                   <span>
                     장소: <input type="text" value={location} onChange={e => setLocation(e.target.value)}
                       placeholder="장소 입력" className="px-2 py-0.5 rounded border border-surface-secondary bg-transparent w-36 outline-none" style={{ fontSize: 13 }} />

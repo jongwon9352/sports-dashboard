@@ -6,6 +6,8 @@ import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { fetchMatchDates, fetchMatchReportData, saveMatchPositions, fetchMatchSessionData, type MatchSessionRow } from '../lib/api';
 import type { MatchReportRow } from '../types';
+import { toMatchDays } from '../lib/mdCode';
+import { useMatchDates } from '../lib/useMatchDates';
 
 const POSITIONS = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'] as const;
 type Position = typeof POSITIONS[number];
@@ -325,6 +327,19 @@ export function MatchReport() {
   }, [assignedRows, positions, posAvgMinTime]);
 
   const selectedMatchInfo = matches.find(m => `${m.date}_${m.opponent}` === selectedMatch);
+  const allMatchDates = useMatchDates();
+
+  // 경기 당일의 MD 코드는 항상 'MD'라 정보가 없다. 앞뒤 경기와의 간격이 회복 맥락을 준다.
+  const matchGap = useMemo(() => {
+    const d = selectedMatchInfo?.date;
+    if (!d) return { since: null, until: null } as { since: number | null; until: number | null };
+    const days = toMatchDays(allMatchDates);
+    const [y, mo, da] = d.split('-').map(Number);
+    const self = Math.floor(Date.UTC(y, mo - 1, da) / 86_400_000);
+    const prev = days.filter(x => x < self).pop() ?? null;
+    const next = days.find(x => x > self) ?? null;
+    return { since: prev == null ? null : self - prev, until: next == null ? null : next - self };
+  }, [selectedMatchInfo?.date, allMatchDates]);
 
   const thC = 'px-2 py-2 text-[11px] font-semibold whitespace-nowrap border-b border-surface-secondary';
   const tdC = 'px-2 py-1.5 text-[11px] whitespace-nowrap border-b border-surface-secondary text-right';
@@ -560,6 +575,13 @@ export function MatchReport() {
                   <span>대회: {selectedMatchInfo?.event_type ?? ''}</span>
                   <span>상대: {selectedMatchInfo?.opponent ?? ''}</span>
                   <span>인원: {assignedRows.length}명</span>
+                  {selectedMatchInfo && (
+                    <span>
+                      <span className="font-semibold" style={{ color: 'var(--color-purple)' }}>MD</span>
+                      {matchGap.since != null && ` · 직전 경기 후 ${matchGap.since}일`}
+                      {matchGap.until != null && ` · 다음 경기까지 ${matchGap.until}일`}
+                    </span>
+                  )}
                 </div>
               </div>
 

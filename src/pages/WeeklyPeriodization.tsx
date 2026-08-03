@@ -6,10 +6,14 @@ import {
   upsertWeeklyPeriodization,
   fetchSavedWeeks,
   fetchWeeklyGpsTotals,
+  fetchAllMatchDates,
+  fetchTeamMdProfile,
   emptyDayPlan,
   type DayPlan,
   type WeeklyGpsTotals,
 } from '../lib/api';
+import { MonthlyPeriodizationCalendar } from '../components/MonthlyPeriodizationCalendar';
+import { buildWeeklyPlan, ENERGY_TOPICS, TOPIC_SCALE, type EnergyTopic } from '../lib/periodizationPlan';
 
 function AutoCell({
   value, onChange, onBlur, className,
@@ -263,9 +267,11 @@ function WeeklyDataAnalysis() {
 }
 
 export function WeeklyPeriodization() {
-  const [tab, setTab] = useState<'plan' | 'analysis'>('plan');
+  const [tab, setTab] = useState<'plan' | 'monthly' | 'analysis'>('plan');
   const [weekStart, setWeekStart] = useState(() => fmt(getMonday(new Date())));
   const [topic, setTopic] = useState('');
+  const [energyTopic, setEnergyTopic] = useState<EnergyTopic>('Aerobic');
+  const [generating, setGenerating] = useState(false);
   const [weekLabel, setWeekLabel] = useState('');
   const [days, setDays] = useState<DayPlan[]>(() => Array.from({ length: 7 }, emptyDayPlan));
   const [saving, setSaving] = useState(false);
@@ -306,6 +312,26 @@ export function WeeklyPeriodization() {
 
   const updatePitch = (idx: number, rect: { x: number; y: number; w: number; h: number }) => {
     setDays(prev => { const next = [...prev]; next[idx] = { ...next[idx], pitch_rect: rect }; return next; });
+  };
+
+  // 경기 일정에서 MD 코드를 계산해 배치하고, 목표 수치는 팀의 MD별 실측 평균에서 가져온다.
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const [matchDates, mdProfile] = await Promise.all([fetchAllMatchDates(), fetchTeamMdProfile()]);
+      if (matchDates.length === 0) {
+        alert('경기 일정이 없어 MD 코드를 계산할 수 없습니다.\n월간 주기화 탭에서 예정 경기를 먼저 등록해 주세요.');
+        return;
+      }
+      const { weekTopic, days: generated } = buildWeeklyPlan({ weekStart, matchDates, mdProfile, topic: energyTopic });
+      setDays(generated);
+      setTopic(weekTopic);
+      setSaved(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '계획을 생성하지 못했습니다');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleSave = async () => {
@@ -421,7 +447,7 @@ export function WeeklyPeriodization() {
     <div className="p-6 max-w-[1400px] mx-auto">
       <h1 className="text-2xl font-bold mb-4 flex items-center gap-2">
         <span className="w-1 h-6 bg-cyan-400 rounded-sm inline-block" />
-        주간 주기화
+        주기화
       </h1>
 
       <div className="flex gap-2 mb-4">
@@ -429,7 +455,13 @@ export function WeeklyPeriodization() {
           className={`px-3 py-1.5 text-sm rounded border transition-colors ${
             tab === 'plan' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
           }`}>
-          주기화표
+          주간 주기화
+        </button>
+        <button onClick={() => setTab('monthly')}
+          className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+            tab === 'monthly' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+          }`}>
+          월간 주기화
         </button>
         <button onClick={() => setTab('analysis')}
           className={`px-3 py-1.5 text-sm rounded border transition-colors ${
@@ -439,8 +471,29 @@ export function WeeklyPeriodization() {
         </button>
       </div>
 
-      {tab === 'analysis' ? <WeeklyDataAnalysis /> : (
+      {tab === 'analysis' ? <WeeklyDataAnalysis /> : tab === 'monthly' ? <MonthlyPeriodizationCalendar /> : (
       <>
+      {/* 에너지 시스템 토픽 + 자동 생성 */}
+      <div className="flex items-center gap-3 mb-3 flex-wrap p-3 rounded-lg border border-surface-secondary bg-surface">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-text-secondary">주간 토픽</span>
+          <select value={energyTopic} onChange={e => setEnergyTopic(e.target.value as EnergyTopic)}
+            className="px-2 py-1.5 text-sm rounded border border-surface-secondary bg-surface outline-none">
+            {ENERGY_TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <button onClick={handleGenerate} disabled={generating}
+          className="px-4 py-1.5 text-sm rounded font-medium text-white disabled:opacity-50"
+          style={{ background: 'var(--color-purple)' }}>
+          {generating ? '생성 중...' : '🤖 AI 차주 계획 생성'}
+        </button>
+        <span className="text-[11px] text-text-secondary leading-snug flex-1 min-w-[280px]">
+          {TOPIC_SCALE[energyTopic].note} · 볼륨 ×{TOPIC_SCALE[energyTopic].volume.toFixed(2)} · 강도 ×{TOPIC_SCALE[energyTopic].intensity.toFixed(2)}
+          <br />
+          경기 일정에서 MD 코드를 계산해 배치합니다 · 목표 수치는 팀의 MD별 실측 평균 기준 · 생성 후 아래 표에서 검토·수정 후 저장하세요.
+        </span>
+      </div>
+
       {/* 주차 + 날짜 네비게이션 */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         {/* 저장된 주차 바로가기 */}

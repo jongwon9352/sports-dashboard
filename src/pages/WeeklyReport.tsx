@@ -5,6 +5,8 @@ import {
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { fetchSavedWeeks, fetchWeeklyPeriodization, fetchWeeklyGradeAvg, type DayPlan } from '../lib/api';
+import { mdCodeFor } from '../lib/mdCode';
+import { useMatchDates } from '../lib/useMatchDates';
 
 const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 
@@ -158,6 +160,7 @@ export function WeeklyReport() {
   }, [comment, selectedWeek]);
 
   const days = periodization?.days || [];
+  const matchDates = useMatchDates();
 
   const headerData = useMemo(() => {
     return DAY_LABELS.map((dayLabel, i) => {
@@ -167,6 +170,8 @@ export function WeeklyReport() {
       return {
         day: dayLabel,
         date: dateStr ? `${dateStr.slice(5)}` : '',
+        // MD 코드는 경기 일정에서 계산한다 — 주기화표에 뭐가 적혀 있든 일정이 기준이다.
+        md: dateStr ? mdCodeFor(dateStr, matchDates).code || '' : '',
         perio: plan?.periodization || '',
         perioCode: plan?.perio_code || '',
         trainingType: plan?.physical_goal || '',
@@ -185,7 +190,7 @@ export function WeeklyReport() {
         realMaxSpeed: real?.max_speed || 0,
       };
     });
-  }, [days, realData]);
+  }, [days, realData, matchDates]);
 
   const tlChartData = headerData.map(d => ({
     day: d.day, plan: parseVal(d.planTL), real: d.realTL,
@@ -345,6 +350,14 @@ export function WeeklyReport() {
                 </tr>
               </thead>
               <tbody>
+                <tr>
+                  <td className={`${tdC} font-semibold`}>MD</td>
+                  {headerData.map((d, i) => (
+                    <td key={i} className={tdC} style={{ color: d.md ? 'var(--color-purple)' : undefined, fontWeight: d.md === 'MD' ? 700 : 500 }}>
+                      {d.md || '-'}
+                    </td>
+                  ))}
+                </tr>
                 <tr>
                   <td className={`${tdC} font-semibold`}>주기</td>
                   {headerData.map((d, i) => <td key={i} className={tdC}>{d.perioCode || d.perio}</td>)}

@@ -13,6 +13,7 @@ import {
 import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhysicalRow, ParsedBodyCompositionRow, ForcedecksRow, NordbordRow, ForceframeRow, SmartspeedRow } from '../utils/csvParser';
 import { parseMaturitySheetCsv, parseSheetTimestampToDate, parseDailyCsv, parseBodySheetCsv } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
+import { mdCodeForDays, toMatchDays, mdCodeOrder } from './mdCode';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
 const GOOGLE_SHEET_MATURITY_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqPvqKWf2mgJBub7W6ZlU4RInG4GeYF37brcZmCiO0bT7wnF3JEPp2GekynyxTARrl1IYbNJpLJ3Iy/pub?gid=1965396254&single=true&output=csv';
@@ -1907,6 +1908,176 @@ export async function fetchSavedWeeks(): Promise<{ week_start: string; week_labe
     .order('week_start', { ascending: false });
   if (error) throw error;
   return (data ?? []) as { week_start: string; week_label: string }[];
+}
+
+// ── 예정 경기 일정 ─────────────────────────────────────────────────────
+// match_data는 이미 치른 경기 결과라 미래 일정을 담을 수 없다. MD 코드 계산과 주기화
+// 자동 생성이 이 테이블을 기준으로 동작한다.
+export interface MatchScheduleRow {
+  id: string;
+  match_date: string;
+  event_type: string;
+  opponent: string;
+  home: boolean;
+  kickoff: string | null;
+  note: string;
+}
+
+export async function fetchMatchSchedule(): Promise<MatchScheduleRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('match_schedule')
+    .select('id, match_date, event_type, opponent, home, kickoff, note')
+    .order('match_date', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as MatchScheduleRow[];
+}
+
+export async function insertMatchSchedule(row: Omit<MatchScheduleRow, 'id'>): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.from('match_schedule').insert(row);
+  if (error) throw error;
+}
+
+export async function deleteMatchSchedule(id: string): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.from('match_schedule').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** MD 코드 계산의 단일 소스 — 이미 치른 경기(match_data) + 예정 경기(match_schedule) */
+export async function fetchAllMatchDates(): Promise<string[]> {
+  if (!supabase) return [];
+  const [past, scheduled] = await Promise.all([
+    supabase.from('match_data').select('match_date'),
+    fetchMatchSchedule().catch(() => [] as MatchScheduleRow[]),
+  ]);
+  const dates = [
+    ...((past.data ?? []) as R[]).map(r => r.match_date as string),
+    ...scheduled.map(r => r.match_date),
+  ];
+  return [...new Set(dates.filter(Boolean))].sort();
+}
+
+// ── 월간 캘린더 수기 수정 ───────────────────────────────────────────────
+// 캘린더의 내용·강도는 경기 일정에서 자동 계산된다. 이 테이블은 코치가 그 자동값을 덮어쓴
+// 항목만 담는다. null인 필드는 자동값을 그대로 쓴다는 뜻이고, 되돌리기는 행 삭제다.
+export interface CalendarDayOverride {
+  plan_date: string;
+  content: string | null;
+  intensity_key: string | null;
+}
+
+export async function fetchCalendarOverrides(from: string, to: string): Promise<CalendarDayOverride[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('calendar_day_override')
+    .select('plan_date, content, intensity_key')
+    .gte('plan_date', from)
+    .lte('plan_date', to);
+  if (error) throw error;
+  return (data ?? []) as CalendarDayOverride[];
+}
+
+/** 두 항목이 모두 비면 덮어쓸 게 없다는 뜻이라 행을 지운다 (= 자동값으로 복귀). */
+export async function saveCalendarOverride(row: CalendarDayOverride): Promise<void> {
+  const client = requireSupabase();
+  const content = row.content?.trim() ? row.content.trim() : null;
+  const intensity = row.intensity_key || null;
+  if (content == null && intensity == null) return clearCalendarOverride(row.plan_date);
+
+  const { error } = await client
+    .from('calendar_day_override')
+    .upsert(
+      { plan_date: row.plan_date, content, intensity_key: intensity, updated_at: new Date().toISOString() },
+      { onConflict: 'plan_date' },
+    );
+  if (error) throw error;
+}
+
+export async function clearCalendarOverride(planDate: string): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.from('calendar_day_override').delete().eq('plan_date', planDate);
+  if (error) throw error;
+}
+
+// ── MD 코드별 팀 실측 프로파일 ──────────────────────────────────────────
+// 주기화 자동 생성의 목표 수치 근거. 남의 팀 주기화표 숫자를 베끼지 않고, 우리 팀이 그 MD
+// 코드에서 실제로 뛴 평균을 목표로 삼는다.
+export interface MdProfileRow {
+  code: string;
+  n: number;
+  td: number;
+  hsr: number;
+  sprint: number;
+  load: number;
+  acc: number;
+  dec: number;
+}
+
+export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
+  if (!supabase) return [];
+  const matchDates = await fetchAllMatchDates();
+  if (matchDates.length === 0) return [];
+  const matchDays = toMatchDays(matchDates);
+
+  const allRows: R[] = [];
+  let offset = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data: chunk } = await supabase
+      .from('training_daily')
+      .select('training_date, total_distance, hsr_distance, sprint_distance, acc_count, dec_count, rpe, duration_min')
+      .in('group_type', ['U15', 'U14'])
+      .range(offset, offset + PAGE - 1);
+    if (!chunk || chunk.length === 0) break;
+    allRows.push(...(chunk as R[]));
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  if (allRows.length === 0) return [];
+
+  // 하루 = 선수 평균 한 세트. 그 다음 같은 MD 코드끼리 날짜 평균을 낸다.
+  const byDate = new Map<string, R[]>();
+  for (const row of allRows) {
+    const d = row.training_date as string;
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d)!.push(row);
+  }
+
+  const avg = (rows: R[], key: string) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0) / rows.length;
+  const byCode = new Map<string, { td: number; hsr: number; sprint: number; load: number; acc: number; dec: number }[]>();
+  for (const [date, rows] of byDate) {
+    const code = mdCodeForDays(date, matchDays).code;
+    if (!code) continue;
+    const tlRows = rows.filter(r => Number(r.rpe) > 0);
+    const load = tlRows.length > 0
+      ? tlRows.reduce((s, r) => s + Number(r.rpe) * Number(r.duration_min), 0) / tlRows.length
+      : 0;
+    if (!byCode.has(code)) byCode.set(code, []);
+    byCode.get(code)!.push({
+      td: avg(rows, 'total_distance'),
+      hsr: avg(rows, 'hsr_distance'),
+      sprint: avg(rows, 'sprint_distance'),
+      load,
+      acc: avg(rows, 'acc_count'),
+      dec: avg(rows, 'dec_count'),
+    });
+  }
+
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  return [...byCode.entries()]
+    .map(([code, days]) => ({
+      code,
+      n: days.length,
+      td: Math.round(mean(days.map(d => d.td))),
+      hsr: Math.round(mean(days.map(d => d.hsr))),
+      sprint: Math.round(mean(days.map(d => d.sprint))),
+      load: Math.round(mean(days.map(d => d.load))),
+      acc: Math.round(mean(days.map(d => d.acc))),
+      dec: Math.round(mean(days.map(d => d.dec))),
+    }))
+    .sort((a, b) => mdCodeOrder(a.code) - mdCodeOrder(b.code));
 }
 
 export async function fetchDayTarget(date: string): Promise<{ td: number; hsr: number; sprint: number } | null> {
