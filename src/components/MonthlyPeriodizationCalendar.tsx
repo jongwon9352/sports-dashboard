@@ -14,7 +14,7 @@ import {
   type MatchScheduleRow, type CalendarDayOverride,
 } from '../lib/api';
 import { mdCodesFor, mergeMatchDates } from '../lib/mdCode';
-import { INTENSITY_STYLE, mdIntensityKey } from '../lib/periodizationPlan';
+import { INTENSITY_STYLE, mdIntensityKey, defaultGoalForCode } from '../lib/periodizationPlan';
 import { invalidateMatchDates } from '../lib/useMatchDates';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
@@ -120,8 +120,10 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
 
   const todayIso = isoDate(now);
 
-  // 경기 > 훈련 기록 순으로 보여준다. 훈련일에는 주간 주기화에 적어 둔 목표와
-  // 실제 참여 인원을 함께 붙여, 계획과 기록을 한 칸에서 확인할 수 있게 한다.
+  // 이 캘린더의 본래 목적은 경기 일정을 입력하면 AI가 앞으로의 주기화를 자동으로
+  // 짜주는 것이지, 지나간 훈련을 기록하는 화면이 아니다. 그래서 순서는:
+  // 경기 > (저장된 주간 주기화 목표 + 지난 훈련이면 참여 인원 병기) > MD 코드 기반 AI 제안.
+  // 마지막 단계가 핵심 — 아직 계획을 안 짠 미래 날짜도 경기 일정만으로 방향이 보이게 한다.
   function autoContentOf(iso: string) {
     const fx = fixtureByDate.get(iso);
     if (fx?.length) return fx.map(f => `${f.event_type}\n${f.opponent} (${f.home ? 'H' : 'A'})`).join('\n');
@@ -130,9 +132,11 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
 
     const goal = plannedGoals.get(iso);
     const players = trainingDays.get(iso);
-    if (players) return goal ? `${goal}\n훈련 ${players}명` : `훈련 ${players}명`;
-    if (goal) return `${goal}\n(기록 없음)`;
-    return '기록 없음';
+    if (goal) return players ? `${goal}\n훈련 ${players}명` : goal;
+    if (players) return `훈련 ${players}명`;
+
+    const code = mdLabels.get(iso)?.code ?? null;
+    return `AI 제안: ${defaultGoalForCode(code)}`;
   }
 
   function openEditor(iso: string) {

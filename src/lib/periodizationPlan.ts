@@ -91,6 +91,21 @@ function physicalGoalFor(focus: Focus, topic: EnergyTopic): string {
   return '고강도 유지 인터벌 (짧게)';
 }
 
+/**
+ * 월간 캘린더에서 쓰는 토픽 무관 기본 제안 문구. 주간 토픽(Aerobic 등)을 아직 고르지
+ * 않은 미래 날짜에도, 경기 일정만으로 계산된 MD 코드에서 바로 방향을 보여준다.
+ */
+export function defaultGoalForCode(code: string | null): string {
+  const meta = code ? MD_META[code] ?? REST_META : REST_META;
+  if (meta.focus === 'rest') return '휴식';
+  if (meta.focus === 'match') return '경기 (Match Day)';
+  if (meta.focus === 'recovery') return '회복 + 능동적 이완';
+  if (meta.focus === 'activation') return '활성화 + 세트피스 점검';
+  if (meta.focus === 'tactical') return '전술 훈련 + 볼 점유';
+  if (meta.focus === 'volume') return '팀 전술 훈련 + 볼륨 훈련';
+  return '고강도 인터벌 + 세트피스'; // intensity
+}
+
 function warmupFor(focus: Focus): string {
   if (focus === 'match') return 'FIFA 11+ 스타일 워밍업';
   if (focus === 'rest') return '';
