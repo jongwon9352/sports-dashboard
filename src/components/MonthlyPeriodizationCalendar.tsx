@@ -287,28 +287,10 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
             <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-xs text-text-secondary hover:underline">닫기</button>
           </div>
 
-          <div className="grid gap-3 grid-cols-1 md:grid-cols-[2fr_1fr]">
-            <div>
-              <label className="text-xs font-bold text-text-secondary block mb-1" htmlFor="cal-content">내용 (CONTENTS)</label>
-              <textarea id="cal-content" value={draftContent} onChange={e => setDraftContent(e.target.value)} rows={3}
-                placeholder={`자동: ${autoContentOf(editing) || '—'}`}
-                className="w-full text-sm p-2 rounded border border-surface-secondary bg-surface outline-none" />
-              <div className="text-xs text-text-disabled mt-1">비워두면 자동값을 씁니다</div>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-text-secondary block mb-1" htmlFor="cal-intensity">강도 (KEY)</label>
-              <select id="cal-intensity" value={draftIntensity} onChange={e => setDraftIntensity(e.target.value)}
-                className="w-full text-sm p-2 rounded border border-surface-secondary bg-surface outline-none">
-                <option value="">자동 ({autoKey})</option>
-                {INTENSITY_KEYS.map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-              <div className="text-xs text-text-disabled mt-1">색만 바뀌고 MD 코드는 일정을 따릅니다</div>
-            </div>
-          </div>
-
-          <div className="mt-3 pt-3 border-t border-surface-secondary">
-            <div className="text-xs font-bold text-text-secondary mb-1.5">
-              예정 경기 <span className="font-normal text-text-disabled">— 등록하면 MD 코드가 웹 전체에 반영됩니다</span>
+          {/* 경기 등록이 MD의 유일한 근거다. 아래 내용·강도는 표시만 바꾸므로 이 칸을 먼저 보여준다. */}
+          <div className="p-2.5 rounded-lg border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-purple)' }}>
+            <div className="text-xs font-bold mb-1.5" style={{ color: 'var(--color-purple)' }}>
+              ① 경기 일정 <span className="font-normal text-text-secondary">— 경기인 날은 여기에 등록해야 MD 코드가 웹 전체에 반영됩니다</span>
             </div>
             {(fixtureByDate.get(editing) ?? []).map(f => (
               <div key={f.id} className="flex items-center gap-2 mb-1.5 text-xs">
@@ -343,11 +325,44 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
             </div>
           </div>
 
+          <div className="mt-3 pt-3 border-t border-surface-secondary">
+            <div className="text-xs font-bold text-text-secondary mb-1.5">
+              ② 표시 내용 <span className="font-normal text-text-disabled">— 캘린더에 보이는 글자·색만 바꿉니다. MD 코드에는 영향을 주지 않습니다</span>
+            </div>
+            <div className="grid gap-3 grid-cols-1 md:grid-cols-[2fr_1fr]">
+              <div>
+                <label className="text-xs font-bold text-text-secondary block mb-1" htmlFor="cal-content">내용 (CONTENTS)</label>
+                <textarea id="cal-content" value={draftContent} onChange={e => setDraftContent(e.target.value)} rows={3}
+                  placeholder={`자동: ${autoContentOf(editing) || '—'}`}
+                  className="w-full text-sm p-2 rounded border border-surface-secondary bg-surface outline-none" />
+                <div className="text-xs text-text-disabled mt-1">비워두면 자동값을 씁니다</div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-text-secondary block mb-1" htmlFor="cal-intensity">강도 (KEY)</label>
+                <select id="cal-intensity" value={draftIntensity} onChange={e => setDraftIntensity(e.target.value)}
+                  className="w-full text-sm p-2 rounded border border-surface-secondary bg-surface outline-none">
+                  <option value="">자동 ({autoKey})</option>
+                  {INTENSITY_KEYS.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+                <div className="text-xs text-text-disabled mt-1">색만 바뀌고 MD 코드는 일정을 따릅니다</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 강도만 MATCH로 바꾸고 경기를 등록하지 않으면 색만 바뀌고 MD가 안 붙는다 — 흔한 실수라 짚어준다. */}
+          {draftIntensity === 'MATCH' && !(fixtureByDate.get(editing) ?? []).length && (
+            <div className="mt-2.5 px-3 py-2 rounded text-xs font-medium"
+              style={{ background: '#FFF4D6', color: '#7F6000' }}>
+              강도를 MATCH로 두셨지만 이 날짜에 등록된 경기가 없습니다. 색만 바뀌고 MD 코드(MD-4 ~ MD+2)는 붙지 않습니다 —
+              위 <b>① 경기 일정</b>에서 경기를 등록해 주세요.
+            </div>
+          )}
+
           <div className="flex items-center gap-2 mt-3">
             <button onClick={() => commitEdit('save')} disabled={saving}
               className="px-4 py-2 rounded text-sm font-bold text-white disabled:opacity-50"
               style={{ background: 'var(--color-purple)' }}>
-              {saving ? '저장 중…' : '저장'}
+              {saving ? '저장 중…' : '표시 내용 저장'}
             </button>
             {overrideByDate.has(editing) && (
               <button onClick={() => commitEdit('reset')} disabled={saving}
