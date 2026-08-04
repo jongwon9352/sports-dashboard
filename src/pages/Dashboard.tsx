@@ -213,19 +213,25 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    Promise.all([
-      fetchPlayersWithAcwr(),
-      fetchCalendarEvents(toDateStr(start), toDateStr(end)),
-      fetchAllPlayersAcwrMultiMetric(90),
-    ]).then(([p, ev, multi]) => {
-      setPlayers(p);
-      setEvents(ev);
-      setAcwrMap(multi as Map<string, Record<string, TeamAcwrSeries[]>>);
-      setLoading(false);
-    });
+    function load() {
+      const today = new Date();
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+      Promise.all([
+        fetchPlayersWithAcwr(),
+        fetchCalendarEvents(toDateStr(start), toDateStr(end)),
+        fetchAllPlayersAcwrMultiMetric(90),
+      ]).then(([p, ev, multi]) => {
+        setPlayers(p);
+        setEvents(ev);
+        setAcwrMap(multi as Map<string, Record<string, TeamAcwrSeries[]>>);
+        setLoading(false);
+      });
+    }
+    load();
+    // 탭을 열어둔 채 다른 탭/창에서 업로드한 뒤 돌아왔을 때도 최신 값을 반영한다.
+    window.addEventListener('focus', load);
+    return () => window.removeEventListener('focus', load);
   }, []);
 
   if (loading) {
