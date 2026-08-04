@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   fetchPlayersWithAcwr, fetchCalendarEvents, fetchAllPlayersAcwrMultiMetric,
@@ -152,11 +152,18 @@ function suggestedLoad(series: TeamAcwrSeries[]): number {
   return Math.max(0, Math.round((chronicToday - (1 - ACUTE_LAMBDA) * acutePrev) / ACUTE_LAMBDA));
 }
 
+const GRADE_ORDER = ['3학년', '2학년', '1학년', 'U15', 'U14', 'U13'];
+
 function PlayerStatusBar({ players, acwrMap }: {
   players: PlayerWithAcwr[];
   acwrMap: Map<string, Record<string, TeamAcwrSeries[]>>;
 }) {
   const navigate = useNavigate();
+  const sortedPlayers = [...players].sort((a, b) => {
+    const gradeDiff = GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade);
+    if (gradeDiff !== 0) return gradeDiff;
+    return (a.jersey_number ?? 999) - (b.jersey_number ?? 999);
+  });
   return (
     <div className="chart-card">
       <div className="chart-title">선수 현황</div>
@@ -170,33 +177,44 @@ function PlayerStatusBar({ players, acwrMap }: {
             </tr>
           </thead>
           <tbody>
-            {players.map(p => {
+            {sortedPlayers.map((p, i) => {
               const multi = acwrMap.get(p.id);
+              const prev = sortedPlayers[i - 1];
+              const showGradeHeader = !prev || prev.grade !== p.grade;
               return (
-                <tr key={p.id} onClick={() => navigate(`/player/${p.id}`)} style={{ cursor: 'pointer' }}>
-                  <td className="name">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: colors.navy }}>
-                        {p.jersey_number ?? '–'}
-                      </div>
-                      {p.name} <span className="text-text-secondary text-xs ml-1">{p.position}</span>
-                    </div>
-                  </td>
-                  {METRIC_KEYS.map(({ key }) => {
-                    const series = multi?.[key] ?? [];
-                    const entry = [...series].reverse().find(d => d.chronic > 0) ?? null;
-                    const val = entry ? +((entry.acute / entry.chronic).toFixed(2)) : null;
-                    const zone = getAcwrZone(val);
-                    return (
-                      <td key={key} className="num font-bold" style={{ color: val != null ? ZONE_COLOR[zone] : undefined }}>
-                        {val != null ? val.toFixed(2) : '—'}
+                <Fragment key={p.id}>
+                  {showGradeHeader && (
+                    <tr>
+                      <td colSpan={METRIC_KEYS.length + 2} className="text-xs font-semibold text-text-secondary uppercase tracking-wide" style={{ paddingTop: i === 0 ? undefined : '12px' }}>
+                        {p.grade}
                       </td>
-                    );
-                  })}
-                  <td className="num font-bold" style={{ color: colors.warning }}>
-                    {multi?.tl ? `${suggestedLoad(multi.tl).toLocaleString()} AU` : '—'}
-                  </td>
-                </tr>
+                    </tr>
+                  )}
+                  <tr onClick={() => navigate(`/player/${p.id}`)} style={{ cursor: 'pointer' }}>
+                    <td className="name">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: colors.navy }}>
+                          {p.jersey_number ?? '–'}
+                        </div>
+                        {p.name} <span className="text-text-secondary text-xs ml-1">{p.position}</span>
+                      </div>
+                    </td>
+                    {METRIC_KEYS.map(({ key }) => {
+                      const series = multi?.[key] ?? [];
+                      const entry = [...series].reverse().find(d => d.chronic > 0) ?? null;
+                      const val = entry ? +((entry.acute / entry.chronic).toFixed(2)) : null;
+                      const zone = getAcwrZone(val);
+                      return (
+                        <td key={key} className="num font-bold" style={{ color: val != null ? ZONE_COLOR[zone] : undefined }}>
+                          {val != null ? val.toFixed(2) : '—'}
+                        </td>
+                      );
+                    })}
+                    <td className="num font-bold" style={{ color: colors.warning }}>
+                      {multi?.tl ? `${suggestedLoad(multi.tl).toLocaleString()} AU` : '—'}
+                    </td>
+                  </tr>
+                </Fragment>
               );
             })}
           </tbody>
