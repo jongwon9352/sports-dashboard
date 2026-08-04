@@ -2657,17 +2657,30 @@ export async function fetchAllPlayersAcwrMultiMetric(days: number = 90): Promise
   const startStr = toLocalDateStr(startDate);
   const todayStr = toLocalDateStr(today);
 
-  const { data: dailyData } = await supabase
-    .from('training_daily')
-    .select('player_id, training_date, daily_training_load, duration_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
-    .gte('training_date', startStr)
-    .lte('training_date', todayStr);
+  // PostgREST의 db-max-rows(기본 1000)는 클라이언트 .limit() 값과 무관하게 응답을
+  // 강제로 자른다. 전체 선수 90일치 training_daily는 쉽게 1000행을 넘으므로(잘리면
+  // 최근 날짜 데이터가 빠져 ACWR이 실제보다 낮게 나온다) .range()로 페이지네이션한다.
+  async function fetchAllRows(table: string, dateCol: string): Promise<R[]> {
+    const rows: R[] = [];
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data } = await supabase!
+        .from(table)
+        .select('*')
+        .gte(dateCol, startStr)
+        .lte(dateCol, todayStr)
+        .range(offset, offset + pageSize - 1);
+      const page = (data as R[]) ?? [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  }
 
-  const { data: matchData } = await supabase
-    .from('match_data')
-    .select('player_id, match_date, play_time_min, rpe, total_distance, hsr_distance, sprint_distance, acd_load')
-    .gte('match_date', startStr)
-    .lte('match_date', todayStr);
+  const [dailyData, matchData] = await Promise.all([
+    fetchAllRows('training_daily', 'training_date'),
+    fetchAllRows('match_data', 'match_date'),
+  ]);
 
   const playerIds = new Set<string>([
     ...((dailyData as R[] ?? []).map(r => r.player_id as string)),

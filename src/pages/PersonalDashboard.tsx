@@ -1103,27 +1103,32 @@ export function PersonalDashboard() {
       <div className="p-6 flex-1 min-w-0">
         <div className="sec-title">개인 대시보드</div>
 
-        {player && (
-          <div className="chart-card flex items-center gap-4 mb-4">
-            <PlayerAvatar src={player.photo_url} size={56} />
-            <div>
-              <h1 className="text-xl font-bold">{player.name}</h1>
-              <div className="flex items-center gap-3 text-text-secondary text-sm mt-1 flex-wrap">
-                <span>{player.position} · {player.grade}</span>
-                <span
-                  className="zone-badge"
-                  style={{
-                    color: getZoneColor(player.acwr_zone),
-                    background: `${getZoneColor(player.acwr_zone)}15`,
-                  }}
-                >
-                  {getZoneLabel(player.acwr_zone)}
-                  {player.acwr_data?.acwr != null && ` ${Number(player.acwr_data.acwr).toFixed(2)}`}
-                </span>
+        {player && (() => {
+          const tlSeries = multiMetric.tl ?? [];
+          const tlEntry = [...tlSeries].reverse().find(d => d.chronic > 0) ?? null;
+          const liveAcwr = tlEntry ? +((tlEntry.acute / tlEntry.chronic).toFixed(2)) : null;
+          return (
+            <div className="chart-card flex items-center gap-4 mb-4">
+              <PlayerAvatar src={player.photo_url} size={56} />
+              <div>
+                <h1 className="text-xl font-bold">{player.name}</h1>
+                <div className="flex items-center gap-3 text-text-secondary text-sm mt-1 flex-wrap">
+                  <span>{player.position} · {player.grade}</span>
+                  <span
+                    className="zone-badge"
+                    style={{
+                      color: getZoneColor(player.acwr_zone),
+                      background: `${getZoneColor(player.acwr_zone)}15`,
+                    }}
+                  >
+                    {getZoneLabel(player.acwr_zone)}
+                    {liveAcwr != null && ` ${liveAcwr.toFixed(2)}`}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="flex gap-2 mb-4">
           {TABS.map(({ id, label }) => (
