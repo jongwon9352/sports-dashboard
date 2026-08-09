@@ -354,6 +354,7 @@ export function RawDataPage() {
             {availableDates.map(date => (
               multiSessionDates.has(date) ? (
                 <optgroup key={date} label={date}>
+                  <option value={date}>{date} (합계)</option>
                   <option value={`${date}::오전`}>{date} (오전)</option>
                   <option value={`${date}::오후`}>{date} (오후)</option>
                 </optgroup>
