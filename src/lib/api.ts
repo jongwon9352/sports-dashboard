@@ -1818,7 +1818,7 @@ export async function fetchWeeklyGpsTotals(): Promise<WeeklyGpsTotals[]> {
   while (true) {
     const { data: chunk } = await client
       .from('training_daily')
-      .select('training_date, total_distance, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, rpe, duration_min')
+      .select('player_id, training_date, total_distance, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, rpe, duration_min')
       .in('group_type', ['U15', 'U14'])
       .range(offset, offset + PAGE - 1);
     if (!chunk || chunk.length === 0) break;
@@ -1828,8 +1828,69 @@ export async function fetchWeeklyGpsTotals(): Promise<WeeklyGpsTotals[]> {
   }
   if (allRows.length === 0) return [];
 
-  const byDate = new Map<string, R[]>();
+  // 하루 안에 오전 훈련 + 오후 경기처럼 두 세션을 뛰는 선수가 있다. training_daily만
+  // 평균 내면 그날 경기 부하가 통째로 빠지므로, match_data도 같은 선수+날짜 기준으로
+  // 합산한 뒤 팀 평균을 낸다(fetchDailyReportData와 동일한 병합 방식).
+  const matchRows: R[] = [];
+  offset = 0;
+  while (true) {
+    const { data: chunk } = await client
+      .from('match_data')
+      .select('player_id, match_date, total_distance, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, rpe, play_time_min')
+      .in('player_group', ['U15', 'U14'])
+      .range(offset, offset + PAGE - 1);
+    if (!chunk || chunk.length === 0) break;
+    matchRows.push(...(chunk as R[]));
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  const merged = new Map<string, R>();
   for (const row of allRows) {
+    const key = `${row.player_id}_${row.training_date}`;
+    const prev = merged.get(key);
+    if (!prev) { merged.set(key, { ...row }); continue; }
+    merged.set(key, {
+      ...prev,
+      total_distance: (Number(prev.total_distance) || 0) + (Number(row.total_distance) || 0),
+      hsr_distance: (Number(prev.hsr_distance) || 0) + (Number(row.hsr_distance) || 0),
+      sprint_distance: (Number(prev.sprint_distance) || 0) + (Number(row.sprint_distance) || 0),
+      acc_count: (Number(prev.acc_count) || 0) + (Number(row.acc_count) || 0),
+      dec_count: (Number(prev.dec_count) || 0) + (Number(row.dec_count) || 0),
+      acd_load: (Number(prev.acd_load) || 0) + (Number(row.acd_load) || 0),
+      max_speed: Math.max(Number(prev.max_speed) || 0, Number(row.max_speed) || 0),
+      duration_min: (Number(prev.duration_min) || 0) + (Number(row.duration_min) || 0),
+      rpe: Number(row.rpe) > 0 ? row.rpe : prev.rpe,
+    });
+  }
+  for (const row of matchRows) {
+    const key = `${row.player_id}_${row.match_date}`;
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, {
+        training_date: row.match_date,
+        total_distance: row.total_distance, hsr_distance: row.hsr_distance, sprint_distance: row.sprint_distance,
+        acc_count: row.acc_count, dec_count: row.dec_count, acd_load: row.acd_load, max_speed: row.max_speed,
+        rpe: row.rpe, duration_min: row.play_time_min,
+      });
+      continue;
+    }
+    merged.set(key, {
+      ...prev,
+      total_distance: (Number(prev.total_distance) || 0) + (Number(row.total_distance) || 0),
+      hsr_distance: (Number(prev.hsr_distance) || 0) + (Number(row.hsr_distance) || 0),
+      sprint_distance: (Number(prev.sprint_distance) || 0) + (Number(row.sprint_distance) || 0),
+      acc_count: (Number(prev.acc_count) || 0) + (Number(row.acc_count) || 0),
+      dec_count: (Number(prev.dec_count) || 0) + (Number(row.dec_count) || 0),
+      acd_load: (Number(prev.acd_load) || 0) + (Number(row.acd_load) || 0),
+      max_speed: Math.max(Number(prev.max_speed) || 0, Number(row.max_speed) || 0),
+      duration_min: (Number(prev.duration_min) || 0) + (Number(row.play_time_min) || 0),
+      rpe: Number(row.rpe) > 0 ? row.rpe : prev.rpe,
+    });
+  }
+
+  const byDate = new Map<string, R[]>();
+  for (const row of merged.values()) {
     const d = row.training_date as string;
     if (!byDate.has(d)) byDate.set(d, []);
     byDate.get(d)!.push(row);
