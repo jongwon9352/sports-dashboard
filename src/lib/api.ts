@@ -1258,6 +1258,21 @@ export async function deleteCsvUpload(id: string) {
 
   const { file_type, training_date, filename, csv_content } = record as CsvUploadRecord;
 
+  // 같은 날짜에 오전/오후처럼 여러 daily CSV가 올라온 경우, training_daily는 선수당
+  // 한 행으로 합산 저장돼 있어 그중 하나를 지워도 어느 쪽 기여분인지 구분할 수 없다.
+  // 삭제 전에 같은 날짜의 다른 daily 업로드 목록을 미리 받아두고, 삭제 후 그 업로드들만
+  // 다시 가져와 재계산한다 — 지운 파일의 몫만 정확히 빠지고 나머지는 보존된다.
+  let otherDailyUploads: CsvUploadRecord[] = [];
+  if (file_type === 'daily' && training_date) {
+    const { data: siblings } = await client
+      .from('csv_uploads')
+      .select('*')
+      .eq('training_date', training_date)
+      .eq('file_type', 'daily')
+      .neq('id', id);
+    otherDailyUploads = (siblings ?? []) as CsvUploadRecord[];
+  }
+
   if (training_date && csv_content) {
     const playerNames = extractPlayerNamesFromCsv(csv_content, file_type);
     if (playerNames.length > 0) {
@@ -1268,6 +1283,17 @@ export async function deleteCsvUpload(id: string) {
             .delete()
             .eq('training_date', training_date)
             .in('player_id', playerIds);
+        }
+        if (file_type === 'daily' && otherDailyUploads.length > 0) {
+          // 삭제로 함께 지워진 행은 이 업로드에 있던 선수들뿐이다. 형제 CSV를 통째로
+          // 다시 넣으면 삭제되지 않고 남아있던 다른 선수 행까지 또 합산돼버리므로,
+          // 지워진 선수 이름과 겹치는 행만 걸러서 재계산한다.
+          const deletedNameSet = new Set(playerNames.map(normalizeName));
+          const seasonYear = Number(training_date.slice(0, 4));
+          for (const sibling of otherDailyUploads) {
+            const rows = parseDailyCsv(sibling.csv_content).filter(r => deletedNameSet.has(normalizeName(r.player_name)));
+            if (rows.length > 0) await importDailyCsvRows(rows, training_date, seasonYear);
+          }
         }
         if (file_type === 'match') {
           const matchInfo = parseMatchFilename(filename);
