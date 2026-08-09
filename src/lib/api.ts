@@ -1040,6 +1040,7 @@ export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataS
         speed_zone_3: r.speed_zone_3,
         speed_zone_4: r.speed_zone_4,
         speed_zone_5: r.speed_zone_5,
+        source: 'training' as const,
       };
     }).filter(r => r.player_id);
 
@@ -1525,6 +1526,8 @@ export interface RawDataRow {
   speed_zone_3: number;
   speed_zone_4: number;
   speed_zone_5: number;
+  /** training_daily 행인지 match_data(경기) 행인지 구분. RPE·그룹 수정 시 어느 테이블에 쓸지 결정한다. */
+  source: 'training' | 'match';
 }
 
 export async function fetchAllTrainingDates(): Promise<string[]> {
@@ -1541,6 +1544,20 @@ export async function fetchAllTrainingDates(): Promise<string[]> {
     if (error) throw error;
     if (!chunk || chunk.length === 0) break;
     for (const row of chunk as R[]) dates.add(row.training_date as string);
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+  // 경기 데이터 CSV만 올라온 날(훈련 CSV 없음)도 로우 데이터에서 선택 가능해야 한다.
+  offset = 0;
+  while (true) {
+    const { data: chunk, error } = await client
+      .from('match_data')
+      .select('match_date')
+      .order('match_date', { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    if (!chunk || chunk.length === 0) break;
+    for (const row of chunk as R[]) dates.add(row.match_date as string);
     if (chunk.length < PAGE) break;
     offset += PAGE;
   }
@@ -1566,7 +1583,24 @@ export async function fetchRawDataByDates(dates: string[]): Promise<RawDataRow[]
     if (chunk.length < PAGE) break;
     offset += PAGE;
   }
-  return allRows.map(row => ({
+
+  const matchRows: R[] = [];
+  offset = 0;
+  while (true) {
+    const { data: chunk, error } = await client
+      .from('match_data')
+      .select('id, player_id, match_date, player_group, play_time_min, rpe, total_distance, m_per_min, hsr_distance, sprint_distance, sprint_count, acc_count, dec_count, acd_load, max_speed, speed_zone_1, speed_zone_2, speed_zone_3, speed_zone_4, speed_zone_5, players(name, jersey_number)')
+      .in('match_date', dates)
+      .order('match_date', { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    if (!chunk || chunk.length === 0) break;
+    matchRows.push(...(chunk as R[]));
+    if (chunk.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  const trainingMapped: RawDataRow[] = allRows.map(row => ({
     id: row.id,
     player_id: row.player_id,
     training_date: row.training_date,
@@ -1592,22 +1626,57 @@ export async function fetchRawDataByDates(dates: string[]): Promise<RawDataRow[]
     speed_zone_3: Number(row.speed_zone_3) || 0,
     speed_zone_4: Number(row.speed_zone_4) || 0,
     speed_zone_5: Number(row.speed_zone_5) || 0,
+    source: 'training',
   }));
+
+  const matchMapped: RawDataRow[] = matchRows.map(row => ({
+    id: row.id,
+    player_id: row.player_id,
+    training_date: row.match_date,
+    player_name: row.players?.name ?? '',
+    jersey_number: row.players?.jersey_number ?? null,
+    group_type: row.player_group ?? null,
+    rpe: row.rpe != null ? Number(row.rpe) : null,
+    duration_min: Number(row.play_time_min) || 0,
+    total_distance: Number(row.total_distance) || 0,
+    m_per_min: Number(row.m_per_min) || 0,
+    hsr_distance: Number(row.hsr_distance) || 0,
+    hsr_custom: 0,
+    sprint_distance: Number(row.sprint_distance) || 0,
+    sprint_custom: 0,
+    sprint_count: Number(row.sprint_count) || 0,
+    sprint_count_custom: 0,
+    acc_count: Number(row.acc_count) || 0,
+    dec_count: Number(row.dec_count) || 0,
+    acd_load: Number(row.acd_load) || 0,
+    max_speed: Number(row.max_speed) || 0,
+    speed_zone_1: Number(row.speed_zone_1) || 0,
+    speed_zone_2: Number(row.speed_zone_2) || 0,
+    speed_zone_3: Number(row.speed_zone_3) || 0,
+    speed_zone_4: Number(row.speed_zone_4) || 0,
+    speed_zone_5: Number(row.speed_zone_5) || 0,
+    source: 'match',
+  }));
+
+  return [...trainingMapped, ...matchMapped];
 }
 
-export async function updateRpe(id: string, rpe: number) {
+export async function updateRpe(id: string, rpe: number, source: 'training' | 'match' = 'training') {
   const client = requireSupabase();
+  const table = source === 'match' ? 'match_data' : 'training_daily';
+  const durationCol = source === 'match' ? 'play_time_min' : 'duration_min';
   const { data: row, error: fetchErr } = await client
-    .from('training_daily')
-    .select('duration_min')
+    .from(table)
+    .select(durationCol)
     .eq('id', id)
     .single();
   if (fetchErr) throw fetchErr;
-  const duration = Number((row as R)?.duration_min) || 0;
+  const duration = Number((row as R)?.[durationCol]) || 0;
   const dailyLoad = +(rpe * duration).toFixed(1);
+  const update: R = source === 'match' ? { rpe } : { rpe, daily_training_load: dailyLoad };
   const { data: updated, error } = await client
-    .from('training_daily')
-    .update({ rpe, daily_training_load: dailyLoad })
+    .from(table)
+    .update(update)
     .eq('id', id)
     .select('player_id')
     .single();
@@ -1615,19 +1684,23 @@ export async function updateRpe(id: string, rpe: number) {
   await recalculatePlayerAcwr([(updated as R).player_id as string]);
 }
 
-export async function updateGroupType(id: string, groupType: string) {
+export async function updateGroupType(id: string, groupType: string, source: 'training' | 'match' = 'training') {
   const client = requireSupabase();
+  const table = source === 'match' ? 'match_data' : 'training_daily';
+  const col = source === 'match' ? 'player_group' : 'group_type';
   const { error } = await client
-    .from('training_daily')
-    .update({ group_type: groupType || null })
+    .from(table)
+    .update({ [col]: groupType || null })
     .eq('id', id);
   if (error) throw error;
 }
 
 export async function deleteRawDataRows(ids: string[]) {
   const client = requireSupabase();
-  const { error } = await client.from('training_daily').delete().in('id', ids);
-  if (error) throw error;
+  const { error: trainingErr } = await client.from('training_daily').delete().in('id', ids);
+  if (trainingErr) throw trainingErr;
+  const { error: matchErr } = await client.from('match_data').delete().in('id', ids);
+  if (matchErr) throw matchErr;
 }
 
 export async function fetchWeeklyGradeAvg(weekStart: string, grades: string[]): Promise<{

@@ -11,6 +11,7 @@ type ColDef =
 
 const COLUMNS: ColDef[] = [
   { key: 'player_name', label: '이름' },
+  { key: 'source', label: '구분' },
   { key: 'group_type', label: '그룹' },
   { key: 'duration_min', label: 'TIME' },
   { key: 'rpe', label: 'RPE' },
@@ -108,15 +109,15 @@ export function RawDataPage() {
   // 구글 시트 RPE를 DB에 영속화 (시트값과 DB값이 다른 행만, 세션 뷰는 읽기 전용이라 제외)
   useEffect(() => {
     if (isSessionView || !data.length || rpeMap.size === 0) return;
-    const toSync: { id: string; rpe: number }[] = [];
+    const toSync: { id: string; rpe: number; source: RawDataRow['source'] }[] = [];
     for (const row of data) {
       const sheetValue = rpeMap.get(`${row.training_date}|${row.player_name}`);
       if (sheetValue != null && row.rpe !== sheetValue) {
-        toSync.push({ id: row.id, rpe: sheetValue });
+        toSync.push({ id: row.id, rpe: sheetValue, source: row.source });
       }
     }
     if (toSync.length === 0) return;
-    Promise.all(toSync.map(r => updateRpe(r.id, r.rpe).catch(() => {}))).then(() => {
+    Promise.all(toSync.map(r => updateRpe(r.id, r.rpe, r.source).catch(() => {}))).then(() => {
       setData(prev => prev.map(r => {
         const match = toSync.find(s => s.id === r.id);
         return match ? { ...r, rpe: match.rpe } : r;
@@ -193,7 +194,7 @@ export function RawDataPage() {
       if (isSessionView) {
         await upsertSessionRpe(dateOnly, sessionLabel as '오전' | '오후', row.player_id, rpe);
       } else {
-        await updateRpe(row.id, rpe);
+        await updateRpe(row.id, rpe, row.source);
       }
       setData(prev => prev.map(r => r.id === row.id ? { ...r, rpe } : r));
     } catch {
@@ -244,13 +245,18 @@ export function RawDataPage() {
       if (isSessionView) {
         await upsertSessionGroup(dateOnly, sessionLabel as '오전' | '오후', row.player_id, val);
       } else {
-        await updateGroupType(row.id, val);
+        await updateGroupType(row.id, val, row.source);
       }
       setData(prev => prev.map(r => r.id === row.id ? { ...r, group_type: val || null } : r));
     } catch { /* */ }
   };
 
   const renderCell = (row: typeof mergedData[0], col: ColDef) => {
+    if (col.key === 'source') {
+      return row.source === 'match'
+        ? <span className="text-[11px] px-1.5 py-0.5 rounded border border-orange-400 text-orange-400">경기</span>
+        : <span className="text-[11px] px-1.5 py-0.5 rounded border border-surface-secondary text-text-secondary">훈련</span>;
+    }
     if (col.key === 'group_type') {
       return (
         <select
