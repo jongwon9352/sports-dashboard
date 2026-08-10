@@ -174,9 +174,14 @@ function computePosStats(cumRows: MatchRow[], allRows: MatchRow[], selectedMatch
   const result = new Map<Pos, PosStats>();
   for (const pos of POSITIONS) {
     const posRows = cumRows.filter(r => r.position_played === pos);
-    const lastRows = allRows.filter(r =>
+    // 누적 평균은 필터가 걸린 cumRows로 내므로, 비교 대상인 선택 경기도 같은 필터를 적용해야
+    // "U15 누적 평균 vs U15+U14 혼합 경기"처럼 기준이 어긋난 차이가 표시되지 않는다.
+    // 그룹 필터에 걸리지 않는 콜업 선수만 뛴 경기라 결과가 비면 그때만 전체 데이터로 되돌린다.
+    const matchOf = (rs: MatchRow[]) => rs.filter(r =>
       r.position_played === pos && r.match_date === refDate && (refOpp === null || r.opponent === refOpp)
     );
+    const fromCum = matchOf(cumRows);
+    const lastRows = fromCum.length ? fromCum : matchOf(allRows);
     const lastOpp = lastRows[0]?.opponent ?? refOpp ?? '미정';
     const dt = refDate ? new Date(refDate) : null;
     result.set(pos, {

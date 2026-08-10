@@ -64,6 +64,24 @@ export async function fetchGoogleSheetRpe(): Promise<GoogleSheetRpe[]> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type R = Record<string, any>;
 
+// PostgREST의 db-max-rows(기본 1000)는 클라이언트 .limit()과 무관하게 응답을 강제로 자른다.
+// match_data가 1000행을 넘어서면서 정렬 기준상 뒤쪽 행(= 최신 경기)이 통째로 잘려 나가
+// 새로 올린 대회 데이터가 화면에 안 나오는 문제가 있었다. 전수 조회는 반드시 이 헬퍼를 쓴다.
+// build: (from, to) => range()까지 적용한 쿼리를 돌려주는 함수.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function selectAllPaged(build: (from: number, to: number) => any): Promise<R[]> {
+  const PAGE = 1000;
+  const rows: R[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await build(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const page = (data as R[]) ?? [];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return rows;
+}
+
 const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
 function requireSupabase() {
@@ -475,13 +493,15 @@ export async function importMatchCsvRows(rows: ParsedDailyRow[], filename: strin
 async function fetchMatchTlByPlayerDate(playerIds: string[]): Promise<Map<string, number>> {
   if (playerIds.length === 0) return new Map();
   const client = requireSupabase();
-  const { data } = await client
+  const data = await selectAllPaged((from, to) => client
     .from('match_data')
     .select('player_id, match_date, play_time_min, rpe')
-    .in('player_id', playerIds);
+    .in('player_id', playerIds)
+    .order('match_date')
+    .range(from, to));
 
   const map = new Map<string, number>();
-  for (const r of (data as R[]) ?? []) {
+  for (const r of data) {
     const dur = Number(r.play_time_min) || 0;
     const rpe = Number(r.rpe) || 0;
     if (dur > 0 && rpe > 0) {
@@ -1170,13 +1190,15 @@ export async function fetchRpeData(): Promise<{
   }
 
   // 경기일 RPE(match_data)도 같이 반영한다 — training_daily만 보면 경기 RPE가 누락된다.
-  const { data: matchRpeRows } = await supabase
+  const matchRpeRows = await selectAllPaged((from, to) => supabase!
     .from('match_data')
     .select('match_date, rpe, player_id, players(name)')
     .in('player_id', playerIds)
     .not('rpe', 'is', null)
-    .gt('rpe', 0);
-  for (const row of (matchRpeRows as R[]) ?? []) {
+    .gt('rpe', 0)
+    .order('match_date')
+    .range(from, to));
+  for (const row of matchRpeRows) {
     rows.push({ training_date: row.match_date, rpe: row.rpe, player_id: row.player_id, players: row.players });
   }
 
@@ -1375,11 +1397,12 @@ export interface MatchRow {
 
 export async function fetchMatchData(): Promise<MatchRow[]> {
   const client = requireSupabase();
-  const { data } = await client
+  const data = await selectAllPaged((from, to) => client
     .from('match_data')
     .select('match_date, opponent, event_type, player_group, position_played, play_time_min, total_distance, m_per_min, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, action_count, players(name)')
-    .order('match_date', { ascending: true });
-  return ((data ?? []) as R[]).map(row => ({
+    .order('match_date', { ascending: true })
+    .range(from, to));
+  return (data as R[]).map(row => ({
     match_date: row.match_date as string,
     opponent: row.opponent as string,
     event_type: row.event_type as string,
@@ -2109,11 +2132,11 @@ export async function deleteMatchSchedule(id: string): Promise<void> {
 export async function fetchAllMatchDates(): Promise<string[]> {
   if (!supabase) return [];
   const [past, scheduled] = await Promise.all([
-    supabase.from('match_data').select('match_date'),
+    selectAllPaged((from, to) => supabase!.from('match_data').select('match_date').order('match_date').range(from, to)),
     fetchMatchSchedule().catch(() => [] as MatchScheduleRow[]),
   ]);
   const dates = [
-    ...((past.data ?? []) as R[]).map(r => r.match_date as string),
+    ...past.map(r => r.match_date as string),
     ...scheduled.map(r => r.match_date),
   ];
   return [...new Set(dates.filter(Boolean))].sort();
@@ -2354,11 +2377,11 @@ export async function fetchDayTarget(date: string): Promise<{ td: number; hsr: n
 
 export async function fetchMatchDates(): Promise<{ date: string; opponent: string; event_type: string }[]> {
   if (!supabase) return [];
-  const { data } = await supabase
+  const data = await selectAllPaged((from, to) => supabase!
     .from('match_data')
     .select('match_date, opponent, event_type')
-    .order('match_date', { ascending: false });
-  if (!data) return [];
+    .order('match_date', { ascending: false })
+    .range(from, to));
   const seen = new Set<string>();
   return data.filter(r => {
     const key = `${r.match_date}_${r.opponent}`;

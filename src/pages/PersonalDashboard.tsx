@@ -230,9 +230,11 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
     .sort((a, b) => b.match_date.localeCompare(a.match_date))
     .map(m => ({ key: `${m.match_date}__${m.opponent}`, label: `${m.opponent} (${m.match_date.slice(5)}) · ${m.event_type}` }));
 
+  // 필터에 걸리는 경기가 없을 때 matches[0]으로 폴백하면 "평균 0m + 필터와 무관한 경기 값"이
+  // 나란히 표시돼 잘못된 비교가 된다. 이 경우엔 아래에서 빈 상태를 보여준다.
   const lastRow = selectedKey
     ? matches.find(m => `${m.match_date}__${m.opponent}` === selectedKey) ?? null
-    : filteredMatches[0] ?? matches[0] ?? null;
+    : filteredMatches[0] ?? null;
 
   if (matches.length === 0) {
     return <div className="chart-card text-center text-text-secondary py-8">경기 기록이 없습니다.</div>;
@@ -295,6 +297,12 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
         </div>
       </div>
 
+      {filteredMatches.length === 0 ? (
+        <div className="chart-card text-center text-text-secondary py-8">
+          선택한 경기 타입·경기 연령 조합에 해당하는 이 선수의 경기 기록이 없습니다.
+        </div>
+      ) : (
+      <>
       <div className="grid grid-cols-5 gap-3 mb-4 stat-grid-4">
         {MATCH_METRICS.map(m => (
           <MetricCompareCard
@@ -323,6 +331,8 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      </>
+      )}
 
       <div className="chart-card">
         <div className="chart-title">경기 기록 ({matches.length}경기)</div>
