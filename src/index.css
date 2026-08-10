@@ -232,6 +232,12 @@ body {
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
   .show-mobile { display: flex !important; }
+  /* 이 폭에서는 메뉴가 드로어(손가락 조작)로 뜨므로 최소 44px 높이를 보장한다.
+     데스크톱에서는 기존 밀도를 그대로 유지한다. */
+  .sidebar-nav-item,
+  .player-list-item {
+    min-height: 44px;
+  }
 }
 
 /* PDF export mode */

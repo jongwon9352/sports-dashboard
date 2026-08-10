@@ -71,16 +71,16 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="chart-title !mb-0">캘린더</div>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="px-2 py-1 rounded border border-surface-secondary hover:bg-surface-secondary">‹</button>
+          <button onClick={() => navigate(-1)} className="min-w-[44px] min-h-[44px] rounded border border-surface-secondary hover:bg-surface-secondary">‹</button>
           <span className="text-sm font-semibold" style={{ fontFamily: 'var(--font-data)' }}>{titleLabel}</span>
-          <button onClick={() => navigate(1)} className="px-2 py-1 rounded border border-surface-secondary hover:bg-surface-secondary">›</button>
+          <button onClick={() => navigate(1)} className="min-w-[44px] min-h-[44px] rounded border border-surface-secondary hover:bg-surface-secondary">›</button>
         </div>
         <div className="flex gap-2">
           {([['month', '월간'], ['week', '주간'], ['day', '일정']] as const).map(([id, label]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
                 tab === id ? 'bg-brand text-white' : 'border border-surface-secondary hover:bg-surface-secondary'
               }`}
             >

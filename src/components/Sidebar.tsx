@@ -117,7 +117,7 @@ export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
       <div className="py-3">
         <button
           onClick={() => setSettingsOpen(!settingsOpen)}
-          className="w-full px-4 mb-2 flex items-center justify-between"
+          className="w-full px-4 py-2.5 mb-2 min-h-[44px] flex items-center justify-between"
         >
           <p
             className="text-[10px] text-text-disabled tracking-[2px] uppercase"
