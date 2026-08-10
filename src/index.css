@@ -128,6 +128,9 @@ body {
 .data-table td.name {
   color: var(--color-text-primary);
   font-weight: 500;
+  /* 좁은 화면에서 이름 칸이 최소 너비로 접히면 한글이 한 글자씩 세로로 쪼개진다.
+     표 래퍼가 이미 가로 스크롤을 갖고 있으므로 줄바꿈 대신 스크롤로 넘긴다. */
+  white-space: nowrap;
 }
 .data-table th.right {
   text-align: right;
