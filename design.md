@@ -22,34 +22,36 @@
 
 # Colors
 
+색 토큰의 단일 기준은 `src/index.css`의 `@theme` 블록이다. 이 문서는 그 값을 반영한다.
+새 색을 쓸 때는 hex를 직접 박지 말고 토큰을 추가한 뒤 참조한다.
+
 ## Primary
 
-### Daejeon Purple
+### Daejeon Wine
 
-`#6B3FA0`
+`#A42843`
 
-주요 브랜드 컬러
+주요 브랜드 컬러 (토큰: `--color-brand`)
 
 사용처
 
-* Header
-* Sidebar
-* Primary CTA
-* Active Navigation
-* KPI Highlight
+* Sidebar Active Navigation
+* Primary CTA / 선택된 탭
+* Section Title 앞 막대
+* 오늘 날짜 강조
 
-### Daejeon Purple Dark
+### Daejeon Wine Dark
 
-`#4E2A78`
+`#7F1F35`
 
-Hover / Active 상태
+Hover / Active 상태 (토큰: `--color-brand-dark`)
 
-### Daejeon Purple Light
+### Daejeon Wine Light
 
-`#E8E0F4`
+`#F4E4E8`
 
 선택 상태
-배경 강조
+배경 강조 (토큰: `--color-brand-light`)
 
 ---
 
@@ -57,7 +59,9 @@ Hover / Active 상태
 
 ### Hana Green
 
-`#00A651`
+`#008C7E`
+
+토큰: `--color-green`
 
 사용처
 
@@ -68,33 +72,46 @@ Hover / Active 상태
 
 ### Hana Green Light
 
-`#E5F6ED`
+`#E0F3F0`
 
-배경 강조
+배경 강조 (토큰: `--color-green-light`)
 
 ---
 
 ## Data Visualization
 
-### High Load
+ACWR 존 색상. 정의 위치는 `src/pages/TeamDashboard.tsx`의 `ZONE_COLOR`이며,
+`getAcwrZone()`의 임계값(0.8 / 1.3 / 1.5 / 2.0)과 짝을 이룬다.
 
-`#E53935`
+### Safe (안전)
 
-### Moderate Load
+`#16A34A`
 
-`#FB8C00`
+### Caution (주의)
 
-### Optimal Load
+`#D97706`
 
-`#43A047`
+과소훈련(ACWR < 0.8)도 주의로 분류한다.
+
+### Danger (위험)
+
+`#DC2626`
+
+### High Danger (고위험)
+
+`#7F1D1D`
 
 ### Recovery
 
-`#1E88E5`
+`#153E6F`
+
+토큰: `--color-recovery`
 
 ### Neutral
 
-`#607D8B`
+`#66717A`
+
+토큰: `--color-neutral`
 
 ---
 
@@ -102,7 +119,7 @@ Hover / Active 상태
 
 ### Background
 
-`#F7F8FA`
+`#F6F8F7`
 
 ### Surface
 
@@ -110,7 +127,7 @@ Hover / Active 상태
 
 ### Surface Secondary
 
-`#F3F5F7`
+`#EEF3F1`
 
 ---
 
@@ -118,15 +135,15 @@ Hover / Active 상태
 
 ### Primary Text
 
-`#1E1E1E`
+`#101820`
 
 ### Secondary Text
 
-`#5F6368`
+`#4F5B63`
 
 ### Disabled Text
 
-`#9AA0A6`
+`#7D8990`
 
 ### White Text
 
@@ -289,7 +306,7 @@ Height
 72px
 
 Background
-Daejeon Purple
+`linear-gradient(90deg, #008C7E 0%, #153E6F 58%, #101820 100%)`
 
 구성
 
@@ -306,10 +323,10 @@ Daejeon Purple
 ## KPI Card
 
 Radius
-16px
+12px (토큰: `--radius-card`)
 
 Padding
-24px
+20px
 
 구성
 
