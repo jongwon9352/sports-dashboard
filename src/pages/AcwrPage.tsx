@@ -22,7 +22,7 @@ export function AcwrPage() {
   }, []);
 
   if (loading) {
-    return <div className="p-8 text-text-secondary text-center">Loading...</div>;
+    return <div className="p-8 text-text-secondary text-center">로딩 중...</div>;
   }
 
   const withAcwr = players.filter(p => p.acwr_data?.acwr != null);

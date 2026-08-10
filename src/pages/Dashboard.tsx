@@ -255,7 +255,7 @@ export function Dashboard() {
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-[400px]">
-        <div className="text-text-secondary">Loading...</div>
+        <div className="text-text-secondary">로딩 중...</div>
       </div>
     );
   }

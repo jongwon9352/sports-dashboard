@@ -476,7 +476,7 @@ export function DailyReport() {
       </div>
 
       {loading ? (
-        <div className="text-text-secondary text-center py-16">Loading...</div>
+        <div className="text-text-secondary text-center py-16">로딩 중...</div>
       ) : (
         <>
           {/* 테이블 */}

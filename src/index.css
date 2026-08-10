@@ -216,6 +216,20 @@ body {
   flex-shrink: 0;
 }
 
+/* OS에서 "동작 줄이기"를 켠 사용자(전정 장애 등)에게는 전환·애니메이션을 없앤다.
+   0이 아니라 0.01ms인 것은 transitionend/animationend에 의존하는 코드가
+   깨지지 않게 하기 위한 관용적 처리다. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -763,7 +763,7 @@ export function TeamDashboard() {
   );
 
   const loadingEl = loading
-    ? <div className="text-text-secondary text-center py-16">Loading...</div>
+    ? <div className="text-text-secondary text-center py-16">로딩 중...</div>
     : error
     ? <div className="text-red-500 text-center py-16">데이터를 불러오지 못했습니다. 네트워크를 확인하세요.</div>
     : null;

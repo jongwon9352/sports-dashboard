@@ -32,7 +32,7 @@ export function RpePage() {
   }, []);
 
   if (loading) {
-    return <div className="p-8 text-text-secondary text-center">Loading...</div>;
+    return <div className="p-8 text-text-secondary text-center">로딩 중...</div>;
   }
 
   const trendChart = teamTrend.slice(-30).map(d => ({
