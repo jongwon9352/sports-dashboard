@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 
 // ≤768px에서는 사이드바가 hide-mobile로 숨겨져 내비게이션 수단이 아예 사라진다.
@@ -7,10 +6,6 @@ import { Sidebar } from './Sidebar';
 // 같은 Sidebar를 드로어에 그대로 띄워 메뉴 손실 없이 이동할 수 있게 한다.
 export function MobileNav() {
   const [open, setOpen] = useState(false);
-  const { pathname } = useLocation();
-
-  // 메뉴로 화면을 이동하면 드로어를 닫는다.
-  useEffect(() => { setOpen(false); }, [pathname]);
 
   // 드로어가 열린 동안 뒤 본문이 스크롤되지 않게 하고, Esc로 닫을 수 있게 한다.
   useEffect(() => {
@@ -40,7 +35,11 @@ export function MobileNav() {
       {open && (
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <div className="absolute inset-y-0 left-0 w-[260px] max-w-[80vw] bg-surface shadow-[var(--shadow-3)] overflow-y-auto">
+          <div
+            className="absolute inset-y-0 left-0 w-[260px] max-w-[80vw] bg-surface shadow-[var(--shadow-3)] overflow-y-auto"
+            // 메뉴 링크로 화면을 이동하면 드로어를 닫는다. 그룹 펼침 버튼은 닫지 않는다.
+            onClick={e => { if ((e.target as HTMLElement).closest('a')) setOpen(false); }}
+          >
             <div className="flex justify-end p-1">
               <button
                 type="button"
