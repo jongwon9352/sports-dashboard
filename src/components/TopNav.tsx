@@ -3,7 +3,7 @@ import { MobileNav } from './MobileNav';
 export function TopNav() {
   return (
     <nav
-      className="h-[72px] flex items-center px-4 md:px-8 shadow-[var(--shadow-2)] sticky top-0 z-50"
+      className="topnav h-[72px] flex items-center px-4 md:px-8 shadow-[var(--shadow-2)] sticky top-0 z-50"
       style={{ background: 'linear-gradient(90deg, #008C7E 0%, #153E6F 58%, #101820 100%)' }}
     >
       <MobileNav />

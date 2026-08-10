@@ -43,6 +43,18 @@ body {
   min-height: 100vh;
 }
 
+/* Tailwind preflight가 기본 outline을 제거해 키보드 포커스가 전혀 보이지 않는다.
+   마우스 클릭에는 나타나지 않고 키보드 이동에만 보이도록 :focus-visible로 건다. */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+/* 어두운 그라데이션 헤더 위에서만 브랜드색 대비가 약해 흰색으로 뒤집는다.
+   사이드바도 <nav>를 쓰므로 태그가 아니라 .topnav로 한정해야 한다. */
+.topnav :focus-visible {
+  outline-color: #FFFFFF;
+}
+
 /* Sidebar Navigation */
 .sidebar-nav-item {
   display: flex;
