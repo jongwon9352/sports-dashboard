@@ -757,7 +757,7 @@ export function TeamDashboard() {
 
   const tabBtn = (id: 'acwr' | 'monotony' | 'match', label: string) => (
     <button onClick={() => setTab(id)}
-      className={`px-3 py-1.5 text-sm rounded border transition-colors ${tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'}`}>
+      className={`px-3 py-1.5 text-sm rounded border transition-colors ${tab === id ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'}`}>
       {label}
     </button>
   );

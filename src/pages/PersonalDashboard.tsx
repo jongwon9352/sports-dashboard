@@ -1136,7 +1136,7 @@ export function PersonalDashboard() {
               key={id}
               onClick={() => setTab(id)}
               className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                tab === id ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
               }`}
             >
               {label}

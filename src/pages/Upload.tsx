@@ -90,7 +90,7 @@ function AmbiguousNameDialog({ state, onSubmit }: { state: AmbiguousDialogState;
                 <button
                   onClick={() => setAnswers(prev => new Map(prev).set(item.name, true))}
                   className={`px-3 py-1 text-xs rounded border transition-colors ${
-                    answers.get(item.name) === true ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                    answers.get(item.name) === true ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
                   }`}
                 >
                   동일 인물
@@ -98,7 +98,7 @@ function AmbiguousNameDialog({ state, onSubmit }: { state: AmbiguousDialogState;
                 <button
                   onClick={() => setAnswers(prev => new Map(prev).set(item.name, false))}
                   className={`px-3 py-1 text-xs rounded border transition-colors ${
-                    answers.get(item.name) === false ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                    answers.get(item.name) === false ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
                   }`}
                 >
                   신규 선수
@@ -111,7 +111,7 @@ function AmbiguousNameDialog({ state, onSubmit }: { state: AmbiguousDialogState;
           <button
             onClick={() => onSubmit(answers)}
             disabled={!allAnswered}
-            className="px-4 py-1.5 text-sm rounded bg-purple text-white disabled:opacity-50"
+            className="px-4 py-1.5 text-sm rounded bg-brand text-white disabled:opacity-50"
           >
             확인하고 계속 업로드
           </button>

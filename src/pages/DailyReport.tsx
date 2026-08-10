@@ -451,7 +451,7 @@ export function DailyReport() {
           날짜 선택
         </label>
         <select value={selectedDate} onChange={e => handleDateChange(e.target.value)}
-          className="px-3 py-1.5 border border-surface-secondary rounded-[var(--radius-sm)] text-sm bg-white outline-none focus:border-purple"
+          className="px-3 py-1.5 border border-surface-secondary rounded-[var(--radius-sm)] text-sm bg-white outline-none focus:border-brand"
           style={{ fontFamily: 'var(--font-data)' }}>
           {dates.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
@@ -460,7 +460,7 @@ export function DailyReport() {
             {sessions.map((s, i) => (
               <button key={s.label + i} onClick={() => setSessionIdx(i)}
                 className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                  sessionIdx === i ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                  sessionIdx === i ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
                 }`}>
                 {s.label}
               </button>
@@ -487,7 +487,7 @@ export function DailyReport() {
                 <div className="pdf-header-info flex items-center justify-center gap-8 flex-wrap" style={{ fontSize: 13 }}>
                   <span>
                     일시: {formatKoreanDate(selectedDate)}
-                    {mdCode && <span className="ml-1.5 font-semibold" style={{ color: 'var(--color-purple)' }}>[{mdCode}]</span>}
+                    {mdCode && <span className="ml-1.5 font-semibold" style={{ color: 'var(--color-brand)' }}>[{mdCode}]</span>}
                   </span>
                   <span>
                     장소: <input type="text" value={location} onChange={e => setLocation(e.target.value)}

@@ -547,7 +547,7 @@ export function MatchReport() {
           경기 선택
         </label>
         <select value={selectedMatch} onChange={e => handleMatchChange(e.target.value)}
-          className="px-3 py-1.5 border border-surface-secondary rounded-[var(--radius-sm)] text-sm bg-white outline-none focus:border-purple"
+          className="px-3 py-1.5 border border-surface-secondary rounded-[var(--radius-sm)] text-sm bg-white outline-none focus:border-brand"
           style={{ fontFamily: 'var(--font-data)' }}>
           {matches.map(m => {
             const key = `${m.date}_${m.opponent}`;
@@ -577,7 +577,7 @@ export function MatchReport() {
                   <span>인원: {assignedRows.length}명</span>
                   {selectedMatchInfo && (
                     <span>
-                      <span className="font-semibold" style={{ color: 'var(--color-purple)' }}>MD</span>
+                      <span className="font-semibold" style={{ color: 'var(--color-brand)' }}>MD</span>
                       {matchGap.since != null && ` · 직전 경기 후 ${matchGap.since}일`}
                       {matchGap.until != null && ` · 다음 경기까지 ${matchGap.until}일`}
                     </span>

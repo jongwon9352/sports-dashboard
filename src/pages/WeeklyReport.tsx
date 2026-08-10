@@ -310,7 +310,7 @@ export function WeeklyReport() {
         <select
           value={selectedWeek}
           onChange={e => setSelectedWeek(e.target.value)}
-          className="px-3 py-1.5 border border-surface-secondary rounded-[var(--radius-sm)] text-sm bg-white outline-none focus:border-purple"
+          className="px-3 py-1.5 border border-surface-secondary rounded-[var(--radius-sm)] text-sm bg-white outline-none focus:border-brand"
           style={{ fontFamily: 'var(--font-data)' }}
         >
           {savedWeeks.map(w => (
@@ -353,7 +353,7 @@ export function WeeklyReport() {
                 <tr>
                   <td className={`${tdC} font-semibold`}>MD</td>
                   {headerData.map((d, i) => (
-                    <td key={i} className={tdC} style={{ color: d.md ? 'var(--color-purple)' : undefined, fontWeight: d.md === 'MD' ? 700 : 500 }}>
+                    <td key={i} className={tdC} style={{ color: d.md ? 'var(--color-brand)' : undefined, fontWeight: d.md === 'MD' ? 700 : 500 }}>
                       {d.md || '-'}
                     </td>
                   ))}
@@ -451,7 +451,7 @@ export function WeeklyReport() {
               value={comment}
               onChange={e => setComment(e.target.value)}
               placeholder="주간 코멘트를 입력하세요..."
-              className="w-full px-4 py-3 text-sm rounded-lg border border-surface-secondary bg-transparent outline-none resize-y min-h-[100px] focus:border-purple"
+              className="w-full px-4 py-3 text-sm rounded-lg border border-surface-secondary bg-transparent outline-none resize-y min-h-[100px] focus:border-brand"
             />
           </div>
         </div>

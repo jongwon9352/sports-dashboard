@@ -40,7 +40,7 @@ export function mdIntensityKey(code: string | null): string {
 }
 
 export const INTENSITY_STYLE: Record<string, { bg: string; color: string }> = {
-  'MATCH': { bg: 'var(--color-purple)', color: '#FFFFFF' },
+  'MATCH': { bg: 'var(--color-brand)', color: '#FFFFFF' },
   'REST': { bg: '#F7E4E4', color: '#8A5A5A' },
   'RECOVERY': { bg: '#C6E0B4', color: '#375623' },
   'REACTION': { bg: '#BDD7EE', color: '#1F4E79' },

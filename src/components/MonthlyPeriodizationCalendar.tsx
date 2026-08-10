@@ -202,7 +202,7 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
       </div>
 
       {error && (
-        <div className="mb-3 px-3 py-2 rounded text-xs" style={{ background: 'var(--color-purple-light)', color: 'var(--color-purple)' }}>
+        <div className="mb-3 px-3 py-2 rounded text-xs" style={{ background: 'var(--color-brand-light)', color: 'var(--color-brand)' }}>
           {error}
           <button onClick={load} className="ml-2 underline font-bold">다시 시도</button>
         </div>
@@ -217,7 +217,7 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
               <tr>
                 {DOW.map((d, i) => (
                   <th key={d} className="text-xs font-bold py-1.5"
-                    style={{ border: '1px solid var(--color-surface-secondary)', color: i === 0 ? 'var(--color-purple)' : i === 6 ? 'var(--color-recovery)' : 'inherit' }}>
+                    style={{ border: '1px solid var(--color-surface-secondary)', color: i === 0 ? 'var(--color-brand)' : i === 6 ? 'var(--color-recovery)' : 'inherit' }}>
                     {d}
                   </th>
                 ))}
@@ -240,7 +240,7 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
                     active: editing === iso,
                   };
                 });
-                const cellBg = (c: typeof cells[number]) => c.active ? 'var(--color-purple-light)' : c.iso === todayIso ? '#FFF4D6' : undefined;
+                const cellBg = (c: typeof cells[number]) => c.active ? 'var(--color-brand-light)' : c.iso === todayIso ? '#FFF4D6' : undefined;
                 return (
                   <Fragment key={wi}>
                     <tr>
@@ -306,8 +306,8 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
           </div>
 
           {/* 경기 등록이 MD의 유일한 근거다. 아래 내용·강도는 표시만 바꾸므로 이 칸을 먼저 보여준다. */}
-          <div className="p-2.5 rounded-lg border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-purple)' }}>
-            <div className="text-xs font-bold mb-1.5" style={{ color: 'var(--color-purple)' }}>
+          <div className="p-2.5 rounded-lg border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-brand)' }}>
+            <div className="text-xs font-bold mb-1.5" style={{ color: 'var(--color-brand)' }}>
               ① 경기 일정 <span className="font-normal text-text-secondary">— 경기인 날은 여기에 등록해야 MD 코드가 웹 전체에 반영됩니다</span>
             </div>
             {(fixtureByDate.get(editing) ?? []).map(f => (
@@ -379,7 +379,7 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
           <div className="flex items-center gap-2 mt-3">
             <button onClick={() => commitEdit('save')} disabled={saving}
               className="px-4 py-2 rounded text-sm font-bold text-white disabled:opacity-50"
-              style={{ background: 'var(--color-purple)' }}>
+              style={{ background: 'var(--color-brand)' }}>
               {saving ? '저장 중…' : '표시 내용 저장'}
             </button>
             {overrideByDate.has(editing) && (

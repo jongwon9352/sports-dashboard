@@ -8,7 +8,7 @@ export function TopNav() {
     >
       <MobileNav />
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-purple font-bold text-sm flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-brand font-bold text-sm flex-shrink-0">
           DH
         </div>
         <span className="text-white font-bold text-lg tracking-tight whitespace-nowrap">

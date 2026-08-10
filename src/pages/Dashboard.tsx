@@ -81,7 +81,7 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
               key={id}
               onClick={() => setTab(id)}
               className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                tab === id ? 'bg-purple text-white' : 'border border-surface-secondary hover:bg-surface-secondary'
+                tab === id ? 'bg-brand text-white' : 'border border-surface-secondary hover:bg-surface-secondary'
               }`}
             >
               {label}
@@ -98,7 +98,7 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
             return (
               <div key={dateStr} className="min-h-[140px] rounded-lg border border-surface-secondary p-2">
                 <div className="text-[10px] text-text-disabled">{DOW[d.getDay()]}</div>
-                <div className={`text-sm font-bold mb-1 ${isToday ? 'text-purple' : ''}`}>{d.getDate()}</div>
+                <div className={`text-sm font-bold mb-1 ${isToday ? 'text-brand' : ''}`}>{d.getDate()}</div>
                 {(eventsByDate.get(dateStr) ?? []).map((e, i) => <EventBlock key={i} e={e} />)}
               </div>
             );
@@ -116,7 +116,7 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
             const dayEvents = eventsByDate.get(dateStr) ?? [];
             return (
               <div key={dateStr} className={`min-h-[80px] rounded-lg border border-surface-secondary p-1.5 ${inMonth ? '' : 'opacity-40'}`}>
-                <div className={`text-xs font-bold mb-0.5 ${isToday ? 'text-purple' : ''}`}>{d.getDate()}</div>
+                <div className={`text-xs font-bold mb-0.5 ${isToday ? 'text-brand' : ''}`}>{d.getDate()}</div>
                 {dayEvents.slice(0, 2).map((e, i) => <EventBlock key={i} e={e} />)}
                 {dayEvents.length > 2 && <div className="text-[10px] text-text-disabled">+{dayEvents.length - 2}건 더</div>}
               </div>

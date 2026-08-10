@@ -4,9 +4,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-purple: #A42843;
-  --color-purple-dark: #7F1F35;
-  --color-purple-light: #F4E4E8;
+  --color-brand: #A42843;
+  --color-brand-dark: #7F1F35;
+  --color-brand-light: #F4E4E8;
   --color-green: #008C7E;
   --color-green-light: #E0F3F0;
   --color-load-high: #A42843;
@@ -62,9 +62,9 @@ body {
   color: var(--color-text-primary);
 }
 .sidebar-nav-item.active {
-  background: var(--color-purple-light);
-  color: var(--color-purple);
-  border-left-color: var(--color-purple);
+  background: var(--color-brand-light);
+  color: var(--color-brand);
+  border-left-color: var(--color-brand);
   font-weight: 500;
 }
 
@@ -85,8 +85,8 @@ body {
   color: var(--color-text-primary);
 }
 .player-list-item.active {
-  background: var(--color-purple-light);
-  color: var(--color-purple);
+  background: var(--color-brand-light);
+  color: var(--color-brand);
 }
 
 /* Data Table */
@@ -199,7 +199,7 @@ body {
   content: '';
   width: 3px;
   height: 18px;
-  background: var(--color-purple);
+  background: var(--color-brand);
   border-radius: 2px;
   flex-shrink: 0;
 }

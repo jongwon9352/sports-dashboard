@@ -453,19 +453,19 @@ export function WeeklyPeriodization() {
       <div className="flex gap-2 mb-4">
         <button onClick={() => setTab('plan')}
           className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-            tab === 'plan' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+            tab === 'plan' ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
           }`}>
           주간 주기화
         </button>
         <button onClick={() => setTab('monthly')}
           className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-            tab === 'monthly' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+            tab === 'monthly' ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
           }`}>
           월간 주기화
         </button>
         <button onClick={() => setTab('analysis')}
           className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-            tab === 'analysis' ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+            tab === 'analysis' ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
           }`}>
           주간 데이터 분석
         </button>
@@ -484,7 +484,7 @@ export function WeeklyPeriodization() {
         </div>
         <button onClick={handleGenerate} disabled={generating}
           className="px-4 py-1.5 text-sm rounded font-medium text-white disabled:opacity-50"
-          style={{ background: 'var(--color-purple)' }}>
+          style={{ background: 'var(--color-brand)' }}>
           {generating ? '생성 중...' : '🤖 AI 차주 계획 생성'}
         </button>
         <span className="text-[11px] text-text-secondary leading-snug flex-1 min-w-[280px]">

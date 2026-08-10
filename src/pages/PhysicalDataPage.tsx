@@ -172,7 +172,7 @@ function ValdModal({ players, initial, onClose, onSaved }: {
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-3 py-1.5 text-sm rounded border border-surface-secondary">취소</button>
           <button onClick={handleSave} disabled={saving}
-            className="px-3 py-1.5 text-sm rounded bg-purple text-white disabled:opacity-50">
+            className="px-3 py-1.5 text-sm rounded bg-brand text-white disabled:opacity-50">
             {saving ? '저장 중...' : '저장'}
           </button>
         </div>
@@ -310,7 +310,7 @@ function ValdThresholdEditor({ records, players }: { records: PhysicalTestRow[];
           </table>
           <div className="flex justify-end mt-3">
             <button onClick={handleSave} disabled={saving}
-              className="px-3 py-1.5 text-sm rounded bg-purple text-white disabled:opacity-50">
+              className="px-3 py-1.5 text-sm rounded bg-brand text-white disabled:opacity-50">
               {saving ? '저장 중...' : '저장'}
             </button>
           </div>
@@ -1287,7 +1287,7 @@ function MaturityTab() {
     <button
       onClick={() => setSubTab(id)}
       className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-        subTab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+        subTab === id ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
       }`}
     >
       {label}
@@ -1313,7 +1313,7 @@ export function PhysicalDataPage() {
     <button
       onClick={() => setTab(id)}
       className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-        tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+        tab === id ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
       }`}
     >
       {label}

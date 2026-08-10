@@ -311,7 +311,7 @@ export function Settings() {
         {seasonYears.map(year => (
           <button key={year} onClick={() => setSeasonYear(year)}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              seasonYear === year ? 'bg-purple text-white' : 'bg-surface-secondary text-text-secondary hover:text-text-primary'
+              seasonYear === year ? 'bg-brand text-white' : 'bg-surface-secondary text-text-secondary hover:text-text-primary'
             }`}>
             {year}
           </button>

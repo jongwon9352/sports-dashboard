@@ -1024,7 +1024,7 @@ function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomR
       key={label}
       onClick={onClick}
       className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-        active ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+        active ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
       }`}
     >
       {label}
@@ -1480,7 +1480,7 @@ export function PhysicalOverviewPage() {
     <button
       onClick={() => setTab(id)}
       className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-        tab === id ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+        tab === id ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
       }`}
     >
       {label}
@@ -1507,7 +1507,7 @@ export function PhysicalOverviewPage() {
                   key={g}
                   onClick={() => setGradeFilter(g)}
                   className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                    gradeFilter === g ? 'bg-purple text-white border-purple' : 'border-surface-secondary hover:bg-surface-secondary'
+                    gradeFilter === g ? 'bg-brand text-white border-brand' : 'border-surface-secondary hover:bg-surface-secondary'
                   }`}
                 >
                   {g}
