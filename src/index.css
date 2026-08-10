@@ -215,8 +215,11 @@ body {
   .stat-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
   .chart-grid-2 { grid-template-columns: 1fr !important; }
 }
+/* 모바일 드로어 토글은 데스크톱에서 숨긴다(사이드바가 상시 보이므로). */
+.show-mobile { display: none; }
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
+  .show-mobile { display: flex !important; }
 }
 
 /* PDF export mode */

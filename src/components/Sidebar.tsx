@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
-export function Sidebar() {
+export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
   const location = useLocation();
   const isDashboardGroup = ['/', '/team-dashboard', '/workload', '/physical'].includes(location.pathname);
   const isReportGroup = ['/daily', '/weekly', '/match'].includes(location.pathname);
@@ -12,7 +12,13 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <aside className="w-[230px] min-h-[calc(100vh-72px)] border-r border-surface-secondary bg-surface sticky top-[72px] overflow-y-auto max-h-[calc(100vh-72px)] flex-shrink-0 hide-mobile">
+    <aside
+      className={
+        inDrawer
+          ? 'w-full bg-surface'
+          : 'w-[230px] min-h-[calc(100vh-72px)] border-r border-surface-secondary bg-surface sticky top-[72px] overflow-y-auto max-h-[calc(100vh-72px)] flex-shrink-0 hide-mobile'
+      }
+    >
       <div className="py-3 border-b border-surface-secondary">
         <p
           className="px-4 mb-2 text-[10px] text-text-disabled tracking-[2px] uppercase"
