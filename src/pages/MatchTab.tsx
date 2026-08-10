@@ -32,6 +32,13 @@ function norm(val: number, time: number) {
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
+// 풀 타임 80분 환산은 짧게 뛴 기록을 크게 부풀린다(1.8분 273.6m → 12,160m).
+// 그대로 두면 교체로 몇 분 뛴 선수가 선수별 랭킹 최상위에 올라오고 포지션 평균도 왜곡된다.
+// 매치 리포트는 한 경기 안에서 "풀 타임에 준하는 출전"을 보므로 최장 출전 시간 대비 비율을
+// 쓰지만, 이 화면은 시즌 누적 평균이라 같은 비율을 쓰면 절반 넘게 뛴 기록까지 대량으로
+// 빠진다(1010건 중 427건). 여기서는 환산이 의미를 갖는 최소 표본만 절대 기준으로 거른다.
+const MIN_PLAY_MIN = 30;
+
 // ── 집계 헬퍼 ──────────────────────────────────────────────────────────────
 function avg(arr: number[]) {
   if (!arr.length) return 0;
@@ -425,14 +432,16 @@ export default function MatchTab() {
     return result;
   }, [rows]);
 
+  const eligible = useMemo(() => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN), [rows]);
+
   const filtered = useMemo(() => {
-    return rows.filter(r => {
+    return eligible.filter(r => {
       const eventMatch = selectedEvent === '전체'
         || normalizeEventType(r.event_type) === normalizeEventType(selectedEvent);
       const groupMatch = selectedGroup === '전체' || r.player_group === selectedGroup;
       return eventMatch && groupMatch;
     });
-  }, [rows, selectedEvent, selectedGroup]);
+  }, [eligible, selectedEvent, selectedGroup]);
 
   const matchData  = useMemo(() => aggregateByMatch(filtered), [filtered]);
   const playerData = useMemo(() => aggregateByPlayer(filtered), [filtered]);
@@ -452,7 +461,7 @@ export default function MatchTab() {
     return result;
   }, [filtered]);
 
-  const posStats = useMemo(() => computePosStats(filtered, rows, selectedMatchKey), [filtered, rows, selectedMatchKey]);
+  const posStats = useMemo(() => computePosStats(filtered, eligible, selectedMatchKey), [filtered, eligible, selectedMatchKey]);
   const maxVals  = useMemo((): PosMetrics => {
     const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
     for (const s of posStats.values()) {
@@ -507,6 +516,7 @@ export default function MatchTab() {
         </div>
         <p className="text-[11px] text-gray-400">
           {filtered.length}개 레코드 · {matchData.length}경기 · {playerData.length}명 · 풀 타임 {FULL_TIME}분 기준 평균
+          {rows.length - eligible.length > 0 && ` · ${MIN_PLAY_MIN}분 미만 출전 ${rows.length - eligible.length}건 제외`}
         </p>
       </div>
 

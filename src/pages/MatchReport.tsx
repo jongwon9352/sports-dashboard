@@ -309,7 +309,12 @@ export function MatchReport() {
     Math.max(...assignedRows.map(r => r.play_time_min), 0),
   [assignedRows]);
 
-  const posAvgMinTime = maxPlayTime >= 80 ? 60 : maxPlayTime >= 70 ? 50 : 0;
+  // 포지션 평균에서 교체로 잠깐 뛴 선수를 빼는 최소 출전 시간.
+  // 예전엔 80분→60, 70분→50, 그 아래는 0인 절대 분 계단이라 풀타임이 66.9분이었던
+  // K리그유스챔피언십 경기에서 필터가 통째로 꺼졌고, 1.8분·9.3분 교체 출전이 포지션
+  // 평균에 그대로 섞여 평균이 실제보다 크게 낮아졌다. 대회마다 경기 시간이 다르므로
+  // 절대 분이 아니라 그 경기 최장 출전 시간의 75%로 잡는다(80분→60분으로 기존과 동일).
+  const posAvgMinTime = maxPlayTime * 0.75;
 
   const fullTimeRows = useMemo(() =>
     assignedRows.filter(r => r.play_time_min >= maxPlayTime - 1 && positions[r.id] !== 'GK'),
