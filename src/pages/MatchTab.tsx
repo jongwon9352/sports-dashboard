@@ -84,6 +84,9 @@ function aggregateByMatch(rows: MatchRow[]): AggRow[] {
   });
 }
 
+// 선수별 차트는 개인이 실제로 뛴 기록을 보여주는 곳이라 풀 타임 환산을 쓰지 않는다.
+// 환산하면 1.8분 273.6m가 12,160m가 되어 교체로 잠깐 뛴 선수가 TD 최상위에 올라온다.
+// 출전 시간 대비 강도는 환산과 무관한 m/min 지표가 이미 같은 차트에 그려진다.
 function aggregateByPlayer(rows: MatchRow[]): AggRow[] {
   const map = new Map<string, MatchRow[]>();
   for (const r of rows) {
@@ -93,13 +96,13 @@ function aggregateByPlayer(rows: MatchRow[]): AggRow[] {
   return [...map.entries()]
     .map(([name, group]) => ({
       label:    name,
-      td:       round1(avg(group.map(r => norm(r.total_distance, r.play_time_min)))),
+      td:       round1(avg(group.map(r => r.total_distance))),
       mPerMin:  round1(avg(group.map(r => r.m_per_min))),
-      hsr:      round1(avg(group.map(r => norm(r.hsr_distance, r.play_time_min)))),
-      sprint:   round1(avg(group.map(r => norm(r.sprint_distance, r.play_time_min)))),
-      acc:      round1(avg(group.map(r => norm(r.acc_count, r.play_time_min)))),
-      dec:      round1(avg(group.map(r => norm(r.dec_count, r.play_time_min)))),
-      acdLoad:  round1(avg(group.map(r => norm(r.acd_load, r.play_time_min)))),
+      hsr:      round1(avg(group.map(r => r.hsr_distance))),
+      sprint:   round1(avg(group.map(r => r.sprint_distance))),
+      acc:      round1(avg(group.map(r => r.acc_count))),
+      dec:      round1(avg(group.map(r => r.dec_count))),
+      acdLoad:  round1(avg(group.map(r => r.acd_load))),
       maxSpeed: round1(avg(group.map(r => r.max_speed))),
     }))
     .sort((a, b) => b.td - a.td);
@@ -552,7 +555,7 @@ export default function MatchTab() {
         {/* 오른쪽: 선수별 개인 데이터 */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="text-sm font-bold text-gray-700 mb-1">TEAM DATA (선수별)</h3>
-          <p className="text-[11px] text-gray-400 mb-4">풀 타임 {FULL_TIME}분 기준 평균 · TD 내림차순</p>
+          <p className="text-[11px] text-gray-400 mb-4">실제 경기 기록 평균(환산 없음) · TD 내림차순</p>
           <div className="space-y-2">
             {CHART_ROWS.map((row, i) => (
               <div key={i}>
