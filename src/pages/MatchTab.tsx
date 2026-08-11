@@ -432,18 +432,22 @@ export default function MatchTab() {
     return result;
   }, [rows]);
 
-  const eligible = useMemo(() => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN), [rows]);
-
+  // filtered: 선수 개인 기록을 보여주는 곳에 쓴다. 로우 데이터에 있는 경기는 출전 시간이
+  // 짧아도 그 선수 화면에서 사라지면 안 되므로 최소 출전 시간을 걸지 않는다.
   const filtered = useMemo(() => {
-    return eligible.filter(r => {
+    return rows.filter(r => {
       const eventMatch = selectedEvent === '전체'
         || normalizeEventType(r.event_type) === normalizeEventType(selectedEvent);
       const groupMatch = selectedGroup === '전체' || r.player_group === selectedGroup;
       return eventMatch && groupMatch;
     });
-  }, [eligible, selectedEvent, selectedGroup]);
+  }, [rows, selectedEvent, selectedGroup]);
 
-  const matchData  = useMemo(() => aggregateByMatch(filtered), [filtered]);
+  // avgRows: 여러 선수를 묶어 내는 평균에만 쓴다. 짧은 출전을 풀 타임으로 환산한 값이
+  // 섞이면 팀·포지션 평균이 실제와 크게 달라지므로 여기서만 최소 출전 시간을 건다.
+  const avgRows = useMemo(() => filtered.filter(r => r.play_time_min >= MIN_PLAY_MIN), [filtered]);
+
+  const matchData  = useMemo(() => aggregateByMatch(avgRows), [avgRows]);
   const playerData = useMemo(() => aggregateByPlayer(filtered), [filtered]);
 
   // 드롭다운용 경기 목록 (최신순)
@@ -461,7 +465,8 @@ export default function MatchTab() {
     return result;
   }, [filtered]);
 
-  const posStats = useMemo(() => computePosStats(filtered, eligible, selectedMatchKey), [filtered, eligible, selectedMatchKey]);
+  const allAvgRows = useMemo(() => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN), [rows]);
+  const posStats = useMemo(() => computePosStats(avgRows, allAvgRows, selectedMatchKey), [avgRows, allAvgRows, selectedMatchKey]);
   const maxVals  = useMemo((): PosMetrics => {
     const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
     for (const s of posStats.values()) {
@@ -516,7 +521,7 @@ export default function MatchTab() {
         </div>
         <p className="text-[11px] text-gray-400">
           {filtered.length}개 레코드 · {matchData.length}경기 · {playerData.length}명 · 풀 타임 {FULL_TIME}분 기준 평균
-          {rows.length - eligible.length > 0 && ` · ${MIN_PLAY_MIN}분 미만 출전 ${rows.length - eligible.length}건 제외`}
+          {filtered.length - avgRows.length > 0 && ` · 팀·포지션 평균에서만 ${MIN_PLAY_MIN}분 미만 출전 ${filtered.length - avgRows.length}건 제외(선수별 기록은 전부 표시)`}
         </p>
       </div>
 
@@ -602,7 +607,7 @@ export default function MatchTab() {
         </div>
 
         {/* 전체 누적평균 vs 선택경기 막대 비교 */}
-        <OverallCompareChart filtered={filtered} selectedMatchKey={selectedMatchKey} />
+        <OverallCompareChart filtered={avgRows} selectedMatchKey={selectedMatchKey} />
       </div>
     </div>
   );
