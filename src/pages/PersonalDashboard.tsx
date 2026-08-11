@@ -665,15 +665,37 @@ function balanceScore(record: PhysicalTestRow): number | null {
   return Math.max(0, Math.min(100, 100 - avgImbalance * 5));
 }
 
-function computeRadarScores(record: PhysicalTestRow | null, thresholds: ValdThreshold[], grade: string | null): Record<RadarAxisKey, number | null> {
-  if (!record) return { strength: null, power: null, speed: null, agility: null, balance: null };
-  return {
-    strength: avgScoreForGroup(STRENGTH_METRIC_KEYS, record, thresholds, grade),
-    power: avgScoreForGroup(POWER_METRIC_KEYS, record, thresholds, grade),
-    speed: avgScoreForGroup(SPEED_METRIC_KEYS, record, thresholds, grade),
-    agility: avgScoreForGroup(AGILITY_METRIC_KEYS, record, thresholds, grade),
-    balance: balanceScore(record),
-  };
+function axisScore(key: RadarAxisKey, record: PhysicalTestRow, thresholds: ValdThreshold[], grade: string | null): number | null {
+  switch (key) {
+    case 'strength': return avgScoreForGroup(STRENGTH_METRIC_KEYS, record, thresholds, grade);
+    case 'power':    return avgScoreForGroup(POWER_METRIC_KEYS, record, thresholds, grade);
+    case 'speed':    return avgScoreForGroup(SPEED_METRIC_KEYS, record, thresholds, grade);
+    case 'agility':  return avgScoreForGroup(AGILITY_METRIC_KEYS, record, thresholds, grade);
+    case 'balance':  return balanceScore(record);
+  }
+}
+
+// history는 최신순 정렬을 전제로 한다.
+// 측정 일정·장비 사정으로 특정 항목만 빠진 회차가 흔한데, 예전에는 최신 회차 하나만 보고
+// 값이 없으면 차트에 0으로 그려 레이더가 실제보다 안쪽으로 찌그러졌다. 항목별로 값이 있는
+// 가장 최근 회차까지 거슬러 올라가 채우고, 어느 회차에서 가져왔는지 dates에 남긴다.
+function computeRadarScores(history: PhysicalTestRow[], thresholds: ValdThreshold[], grade: string | null): {
+  scores: Record<RadarAxisKey, number | null>;
+  dates: Record<RadarAxisKey, string | null>;
+} {
+  const scores = { strength: null, power: null, speed: null, agility: null, balance: null } as Record<RadarAxisKey, number | null>;
+  const dates = { strength: null, power: null, speed: null, agility: null, balance: null } as Record<RadarAxisKey, string | null>;
+  for (const a of RADAR_AXES) {
+    for (const record of history) {
+      const v = axisScore(a.key, record, thresholds, grade);
+      if (v != null) {
+        scores[a.key] = v;
+        dates[a.key] = record.test_date;
+        break;
+      }
+    }
+  }
+  return { scores, dates };
 }
 
 function findWorstImbalance(record: PhysicalTestRow | null): { key: string; label: string; imbalance: number } | null {
@@ -749,8 +771,9 @@ const RADAR_INJURY_EXERCISES: Record<string, { name: string; note: string; sets:
 
 const FIFA11_EXERCISE = { name: 'FIFA 11+ 스타일 워밍업', note: '전신(하체 중심)', sets: '1세트', reps: '15~20분', intensity: '저강도, 훈련 전 필수 루틴', purpose: '전반적 부상 예방 목적' };
 
-function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerName }: {
+function PhysicalRadarSection({ record, history, grade, thresholds, teamScores, playerName }: {
   record: PhysicalTestRow | null;
+  history: PhysicalTestRow[];
   grade: string | null;
   thresholds: ValdThreshold[];
   teamScores: Record<RadarAxisKey, number | null>[];
@@ -760,7 +783,7 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
     return <div className="chart-card text-center text-text-secondary py-8">피지컬 데이터가 없어 프로필을 표시할 수 없습니다.</div>;
   }
 
-  const scores = computeRadarScores(record, thresholds, grade);
+  const { scores, dates } = computeRadarScores(history, thresholds, grade);
   const teamAvg = Object.fromEntries(
     RADAR_AXES.map(a => {
       const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
@@ -775,6 +798,8 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
   }));
 
   const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
+  // 어느 항목이 이전 회차에서 채워졌는지 밝혀야 측정일이 섞인 그래프를 오해하지 않는다.
+  const carriedOver = RADAR_AXES.filter(a => dates[a.key] != null && dates[a.key] !== record.test_date);
   const best = [...validAxes].sort((a, b) => scores[b.key]! - scores[a.key]!)[0] ?? null;
   const worst = [...validAxes].sort((a, b) => scores[a.key]! - scores[b.key]!)[0] ?? null;
 
@@ -816,6 +841,12 @@ function PhysicalRadarSection({ record, grade, thresholds, teamScores, playerNam
               </div>
             ))}
           </div>
+          {carriedOver.length > 0 && (
+            <p className="text-[10px] text-text-disabled mt-2 text-center">
+              최신 측정({record.test_date})에 값이 없어 이전 측정값 사용:{' '}
+              {carriedOver.map(a => `${a.en} ${dates[a.key]}`).join(' · ')}
+            </p>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -885,11 +916,11 @@ function ExerciseItem({ ex }: { ex: { name: string; note: string; sets: string; 
   );
 }
 
-function AiPrescriptionCards({ record, grade, thresholds, teamScores }: {
-  record: PhysicalTestRow | null; grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
+function AiPrescriptionCards({ record, history, grade, thresholds, teamScores }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
 }) {
   if (!record) return null;
-  const scores = computeRadarScores(record, thresholds, grade);
+  const { scores } = computeRadarScores(history, thresholds, grade);
   const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
   const teamAvg = Object.fromEntries(
     RADAR_AXES.map(a => {
@@ -989,15 +1020,15 @@ function MonthlyChangeLeaderboard({ allBodyComp, selectedId }: { allBodyComp: Bo
   );
 }
 
-function PhysicalTabPanel({ record, bodyComp, allBodyComp, selectedId, maturity, speed, grade, thresholds, teamScores, playerName }: {
-  record: PhysicalTestRow | null; bodyComp: BodyCompositionRow[]; allBodyComp: BodyCompositionRow[]; selectedId: string;
+function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, maturity, speed, grade, thresholds, teamScores, playerName }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[]; allBodyComp: BodyCompositionRow[]; selectedId: string;
   maturity: MaturityRow | null; speed: SpeedCustomRow | null;
   grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
   return (
     <div className="space-y-4">
-      <PhysicalRadarSection record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
-      <AiPrescriptionCards record={record} grade={grade} thresholds={thresholds} teamScores={teamScores} />
+      <PhysicalRadarSection record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
+      <AiPrescriptionCards record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} />
       <BodyCompositionSection rows={bodyComp} />
       <MonthlyChangeLeaderboard allBodyComp={allBodyComp} selectedId={selectedId} />
       <MaturitySection row={maturity} />
@@ -1024,7 +1055,9 @@ export function PersonalDashboard() {
   const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
   const [valdThresholds, setValdThresholds] = useState<ValdThreshold[]>([]);
-  const [teamLatestPhysical, setTeamLatestPhysical] = useState<Map<string, PhysicalTestRow>>(new Map());
+  const [physicalHistory, setPhysicalHistory] = useState<PhysicalTestRow[]>([]);
+  // 선수별 측정 이력(최신순). 항목이 빠진 회차를 이전 회차로 보완하려면 최신 1건만으로는 부족하다.
+  const [teamPhysicalHistory, setTeamPhysicalHistory] = useState<Map<string, PhysicalTestRow[]>>(new Map());
   const [allBodyComp, setAllBodyComp] = useState<BodyCompositionRow[]>([]);
 
   useEffect(() => {
@@ -1061,11 +1094,13 @@ export function PersonalDashboard() {
       setMatches(matchData);
       const own = physicalRows.filter(r => r.player_id === selectedId).sort((a, b) => b.test_date.localeCompare(a.test_date));
       setPhysicalRecord(own[0] ?? null);
-      const latestByPlayer = new Map<string, PhysicalTestRow>();
-      for (const r of [...physicalRows].sort((a, b) => a.test_date.localeCompare(b.test_date))) {
-        latestByPlayer.set(r.player_id, r);
+      setPhysicalHistory(own);
+      const historyByPlayer = new Map<string, PhysicalTestRow[]>();
+      for (const r of [...physicalRows].sort((a, b) => b.test_date.localeCompare(a.test_date))) {
+        const list = historyByPlayer.get(r.player_id);
+        if (list) list.push(r); else historyByPlayer.set(r.player_id, [r]);
       }
-      setTeamLatestPhysical(latestByPlayer);
+      setTeamPhysicalHistory(historyByPlayer);
       setAllBodyComp(bodyRows);
       setBodyComp(bodyRows.filter(r => r.player_id === selectedId));
       setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
@@ -1076,7 +1111,7 @@ export function PersonalDashboard() {
 
   const player = players.find(p => p.id === selectedId) ?? null;
   const teamRadarScores = players.map(p =>
-    computeRadarScores(teamLatestPhysical.get(p.id) ?? null, valdThresholds, p.grade ?? null),
+    computeRadarScores(teamPhysicalHistory.get(p.id) ?? [], valdThresholds, p.grade ?? null).scores,
   );
 
   if (loading) {
@@ -1159,6 +1194,7 @@ export function PersonalDashboard() {
         {tab === 'physical' && (
           <PhysicalTabPanel
             record={physicalRecord}
+            history={physicalHistory}
             bodyComp={bodyComp}
             allBodyComp={allBodyComp}
             selectedId={selectedId}
