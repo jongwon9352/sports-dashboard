@@ -1190,7 +1190,10 @@ export function PersonalDashboard() {
         </div>
 
         {player && tab === 'load' && <LoadTab dailyData={dailyData} multiMetric={multiMetric} teamLoadRange={teamLoadRange} />}
-        {tab === 'match' && <PersonalMatchTab matches={matches} />}
+        {/* 선수를 바꿔도 eventFilter·groupFilter·selectedKey가 이전 선수 값으로 남아 있으면,
+            새 선수가 뛴 적 없는 경기 타입이 그대로 걸려 "필터된 0경기"로 표시되는 경우가 있었다.
+            key로 selectedId를 넘겨 선수 전환 시 컴포넌트를 새로 마운트해 필터를 초기화한다. */}
+        {tab === 'match' && <PersonalMatchTab key={selectedId} matches={matches} />}
         {tab === 'physical' && (
           <PhysicalTabPanel
             record={physicalRecord}
