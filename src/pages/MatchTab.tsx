@@ -4,6 +4,7 @@ import {
   ComposedChart, Line, BarChart, Cell, LabelList,
   Radar, RadarChart, PolarGrid, PolarAngleAxis,
 } from 'recharts';
+import type { RenderableText } from 'recharts/types/component/Text';
 import { fetchMatchData, type MatchRow } from '../lib/api';
 
 // ── 상수 ──────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ function aggregateByPlayer(rows: MatchRow[]): AggRow[] {
 
 // ── 공통 차트 설정 ──────────────────────────────────────────────────────────
 const AXIS_STYLE = { fontSize: 10, fill: '#6b7280' };
-const CHART_MARGIN = { top: 12, right: 8, left: 0, bottom: 48 };
+const CHART_MARGIN = { top: 24, right: 8, left: 0, bottom: 48 };
 
 function XTick({ x, y, payload }: any) {
   const lines: string[] = (payload.value as string).split('\n');
@@ -324,8 +325,12 @@ function TdChart({ data, height }: { data: AggRow[]; height: number }) {
         <YAxis yAxisId="td" width={48} unit="m" tick={{ fontSize: 10 }} />
         <YAxis yAxisId="mm" orientation="right" width={40} unit="" tick={{ fontSize: 10 }} />
         <Tooltip formatter={((v: any, name: any) => [v, name === 'td' ? 'TD (m)' : 'm/min']) as any} />
-        <Bar yAxisId="td" dataKey="td" fill="#22c55e" name="TD" radius={[2, 2, 0, 0]} />
-        <Line yAxisId="mm" dataKey="mPerMin" stroke="#f97316" dot={{ r: 3 }} strokeWidth={2} name="m/min" />
+        <Bar yAxisId="td" dataKey="td" fill="#22c55e" name="TD" radius={[2, 2, 0, 0]}>
+          <LabelList dataKey="td" position="top" style={{ fontSize: 9, fill: '#166534', fontWeight: 600 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+        </Bar>
+        <Line yAxisId="mm" dataKey="mPerMin" stroke="#f97316" dot={{ r: 3 }} strokeWidth={2} name="m/min">
+          <LabelList dataKey="mPerMin" position="top" style={{ fontSize: 9, fill: '#c2410c', fontWeight: 600 }} formatter={(v: RenderableText) => Number(v).toFixed(1)} />
+        </Line>
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -339,8 +344,12 @@ function HirChart({ data, height }: { data: AggRow[]; height: number }) {
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
         <YAxis width={48} unit="m" tick={{ fontSize: 10 }} />
         <Tooltip formatter={((v: any, name: any) => [v, name === 'hsr' ? 'HSR (m)' : 'Sprint (m)']) as any} />
-        <Bar dataKey="hsr" stackId="hir" fill="#f9a8d4" name="hsr" radius={[0, 0, 0, 0]} />
-        <Bar dataKey="sprint" stackId="hir" fill="#ef4444" name="sprint" radius={[2, 2, 0, 0]} />
+        <Bar dataKey="hsr" stackId="hir" fill="#f9a8d4" name="hsr" radius={[0, 0, 0, 0]}>
+          <LabelList dataKey="hsr" position="top" style={{ fontSize: 8, fill: '#db2777', fontWeight: 600 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+        </Bar>
+        <Bar dataKey="sprint" stackId="hir" fill="#ef4444" name="sprint" radius={[2, 2, 0, 0]}>
+          <LabelList dataKey="sprint" position="top" style={{ fontSize: 8, fill: '#b91c1c', fontWeight: 600 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -354,8 +363,12 @@ function ActionChart({ data, height }: { data: AggRow[]; height: number }) {
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
         <YAxis width={48} tick={{ fontSize: 10 }} />
         <Tooltip formatter={((v: any, name: any) => [v, name === 'acc' ? 'ACC' : 'DEC']) as any} />
-        <Bar dataKey="dec" stackId="act" fill="#3b82f6" name="dec" />
-        <Bar dataKey="acc" stackId="act" fill="#f97316" name="acc" radius={[2, 2, 0, 0]} />
+        <Bar dataKey="dec" stackId="act" fill="#3b82f6" name="dec">
+          <LabelList dataKey="dec" position="center" style={{ fontSize: 9, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v))} />
+        </Bar>
+        <Bar dataKey="acc" stackId="act" fill="#f97316" name="acc" radius={[2, 2, 0, 0]}>
+          <LabelList dataKey="acc" position="center" style={{ fontSize: 9, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v))} />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -369,7 +382,9 @@ function IntensityChart({ data, height }: { data: AggRow[]; height: number }) {
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
         <YAxis width={48} tick={{ fontSize: 10 }} />
         <Tooltip formatter={((v: any) => [v, 'ACD Load']) as any} />
-        <Bar dataKey="acdLoad" fill="#b91c1c" name="acdLoad" radius={[2, 2, 0, 0]} />
+        <Bar dataKey="acdLoad" fill="#b91c1c" name="acdLoad" radius={[2, 2, 0, 0]}>
+          <LabelList dataKey="acdLoad" position="top" style={{ fontSize: 9, fill: '#7f1d1d', fontWeight: 600 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -383,7 +398,9 @@ function SpeedChart({ data, height }: { data: AggRow[]; height: number }) {
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
         <YAxis width={48} unit="km/h" tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
         <Tooltip formatter={((v: any) => [v, 'Max Speed (km/h)']) as any} />
-        <Line dataKey="maxSpeed" stroke="#60a5fa" dot={{ r: 4, fill: '#60a5fa' }} strokeWidth={2} name="maxSpeed" />
+        <Line dataKey="maxSpeed" stroke="#60a5fa" dot={{ r: 4, fill: '#60a5fa' }} strokeWidth={2} name="maxSpeed">
+          <LabelList dataKey="maxSpeed" position="top" style={{ fontSize: 9, fill: '#2563eb', fontWeight: 600 }} formatter={(v: RenderableText) => Number(v).toFixed(1)} />
+        </Line>
       </ComposedChart>
     </ResponsiveContainer>
   );
