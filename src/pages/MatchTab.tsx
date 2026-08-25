@@ -46,6 +46,10 @@ function avg(arr: number[]) {
   return arr.reduce((s, v) => s + v, 0) / arr.length;
 }
 
+function maxOf(arr: number[]) {
+  return arr.length ? Math.max(...arr) : 0;
+}
+
 interface AggRow {
   label: string;
   td: number;
@@ -104,7 +108,7 @@ function aggregateByPlayer(rows: MatchRow[]): AggRow[] {
       acc:      round1(avg(group.map(r => r.acc_count))),
       dec:      round1(avg(group.map(r => r.dec_count))),
       acdLoad:  round1(avg(group.map(r => r.acd_load))),
-      maxSpeed: round1(avg(group.map(r => r.max_speed))),
+      maxSpeed: round1(maxOf(group.map(r => r.max_speed))),
     }))
     .sort((a, b) => b.td - a.td);
 }
