@@ -271,6 +271,91 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
   );
 }
 
+// ── 포지션별 · 전체 비교 차트의 "경기 타입끼리 비교" 모드 ─────────────────
+// 비교 경기(개별 경기) 대신 선택한 여러 경기 타입의 평균을 나란히 겹쳐 본다.
+// 위 개별 경기 비교(computePosStats/PosRadarCard/OverallCompareChart)와는 독립된
+// 별도 모드라서 함수·컴포넌트를 분리했다 — 기존 경로를 건드리지 않기 위함이다.
+const TYPE_COMPARE_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#db2777', '#0891b2', '#ca8a04'];
+
+interface PosTypeCompareStats {
+  cumAvg: PosMetrics;
+  count: number;
+  byType: { type: string; metrics: PosMetrics; count: number }[];
+}
+
+function computeTypeCompareStats(rows: MatchRow[], types: string[]): Map<Pos, PosTypeCompareStats> {
+  const result = new Map<Pos, PosTypeCompareStats>();
+  for (const pos of POSITIONS) {
+    const posRows = rows.filter(r => r.position_played === pos);
+    const byType = types.map(type => {
+      const typeRows = posRows.filter(r => normalizeEventType(r.event_type) === normalizeEventType(type));
+      return {
+        type,
+        metrics: typeRows.length ? toMetrics(typeRows) : { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 },
+        count: [...new Set(typeRows.map(r => r.match_date))].length,
+      };
+    });
+    result.set(pos, {
+      cumAvg: posRows.length ? toMetrics(posRows) : { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 },
+      count:  [...new Set(posRows.map(r => r.match_date))].length,
+      byType,
+    });
+  }
+  return result;
+}
+
+function PosTypeCompareCard({ pos, stats, maxVals }: { pos: Pos; stats: PosTypeCompareStats; maxVals: PosMetrics }) {
+  const radarData = BENCH_METRICS.map(m => {
+    const key = m.key as BenchKey;
+    const scale = maxVals[key] > 0 ? maxVals[key] : 1;
+    const row: Record<string, string | number | null> = {
+      metric: m.label,
+      누적평균: Math.round((stats.cumAvg[key] / scale) * 100),
+    };
+    stats.byType.forEach(t => {
+      row[t.type] = t.count > 0 ? Math.round((t.metrics[key] / scale) * 100) : null;
+    });
+    return row;
+  });
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-col">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-base font-bold" style={{ color: POS_COLORS[pos] }}>{pos}</span>
+        <span className="text-[10px] text-gray-400">{stats.count}경기</span>
+      </div>
+      <div className="flex justify-center">
+        <RadarChart width={180} height={160} data={radarData} margin={{ top: 4, right: 16, bottom: 4, left: 16 }}>
+          <PolarGrid />
+          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9 }} />
+          <Radar dataKey="누적평균" stroke="#9ca3af" fill="#9ca3af" fillOpacity={0.12} strokeDasharray="3 3" name="누적 평균" />
+          {stats.byType.map((t, i) => (
+            <Radar key={t.type} dataKey={t.type} stroke={TYPE_COMPARE_COLORS[i % TYPE_COMPARE_COLORS.length]}
+              fill={TYPE_COMPARE_COLORS[i % TYPE_COMPARE_COLORS.length]} fillOpacity={0.2} name={t.type} />
+          ))}
+        </RadarChart>
+      </div>
+      {/* 수치 테이블 */}
+      <div className="mt-2 space-y-1">
+        {BENCH_METRICS.map(m => {
+          const key = m.key as BenchKey;
+          return (
+            <div key={key} className="flex items-center text-[10px] gap-1 flex-wrap">
+              <span className="text-gray-400 w-10 shrink-0">{m.label}</span>
+              {stats.byType.map((t, i) => (
+                <span key={t.type} className="font-semibold text-right" style={{ color: TYPE_COMPARE_COLORS[i % TYPE_COMPARE_COLORS.length], minWidth: 36 }}>
+                  {t.count > 0 ? t.metrics[key].toLocaleString() : '—'}
+                </span>
+              ))}
+            </div>
+          );
+        })}
+        <div className="text-[9px] text-gray-300 mt-1 truncate">{stats.byType.map(t => t.type).join(' | ')}</div>
+      </div>
+    </div>
+  );
+}
+
 // ── 전체 누적평균 vs 선택경기 막대 비교 ───────────────────────────────────
 function OverallCompareChart({ filtered, selectedMatchKey }: {
   filtered: MatchRow[];
@@ -320,6 +405,50 @@ function OverallCompareChart({ filtered, selectedMatchKey }: {
                       <Cell key={i} fill={i === 0 ? '#9ca3af' : '#3b82f6'} />
                     ))}
                     <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={((v: number) => v.toLocaleString()) as any} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OverallTypeCompareChart({ rows, types }: { rows: MatchRow[]; types: string[] }) {
+  const cumAvg = useMemo(() => (rows.length ? toMetrics(rows) : null), [rows]);
+  const typeAvgs = useMemo(() => types.map(type => {
+    const typeRows = rows.filter(r => normalizeEventType(r.event_type) === normalizeEventType(type));
+    return { type, metrics: typeRows.length ? toMetrics(typeRows) : null };
+  }), [rows, types]);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <h4 className="text-sm font-bold text-gray-700 mb-0.5">전체 포지션 누적 평균 비교</h4>
+      <p className="text-[11px] text-gray-400 mb-3">누적 전체 평균(회색) vs 경기 타입별 평균 · 풀 타임 {FULL_TIME}분 기준</p>
+      <div className="grid grid-cols-5 gap-3">
+        {BENCH_METRICS.map(m => {
+          const key = m.key as BenchKey;
+          const data = [
+            { name: '누적평균', value: cumAvg ? round1(cumAvg[key]) : 0 },
+            ...typeAvgs.map(t => ({ name: t.type, value: t.metrics ? round1(t.metrics[key]) : 0 })),
+          ];
+          const maxVal = Math.max(...data.map(d => d.value), 1);
+          return (
+            <div key={key} className="flex flex-col items-center">
+              <p className="text-xs font-semibold text-gray-600 mb-1">{m.label}</p>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={data} margin={{ top: 20, right: 4, left: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 8 }} interval={0} angle={-30} textAnchor="end" height={40} />
+                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 8 }} width={36} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                    {data.map((_, i) => (
+                      <Cell key={i} fill={i === 0 ? '#9ca3af' : TYPE_COMPARE_COLORS[(i - 1) % TYPE_COMPARE_COLORS.length]} />
+                    ))}
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={(v: RenderableText) => Number(v).toLocaleString()} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -448,6 +577,10 @@ export default function MatchTab() {
   const [selectedEvent, setSelectedEvent] = useState<string>('전체');
   const [selectedGroup, setSelectedGroup] = useState<string>('전체');
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
+  // 포지션별/전체 누적 비교 두 섹션에만 쓰는 "경기 타입끼리 비교" 모드.
+  // 상단 경기 타입 필터(selectedEvent)는 페이지 전체에 영향을 주므로 건드리지 않고,
+  // 이 두 섹션에서만 여러 타입을 동시에 켜서 나란히 비교할 수 있게 별도 상태로 둔다.
+  const [compareTypes, setCompareTypes] = useState<string[]>([]);
 
   useEffect(() => {
     fetchMatchData().then(data => {
@@ -512,6 +645,27 @@ export default function MatchTab() {
     }
     return m;
   }, [posStats]);
+
+  // 타입 비교 모드 데이터. 상단 경기 타입 필터(selectedEvent)는 무시하고 그룹(연령)
+  // 필터만 적용해, 어떤 타입을 선택하든 비교할 수 있게 한다.
+  const groupOnlyRows = useMemo(
+    () => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN && (selectedGroup === '전체' || r.player_group === selectedGroup)),
+    [rows, selectedGroup],
+  );
+  const typeCompareStats = useMemo(
+    () => computeTypeCompareStats(groupOnlyRows, compareTypes),
+    [groupOnlyRows, compareTypes],
+  );
+  const typeCompareMaxVals = useMemo((): PosMetrics => {
+    const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
+    for (const s of typeCompareStats.values()) {
+      for (const key of Object.keys(m) as BenchKey[]) {
+        if (s.cumAvg[key] > m[key]) m[key] = s.cumAvg[key];
+        for (const t of s.byType) if (t.metrics[key] > m[key]) m[key] = t.metrics[key];
+      }
+    }
+    return m;
+  }, [typeCompareStats]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-400">로딩 중...</div>;
@@ -619,7 +773,8 @@ export default function MatchTab() {
             <select
               value={selectedMatchKey ?? ''}
               onChange={e => setSelectedMatchKey(e.target.value || null)}
-              className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              disabled={compareTypes.length > 0}
+              className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100 disabled:text-gray-400"
             >
               <option value="">최근 경기 (자동)</option>
               <option value={NO_COMPARISON}>없음</option>
@@ -630,21 +785,61 @@ export default function MatchTab() {
           </div>
         </div>
 
-        {/* 5 포지션 카드 */}
-        <div className="grid grid-cols-5 gap-3">
-          {POSITIONS.map(pos => {
-            const stats = posStats.get(pos);
-            if (!stats || stats.count === 0) return (
-              <div key={pos} className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex items-center justify-center">
-                <span className="text-xs text-gray-400">{pos} 데이터 없음</span>
-              </div>
+        {/* 경기 타입끼리 비교 — 여러 개 켜면 비교 경기 드롭다운 대신 이 모드로 전환된다 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-500 font-medium shrink-0">타입 비교</span>
+          {eventTypes.filter(et => et !== '전체').map(et => {
+            const active = compareTypes.includes(et);
+            const color = TYPE_COMPARE_COLORS[compareTypes.indexOf(et) % TYPE_COMPARE_COLORS.length];
+            return (
+              <button
+                key={et}
+                onClick={() => setCompareTypes(prev =>
+                  prev.includes(et) ? prev.filter(t => t !== et) : [...prev, et],
+                )}
+                style={active ? { background: color, color: '#fff' } : undefined}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  active ? '' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {et}
+              </button>
             );
-            return <PosRadarCard key={pos} pos={pos} stats={stats} maxVals={maxVals} />;
           })}
+          {compareTypes.length > 0 && (
+            <button onClick={() => setCompareTypes([])} className="text-xs text-gray-400 underline">
+              초기화
+            </button>
+          )}
         </div>
 
-        {/* 전체 누적평균 vs 선택경기 막대 비교 */}
-        <OverallCompareChart filtered={avgRows} selectedMatchKey={selectedMatchKey} />
+        {/* 5 포지션 카드 */}
+        <div className="grid grid-cols-5 gap-3">
+          {compareTypes.length > 0
+            ? POSITIONS.map(pos => {
+                const stats = typeCompareStats.get(pos);
+                if (!stats || stats.count === 0) return (
+                  <div key={pos} className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex items-center justify-center">
+                    <span className="text-xs text-gray-400">{pos} 데이터 없음</span>
+                  </div>
+                );
+                return <PosTypeCompareCard key={pos} pos={pos} stats={stats} maxVals={typeCompareMaxVals} />;
+              })
+            : POSITIONS.map(pos => {
+                const stats = posStats.get(pos);
+                if (!stats || stats.count === 0) return (
+                  <div key={pos} className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex items-center justify-center">
+                    <span className="text-xs text-gray-400">{pos} 데이터 없음</span>
+                  </div>
+                );
+                return <PosRadarCard key={pos} pos={pos} stats={stats} maxVals={maxVals} />;
+              })}
+        </div>
+
+        {/* 전체 누적평균 vs 선택경기(또는 타입별 평균) 막대 비교 */}
+        {compareTypes.length > 0
+          ? <OverallTypeCompareChart rows={groupOnlyRows} types={compareTypes} />
+          : <OverallCompareChart filtered={avgRows} selectedMatchKey={selectedMatchKey} />}
       </div>
     </div>
   );
