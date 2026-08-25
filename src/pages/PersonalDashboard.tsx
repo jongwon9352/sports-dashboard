@@ -174,24 +174,29 @@ function DeltaText({ last, ref, refLabel }: { last: number; ref: number; refLabe
 // 좁은 카드 폭에서는 recharts 미니 바 차트의 카테고리 폭이 너무 좁아져 막대가 렌더링되지 않는
 // 경우가 있어(narrow-width edge case), CSS 기반 범위 바로 대체해 항상 안정적으로 그린다.
 function MetricCompareCard({ label, unit, avgVal, lastVal, peakVal }: {
-  label: string; unit: string; avgVal: number; lastVal: number; peakVal: number;
+  label: string; unit: string; avgVal: number; lastVal: number | null; peakVal: number;
 }) {
-  const max = Math.max(peakVal, avgVal, lastVal, 1);
+  const max = Math.max(peakVal, avgVal, lastVal ?? 0, 1);
   const pct = (v: number) => Math.min(100, (v / max) * 100);
-  const lastColor = lastVal >= avgVal ? '#A42843' : '#153E6F';
+  const lastColor = lastVal != null && lastVal >= avgVal ? '#A42843' : '#153E6F';
   const fmt = (v: number) => (unit === 'sec' ? v.toFixed(2) : v.toLocaleString());
+  const headline = lastVal ?? avgVal;
 
   return (
     <div className="chart-card">
       <div className="chart-title !mb-1">{label}</div>
       <div className="flex items-baseline gap-2 mb-2">
-        <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>{lastVal.toLocaleString()}{unit}</span>
-        <DeltaText last={lastVal} ref={avgVal} refLabel="평균" />
+        <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>{headline.toLocaleString()}{unit}</span>
+        {lastVal != null
+          ? <DeltaText last={lastVal} ref={avgVal} refLabel="평균" />
+          : <span className="text-[10px] text-text-secondary">평균값</span>}
       </div>
 
       <div className="relative h-2 rounded-full bg-gray-100 mb-1">
-        <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct(lastVal)}%`, background: lastColor }} />
-        <div className="absolute -top-0.5 w-0.5 h-3 bg-gray-400" style={{ left: `${pct(avgVal)}%` }} title="평균" />
+        <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct(headline)}%`, background: lastVal != null ? lastColor : '#9ca3af' }} />
+        {lastVal != null && (
+          <div className="absolute -top-0.5 w-0.5 h-3 bg-gray-400" style={{ left: `${pct(avgVal)}%` }} title="평균" />
+        )}
       </div>
       <div className="flex justify-between text-[9px] text-text-secondary">
         <span>평균 {fmt(avgVal)}{unit}</span>
@@ -206,6 +211,9 @@ function MetricCompareCard({ label, unit, avgVal, lastVal, peakVal }: {
 function normalizeEventType(et: string): string {
   return et.replace(/\s/g, '').toLowerCase();
 }
+
+// 비교 경기 드롭다운의 "없음" 값. 자동(null)과 구분해서 비교 자체를 끈다(팀 대시보드 Match 탭과 동일한 패턴).
+const NO_COMPARISON = '__none__';
 
 function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
   const [eventFilter, setEventFilter] = useState('전체');
@@ -232,7 +240,9 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
 
   // 필터에 걸리는 경기가 없을 때 matches[0]으로 폴백하면 "평균 0m + 필터와 무관한 경기 값"이
   // 나란히 표시돼 잘못된 비교가 된다. 이 경우엔 아래에서 빈 상태를 보여준다.
-  const lastRow = selectedKey
+  const lastRow = selectedKey === NO_COMPARISON
+    ? null
+    : selectedKey
     ? matches.find(m => `${m.match_date}__${m.opponent}` === selectedKey) ?? null
     : filteredMatches[0] ?? null;
 
@@ -248,7 +258,7 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
     return {
       zone: z.label,
       평균: avgTd > 0 ? +((avgZone / avgTd) * 100).toFixed(1) : 0,
-      선택경기: lastTd > 0 ? +((lastZone / lastTd) * 100).toFixed(1) : 0,
+      ...(lastRow ? { 선택경기: lastTd > 0 ? +((lastZone / lastTd) * 100).toFixed(1) : 0 } : {}),
     };
   });
 
@@ -291,6 +301,7 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
             className="text-xs border border-surface-secondary rounded-lg px-2 py-1 bg-surface"
           >
             <option value="">최근 경기 (자동)</option>
+            <option value={NO_COMPARISON}>없음</option>
             {matchOptions.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
           <span className="text-[11px] text-text-secondary">필터된 {filteredMatches.length}경기 평균 · 커리어 최고(Peak)는 전체 경기 기준</span>
@@ -310,14 +321,16 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
             label={m.label}
             unit={m.unit}
             avgVal={avgOf(filteredMatches, m.key)}
-            lastVal={lastRow ? Number(lastRow[m.key]) || 0 : 0}
+            lastVal={lastRow ? Number(lastRow[m.key]) || 0 : null}
             peakVal={maxOf(matches, m.key)}
           />
         ))}
       </div>
 
       <div className="chart-card mb-4">
-        <div className="chart-title">속도 구간(Zone) 분포 — 평균 vs 선택 경기 (TD 대비 %)</div>
+        <div className="chart-title">
+          속도 구간(Zone) 분포 — {lastRow ? '평균 vs 선택 경기' : '평균'} (TD 대비 %)
+        </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={zoneData}>
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
@@ -327,7 +340,7 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
             <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any) => `${v}%`} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="평균" fill="#153E6F99" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="선택경기" fill="#A42843" radius={[3, 3, 0, 0]} />
+            {lastRow && <Bar dataKey="선택경기" fill="#A42843" radius={[3, 3, 0, 0]} />}
           </BarChart>
         </ResponsiveContainer>
       </div>
