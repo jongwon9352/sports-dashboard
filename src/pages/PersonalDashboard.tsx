@@ -4,7 +4,9 @@ import {
   BarChart, Bar, Legend, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  Cell, LabelList,
 } from 'recharts';
+import type { RenderableText } from 'recharts/types/component/Text';
 import {
   fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
@@ -215,10 +217,68 @@ function normalizeEventType(et: string): string {
 // 비교 경기 드롭다운의 "없음" 값. 자동(null)과 구분해서 비교 자체를 끈다(팀 대시보드 Match 탭과 동일한 패턴).
 const NO_COMPARISON = '__none__';
 
+// 팀 대시보드 Match 탭의 "타입/그룹끼리 비교"와 동일한 패턴.
+const COMPARE_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#db2777', '#0891b2', '#ca8a04'];
+type CompareMode = 'type' | 'group';
+
+// 지표별 막대 그리드 — 기준선(필터된 평균, avgVal)에 타입 또는 그룹별 평균을 나란히 겹쳐 본다.
+// baseMatches는 상단 경기 타입·연령 필터가 그대로 반영된 데이터, poolMatches는 비교하는
+// 축(타입 또는 그룹)만 필터를 풀어 둔 데이터라 상단에서 뭘 골랐든 자유롭게 비교할 수 있다.
+function PersonalCompareChart({ baseMatches, poolMatches, keys, mode }: {
+  baseMatches: MatchData[]; poolMatches: MatchData[]; keys: string[]; mode: CompareMode;
+}) {
+  const matchesKey = (m: MatchData, key: string) =>
+    mode === 'type' ? normalizeEventType(m.event_type) === normalizeEventType(key) : m.player_group === key;
+
+  return (
+    <div className="chart-card mb-4">
+      <div className="chart-title !mb-1">전체 지표 비교</div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        필터된 평균(회색) vs {mode === 'type' ? '경기 타입별' : '경기 연령별'} 평균
+      </p>
+      <div className="grid grid-cols-5 gap-3">
+        {MATCH_METRICS.map(m => {
+          const data = [
+            { name: '평균', value: +avgOf(baseMatches, m.key).toFixed(1) },
+            ...keys.map(key => ({ name: key, value: +avgOf(poolMatches.filter(row => matchesKey(row, key)), m.key).toFixed(1) })),
+          ];
+          const maxVal = Math.max(...data.map(d => d.value), 1);
+          return (
+            <div key={m.key} className="flex flex-col items-center">
+              <p className="text-xs font-semibold text-gray-600 mb-1">{m.label}</p>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={data} margin={{ top: 20, right: 4, left: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 8 }} interval={0} angle={-30} textAnchor="end" height={40} />
+                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 8 }} width={36} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                    {data.map((_, i) => (
+                      <Cell key={i} fill={i === 0 ? '#9ca3af' : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length]} />
+                    ))}
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={(v: RenderableText) => Number(v).toLocaleString()} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
   const [eventFilter, setEventFilter] = useState('전체');
   const [groupFilter, setGroupFilter] = useState('전체');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // "타입끼리 비교"/"그룹끼리 비교" 모드. 두 모드는 함께 켜면 축이 뒤섞이므로
+  // 하나를 켜면 다른 쪽은 자동으로 비운다(팀 대시보드 Match 탭과 동일).
+  const [compareTypes, setCompareTypesRaw] = useState<string[]>([]);
+  const [compareGroups, setCompareGroupsRaw] = useState<string[]>([]);
+  const setCompareTypes = (v: string[]) => { setCompareTypesRaw(v); if (v.length) setCompareGroupsRaw([]); };
+  const setCompareGroups = (v: string[]) => { setCompareGroupsRaw(v); if (v.length) setCompareTypesRaw([]); };
+  const compareMode: CompareMode | null = compareTypes.length > 0 ? 'type' : compareGroups.length > 0 ? 'group' : null;
 
   const eventTypes = ['전체'];
   const seenEventTypes = new Set<string>();
@@ -232,6 +292,13 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
     (eventFilter === '전체' || normalizeEventType(m.event_type) === normalizeEventType(eventFilter)) &&
     (groupFilter === '전체' || m.player_group === groupFilter),
   );
+
+  // 타입/그룹 비교 모드의 비교값 후보 풀. 비교하는 축의 상단 필터만 무시한다.
+  const groupOnlyMatches = matches.filter(m => groupFilter === '전체' || m.player_group === groupFilter);
+  const eventOnlyMatches = matches.filter(m =>
+    eventFilter === '전체' || normalizeEventType(m.event_type) === normalizeEventType(eventFilter));
+  const compareKeys = compareMode === 'type' ? compareTypes : compareGroups;
+  const comparePool = compareMode === 'type' ? groupOnlyMatches : eventOnlyMatches;
 
   // 비교 경기 드롭다운은 필터된 목록에서 고르되, 실제 값은 그룹 필터와 무관하게 그 경기 원본 기록을 그대로 사용한다.
   const matchOptions = [...filteredMatches]
@@ -298,7 +365,8 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
           <select
             value={selectedKey ?? ''}
             onChange={e => setSelectedKey(e.target.value || null)}
-            className="text-xs border border-surface-secondary rounded-lg px-2 py-1 bg-surface"
+            disabled={compareMode !== null}
+            className="text-xs border border-surface-secondary rounded-lg px-2 py-1 bg-surface disabled:bg-gray-100 disabled:text-gray-400"
           >
             <option value="">최근 경기 (자동)</option>
             <option value={NO_COMPARISON}>없음</option>
@@ -306,12 +374,66 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
           </select>
           <span className="text-[11px] text-text-secondary">필터된 {filteredMatches.length}경기 평균 · 커리어 최고(Peak)는 전체 경기 기준</span>
         </div>
+
+        {/* 경기 타입끼리 비교 — 여러 개 켜면 비교 경기 드롭다운 대신 이 모드로 전환된다 */}
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <span className="text-xs font-semibold text-text-secondary w-16 shrink-0">타입 비교</span>
+          {eventTypes.filter(et => et !== '전체').map(et => {
+            const active = compareTypes.includes(et);
+            const color = COMPARE_COLORS[compareTypes.indexOf(et) % COMPARE_COLORS.length];
+            return (
+              <button
+                key={et}
+                onClick={() => setCompareTypes(
+                  compareTypes.includes(et) ? compareTypes.filter(t => t !== et) : [...compareTypes, et],
+                )}
+                style={active ? { background: color, color: '#fff' } : undefined}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  active ? '' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {et}
+              </button>
+            );
+          })}
+          {compareTypes.length > 0 && (
+            <button onClick={() => setCompareTypes([])} className="text-xs text-gray-400 underline">초기화</button>
+          )}
+        </div>
+
+        {/* 그룹끼리 비교 — 타입 비교와 배타적 */}
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <span className="text-xs font-semibold text-text-secondary w-16 shrink-0">그룹 비교</span>
+          {groups.filter(g => g !== '전체').map(g => {
+            const active = compareGroups.includes(g);
+            const color = COMPARE_COLORS[compareGroups.indexOf(g) % COMPARE_COLORS.length];
+            return (
+              <button
+                key={g}
+                onClick={() => setCompareGroups(
+                  compareGroups.includes(g) ? compareGroups.filter(x => x !== g) : [...compareGroups, g],
+                )}
+                style={active ? { background: color, color: '#fff' } : undefined}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  active ? '' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {g}
+              </button>
+            );
+          })}
+          {compareGroups.length > 0 && (
+            <button onClick={() => setCompareGroups([])} className="text-xs text-gray-400 underline">초기화</button>
+          )}
+        </div>
       </div>
 
       {filteredMatches.length === 0 ? (
         <div className="chart-card text-center text-text-secondary py-8">
           선택한 경기 타입·경기 연령 조합에 해당하는 이 선수의 경기 기록이 없습니다.
         </div>
+      ) : compareMode !== null ? (
+        <PersonalCompareChart baseMatches={filteredMatches} poolMatches={comparePool} keys={compareKeys} mode={compareMode} />
       ) : (
       <>
       <div className="grid grid-cols-5 gap-3 mb-4 stat-grid-4">
