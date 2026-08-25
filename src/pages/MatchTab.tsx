@@ -357,22 +357,36 @@ function PosTypeCompareCard({ pos, stats, maxVals }: { pos: Pos; stats: PosTypeC
           ))}
         </RadarChart>
       </div>
-      {/* 수치 테이블 */}
+      {/* 수치 테이블 — 차트와 같은 구성(기준 + 비교군)으로, 상단 필터 기준 평균이
+          각 비교군 대비 몇 % 높고 낮은지 보여준다. */}
       <div className="mt-2 space-y-1">
         {BENCH_METRICS.map(m => {
           const key = m.key as BenchKey;
+          const base = stats.cumAvg[key];
           return (
             <div key={key} className="flex items-center text-[10px] gap-1 flex-wrap">
               <span className="text-gray-400 w-10 shrink-0">{m.label}</span>
-              {stats.byType.map((t, i) => (
-                <span key={t.type} className="font-semibold text-right" style={{ color: TYPE_COMPARE_COLORS[i % TYPE_COMPARE_COLORS.length], minWidth: 36 }}>
-                  {t.count > 0 ? t.metrics[key].toLocaleString() : '—'}
-                </span>
-              ))}
+              <span className="font-semibold text-gray-700 w-14 text-right">{base.toLocaleString()}</span>
+              {stats.byType.map((t, i) => {
+                const v = t.metrics[key];
+                const pct = t.count > 0 && v > 0 ? ((base - v) / v) * 100 : null;
+                return (
+                  <span
+                    key={t.type}
+                    className="text-right font-medium"
+                    style={{ minWidth: 38, color: pct == null ? '#9ca3af' : TYPE_COMPARE_COLORS[i % TYPE_COMPARE_COLORS.length] }}
+                    title={t.count > 0 ? `${t.type}: ${v.toLocaleString()}` : `${t.type}: 데이터 없음`}
+                  >
+                    {pct == null ? '—' : Math.round(pct) === 0 ? '0%' : `${pct > 0 ? '+' : ''}${pct.toFixed(0)}%`}
+                  </span>
+                );
+              })}
             </div>
           );
         })}
-        <div className="text-[9px] text-gray-300 mt-1 truncate">{stats.byType.map(t => t.type).join(' | ')}</div>
+        <div className="text-[9px] text-gray-300 mt-1 truncate">
+          상단 기준 | {stats.byType.map(t => t.type).join(' | ')} 대비 %
+        </div>
       </div>
     </div>
   );
