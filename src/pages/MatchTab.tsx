@@ -277,12 +277,22 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
 // 독립된 별도 모드라서 함수·컴포넌트를 분리했다 — 기존 경로를 건드리지 않기 위함이다.
 const TYPE_COMPARE_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#db2777', '#0891b2', '#ca8a04'];
 
-type CompareMode = 'type' | 'group';
+// 비교 계열 하나 = 막대/레이더 한 겹. 타입만·그룹만·둘 다 켠 경우를 같은 모양으로 다룬다.
+interface CompareSeries { label: string; match: (r: MatchRow) => boolean; }
 
-function matchesCompareKey(r: MatchRow, key: string, mode: CompareMode): boolean {
-  return mode === 'type'
-    ? normalizeEventType(r.event_type) === normalizeEventType(key)
-    : r.player_group === key;
+// 타입과 그룹을 동시에 켜면 조합별로 비교한다(예: K리그주니어 · U15 / K리그주니어 · U14).
+// 라벨 구분자는 가운뎃점(·)이라 recharts dataKey가 경로로 오해하지 않는다(마침표 금지).
+function buildCompareSeries(types: string[], groups: string[]): CompareSeries[] {
+  const byType = (t: string) => (r: MatchRow) => normalizeEventType(r.event_type) === normalizeEventType(t);
+  const byGroup = (g: string) => (r: MatchRow) => r.player_group === g;
+  if (types.length && groups.length) {
+    return types.flatMap(t => groups.map(g => ({
+      label: `${t} · ${g}`,
+      match: (r: MatchRow) => byType(t)(r) && byGroup(g)(r),
+    })));
+  }
+  if (types.length) return types.map(t => ({ label: t, match: byType(t) }));
+  return groups.map(g => ({ label: g, match: byGroup(g) }));
 }
 
 interface PosTypeCompareStats {
@@ -292,17 +302,17 @@ interface PosTypeCompareStats {
 }
 
 // baseRows: "누적평균" 기준선 — 상단 경기 타입·그룹 필터가 그대로 반영된 데이터(avgRows).
-// poolRows: 비교값(keys) 후보 데이터 — 비교하는 축(타입 또는 그룹)만 필터를 풀어 둔 데이터라
+// poolRows: 비교 계열 후보 데이터 — 비교하는 축의 상단 필터만 풀어 둔 데이터라
 // 상단에서 어떤 값을 골랐든 다른 타입/그룹을 자유롭게 추가로 비교할 수 있다.
-function computeCompareStats(baseRows: MatchRow[], poolRows: MatchRow[], keys: string[], mode: CompareMode): Map<Pos, PosTypeCompareStats> {
+function computeCompareStats(baseRows: MatchRow[], poolRows: MatchRow[], series: CompareSeries[]): Map<Pos, PosTypeCompareStats> {
   const result = new Map<Pos, PosTypeCompareStats>();
   for (const pos of POSITIONS) {
     const baseRowsAtPos = baseRows.filter(r => r.position_played === pos);
     const poolRowsAtPos = poolRows.filter(r => r.position_played === pos);
-    const byType = keys.map(key => {
-      const keyRows = poolRowsAtPos.filter(r => matchesCompareKey(r, key, mode));
+    const byType = series.map(s => {
+      const keyRows = poolRowsAtPos.filter(s.match);
       return {
-        type: key,
+        type: s.label,
         metrics: keyRows.length ? toMetrics(keyRows) : { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 },
         count: [...new Set(keyRows.map(r => r.match_date))].length,
       };
@@ -428,20 +438,20 @@ function OverallCompareChart({ filtered, selectedMatchKey }: {
   );
 }
 
-function OverallTypeCompareChart({ baseRows, poolRows, keys, mode }: {
-  baseRows: MatchRow[]; poolRows: MatchRow[]; keys: string[]; mode: CompareMode;
+function OverallTypeCompareChart({ baseRows, poolRows, series, compareLabel }: {
+  baseRows: MatchRow[]; poolRows: MatchRow[]; series: CompareSeries[]; compareLabel: string;
 }) {
   const cumAvg = useMemo(() => (baseRows.length ? toMetrics(baseRows) : null), [baseRows]);
-  const typeAvgs = useMemo(() => keys.map(key => {
-    const keyRows = poolRows.filter(r => matchesCompareKey(r, key, mode));
-    return { type: key, metrics: keyRows.length ? toMetrics(keyRows) : null };
-  }), [poolRows, keys, mode]);
+  const typeAvgs = useMemo(() => series.map(s => {
+    const keyRows = poolRows.filter(s.match);
+    return { type: s.label, metrics: keyRows.length ? toMetrics(keyRows) : null };
+  }), [poolRows, series]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <h4 className="text-sm font-bold text-gray-700 mb-0.5">전체 포지션 누적 평균 비교</h4>
       <p className="text-[11px] text-gray-400 mb-3">
-        누적 전체 평균(회색) vs {mode === 'type' ? '경기 타입별' : '그룹별'} 평균 · 풀 타임 {FULL_TIME}분 기준
+        상단 필터 기준 평균(회색) vs {compareLabel} 평균 · 풀 타임 {FULL_TIME}분 기준
       </p>
       <div className="grid grid-cols-5 gap-3">
         {BENCH_METRICS.map(m => {
@@ -593,14 +603,12 @@ export default function MatchTab() {
   const [selectedEvent, setSelectedEvent] = useState<string>('전체');
   const [selectedGroup, setSelectedGroup] = useState<string>('전체');
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
-  // 포지션별/전체 누적 비교 두 섹션에만 쓰는 "타입끼리 비교"/"그룹끼리 비교" 모드.
+  // 포지션별/전체 누적 비교 두 섹션에만 쓰는 "타입끼리 비교"/"그룹끼리 비교".
   // 상단 경기 타입·그룹 필터는 페이지 전체에 영향을 주므로 건드리지 않고, 이 두 섹션에서만
-  // 여러 타입 또는 여러 그룹을 동시에 켜서 나란히 비교할 수 있게 별도 상태로 둔다.
-  // 두 모드는 함께 켜면 축이 뒤섞이므로 하나를 켜면 다른 쪽은 자동으로 비운다.
-  const [compareTypes, setCompareTypesRaw] = useState<string[]>([]);
-  const [compareGroups, setCompareGroupsRaw] = useState<string[]>([]);
-  const setCompareTypes = (v: string[]) => { setCompareTypesRaw(v); if (v.length) setCompareGroupsRaw([]); };
-  const setCompareGroups = (v: string[]) => { setCompareGroupsRaw(v); if (v.length) setCompareTypesRaw([]); };
+  // 여러 타입/그룹을 켜서 나란히 비교할 수 있게 별도 상태로 둔다. 둘을 동시에 켜면
+  // 조합(타입 × 그룹)으로 비교한다.
+  const [compareTypes, setCompareTypes] = useState<string[]>([]);
+  const [compareGroups, setCompareGroups] = useState<string[]>([]);
 
   useEffect(() => {
     fetchMatchData().then(data => {
@@ -666,25 +674,30 @@ export default function MatchTab() {
     return m;
   }, [posStats]);
 
-  // 타입/그룹 비교 모드의 비교값 후보 풀. 비교하는 축의 상단 필터만 무시해, 어떤 값을
-  // 선택하든 비교할 수 있게 한다("경기 타입" 비교면 그룹 필터만 적용, "그룹" 비교면
-  // 경기 타입 필터만 적용). 기준선(누적평균)은 두 모드 모두 avgRows — 상단 필터가 그대로
-  // 반영된 데이터 — 를 그대로 쓴다.
-  const groupOnlyRows = useMemo(
-    () => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN && (selectedGroup === '전체' || r.player_group === selectedGroup)),
-    [rows, selectedGroup],
+  // 비교 계열 후보 풀. 비교하는 축의 상단 필터만 무시해, 상단에서 뭘 골랐든 다른 타입/그룹을
+  // 자유롭게 비교할 수 있게 한다(타입만 비교하면 그룹 필터 유지, 그룹만 비교하면 경기 타입
+  // 필터 유지, 둘 다 비교하면 둘 다 해제). 기준선(회색 막대)은 언제나 avgRows —
+  // 상단 경기 타입·그룹 탭이 그대로 반영된 데이터 — 를 쓴다.
+  const minPlayRows = useMemo(() => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN), [rows]);
+  const compareActive = compareTypes.length > 0 || compareGroups.length > 0;
+  const compareSeries = useMemo(
+    () => buildCompareSeries(compareTypes, compareGroups),
+    [compareTypes, compareGroups],
   );
-  const eventOnlyRows = useMemo(
-    () => rows.filter(r => r.play_time_min >= MIN_PLAY_MIN
-      && (selectedEvent === '전체' || normalizeEventType(r.event_type) === normalizeEventType(selectedEvent))),
-    [rows, selectedEvent],
-  );
-  const compareMode: CompareMode | null = compareTypes.length > 0 ? 'type' : compareGroups.length > 0 ? 'group' : null;
-  const compareKeys = compareMode === 'type' ? compareTypes : compareGroups;
-  const comparePool = compareMode === 'type' ? groupOnlyRows : eventOnlyRows;
+  const comparePool = useMemo(() => {
+    if (compareTypes.length && compareGroups.length) return minPlayRows;
+    if (compareTypes.length) {
+      return minPlayRows.filter(r => selectedGroup === '전체' || r.player_group === selectedGroup);
+    }
+    return minPlayRows.filter(r => selectedEvent === '전체'
+      || normalizeEventType(r.event_type) === normalizeEventType(selectedEvent));
+  }, [minPlayRows, compareTypes, compareGroups, selectedGroup, selectedEvent]);
+  const compareLabel = compareTypes.length && compareGroups.length
+    ? '타입·그룹 조합별'
+    : compareTypes.length ? '경기 타입별' : '그룹별';
   const compareStats = useMemo(
-    () => computeCompareStats(avgRows, comparePool, compareKeys, compareMode ?? 'type'),
-    [avgRows, comparePool, compareKeys, compareMode],
+    () => computeCompareStats(avgRows, comparePool, compareSeries),
+    [avgRows, comparePool, compareSeries],
   );
   const compareMaxVals = useMemo((): PosMetrics => {
     const m: PosMetrics = { td: 0, hsr: 0, sprint: 0, action: 0, acdLoad: 0 };
@@ -803,7 +816,7 @@ export default function MatchTab() {
             <select
               value={selectedMatchKey ?? ''}
               onChange={e => setSelectedMatchKey(e.target.value || null)}
-              disabled={compareMode !== null}
+              disabled={compareActive}
               className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100 disabled:text-gray-400"
             >
               <option value="">최근 경기 (자동)</option>
@@ -873,7 +886,7 @@ export default function MatchTab() {
 
         {/* 5 포지션 카드 */}
         <div className="grid grid-cols-5 gap-3">
-          {compareMode !== null
+          {compareActive
             ? POSITIONS.map(pos => {
                 const stats = compareStats.get(pos);
                 if (!stats || stats.count === 0) return (
@@ -895,8 +908,8 @@ export default function MatchTab() {
         </div>
 
         {/* 전체 누적평균 vs 선택경기(또는 타입/그룹별 평균) 막대 비교 */}
-        {compareMode !== null
-          ? <OverallTypeCompareChart baseRows={avgRows} poolRows={comparePool} keys={compareKeys} mode={compareMode} />
+        {compareActive
+          ? <OverallTypeCompareChart baseRows={avgRows} poolRows={comparePool} series={compareSeries} compareLabel={compareLabel} />
           : <OverallCompareChart filtered={avgRows} selectedMatchKey={selectedMatchKey} />}
       </div>
     </div>

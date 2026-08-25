@@ -219,28 +219,41 @@ const NO_COMPARISON = '__none__';
 
 // 팀 대시보드 Match 탭의 "타입/그룹끼리 비교"와 동일한 패턴.
 const COMPARE_COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#db2777', '#0891b2', '#ca8a04'];
-type CompareMode = 'type' | 'group';
 
-// 지표별 막대 그리드 — 기준선(필터된 평균, avgVal)에 타입 또는 그룹별 평균을 나란히 겹쳐 본다.
-// baseMatches는 상단 경기 타입·연령 필터가 그대로 반영된 데이터, poolMatches는 비교하는
-// 축(타입 또는 그룹)만 필터를 풀어 둔 데이터라 상단에서 뭘 골랐든 자유롭게 비교할 수 있다.
-function PersonalCompareChart({ baseMatches, poolMatches, keys, mode }: {
-  baseMatches: MatchData[]; poolMatches: MatchData[]; keys: string[]; mode: CompareMode;
+// 비교 계열 하나 = 막대 한 개. 타입만·그룹만·둘 다 켠 경우를 같은 모양으로 다룬다.
+interface CompareSeries { label: string; match: (m: MatchData) => boolean; }
+
+// 타입과 그룹을 동시에 켜면 조합별로 비교한다(예: K리그주니어 · U15).
+function buildCompareSeries(types: string[], groups: string[]): CompareSeries[] {
+  const byType = (t: string) => (m: MatchData) => normalizeEventType(m.event_type) === normalizeEventType(t);
+  const byGroup = (g: string) => (m: MatchData) => m.player_group === g;
+  if (types.length && groups.length) {
+    return types.flatMap(t => groups.map(g => ({
+      label: `${t} · ${g}`,
+      match: (m: MatchData) => byType(t)(m) && byGroup(g)(m),
+    })));
+  }
+  if (types.length) return types.map(t => ({ label: t, match: byType(t) }));
+  return groups.map(g => ({ label: g, match: byGroup(g) }));
+}
+
+// 지표별 막대 그리드 — 기준선(상단 필터 기준 평균)에 타입/그룹별 평균을 나란히 겹쳐 본다.
+// baseMatches는 상단 경기 타입·연령 탭이 그대로 반영된 데이터, poolMatches는 비교하는
+// 축의 상단 필터만 풀어 둔 데이터라 상단에서 뭘 골랐든 자유롭게 비교할 수 있다.
+function PersonalCompareChart({ baseMatches, poolMatches, series, compareLabel }: {
+  baseMatches: MatchData[]; poolMatches: MatchData[]; series: CompareSeries[]; compareLabel: string;
 }) {
-  const matchesKey = (m: MatchData, key: string) =>
-    mode === 'type' ? normalizeEventType(m.event_type) === normalizeEventType(key) : m.player_group === key;
-
   return (
     <div className="chart-card mb-4">
       <div className="chart-title !mb-1">전체 지표 비교</div>
       <p className="text-[11px] text-text-secondary mb-3">
-        필터된 평균(회색) vs {mode === 'type' ? '경기 타입별' : '경기 연령별'} 평균
+        상단 필터 기준 평균(회색) vs {compareLabel} 평균
       </p>
       <div className="grid grid-cols-5 gap-3">
         {MATCH_METRICS.map(m => {
           const data = [
             { name: '평균', value: +avgOf(baseMatches, m.key).toFixed(1) },
-            ...keys.map(key => ({ name: key, value: +avgOf(poolMatches.filter(row => matchesKey(row, key)), m.key).toFixed(1) })),
+            ...series.map(s => ({ name: s.label, value: +avgOf(poolMatches.filter(s.match), m.key).toFixed(1) })),
           ];
           const maxVal = Math.max(...data.map(d => d.value), 1);
           return (
@@ -272,13 +285,11 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
   const [eventFilter, setEventFilter] = useState('전체');
   const [groupFilter, setGroupFilter] = useState('전체');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  // "타입끼리 비교"/"그룹끼리 비교" 모드. 두 모드는 함께 켜면 축이 뒤섞이므로
-  // 하나를 켜면 다른 쪽은 자동으로 비운다(팀 대시보드 Match 탭과 동일).
-  const [compareTypes, setCompareTypesRaw] = useState<string[]>([]);
-  const [compareGroups, setCompareGroupsRaw] = useState<string[]>([]);
-  const setCompareTypes = (v: string[]) => { setCompareTypesRaw(v); if (v.length) setCompareGroupsRaw([]); };
-  const setCompareGroups = (v: string[]) => { setCompareGroupsRaw(v); if (v.length) setCompareTypesRaw([]); };
-  const compareMode: CompareMode | null = compareTypes.length > 0 ? 'type' : compareGroups.length > 0 ? 'group' : null;
+  // "타입끼리 비교"/"그룹끼리 비교". 둘을 동시에 켜면 조합(타입 × 그룹)으로 비교한다
+  // (팀 대시보드 Match 탭과 동일).
+  const [compareTypes, setCompareTypes] = useState<string[]>([]);
+  const [compareGroups, setCompareGroups] = useState<string[]>([]);
+  const compareActive = compareTypes.length > 0 || compareGroups.length > 0;
 
   const eventTypes = ['전체'];
   const seenEventTypes = new Set<string>();
@@ -293,12 +304,17 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
     (groupFilter === '전체' || m.player_group === groupFilter),
   );
 
-  // 타입/그룹 비교 모드의 비교값 후보 풀. 비교하는 축의 상단 필터만 무시한다.
-  const groupOnlyMatches = matches.filter(m => groupFilter === '전체' || m.player_group === groupFilter);
-  const eventOnlyMatches = matches.filter(m =>
-    eventFilter === '전체' || normalizeEventType(m.event_type) === normalizeEventType(eventFilter));
-  const compareKeys = compareMode === 'type' ? compareTypes : compareGroups;
-  const comparePool = compareMode === 'type' ? groupOnlyMatches : eventOnlyMatches;
+  // 비교 계열 후보 풀. 비교하는 축의 상단 필터만 무시한다(타입만 비교하면 연령 필터 유지,
+  // 그룹만 비교하면 경기 타입 필터 유지, 둘 다 비교하면 둘 다 해제).
+  const compareSeries = buildCompareSeries(compareTypes, compareGroups);
+  const comparePool = compareTypes.length && compareGroups.length
+    ? matches
+    : compareTypes.length
+    ? matches.filter(m => groupFilter === '전체' || m.player_group === groupFilter)
+    : matches.filter(m => eventFilter === '전체' || normalizeEventType(m.event_type) === normalizeEventType(eventFilter));
+  const compareLabel = compareTypes.length && compareGroups.length
+    ? '타입·연령 조합별'
+    : compareTypes.length ? '경기 타입별' : '경기 연령별';
 
   // 비교 경기 드롭다운은 필터된 목록에서 고르되, 실제 값은 그룹 필터와 무관하게 그 경기 원본 기록을 그대로 사용한다.
   const matchOptions = [...filteredMatches]
@@ -365,7 +381,7 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
           <select
             value={selectedKey ?? ''}
             onChange={e => setSelectedKey(e.target.value || null)}
-            disabled={compareMode !== null}
+            disabled={compareActive}
             className="text-xs border border-surface-secondary rounded-lg px-2 py-1 bg-surface disabled:bg-gray-100 disabled:text-gray-400"
           >
             <option value="">최근 경기 (자동)</option>
@@ -432,8 +448,8 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
         <div className="chart-card text-center text-text-secondary py-8">
           선택한 경기 타입·경기 연령 조합에 해당하는 이 선수의 경기 기록이 없습니다.
         </div>
-      ) : compareMode !== null ? (
-        <PersonalCompareChart baseMatches={filteredMatches} poolMatches={comparePool} keys={compareKeys} mode={compareMode} />
+      ) : compareActive ? (
+        <PersonalCompareChart baseMatches={filteredMatches} poolMatches={comparePool} series={compareSeries} compareLabel={compareLabel} />
       ) : (
       <>
       <div className="grid grid-cols-5 gap-3 mb-4 stat-grid-4">
