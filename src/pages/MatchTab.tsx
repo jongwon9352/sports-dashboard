@@ -169,6 +169,9 @@ function toMetrics(rs: MatchRow[]): PosMetrics {
   };
 }
 
+// 비교 경기 드롭다운의 "없음" 값. 자동(null)과 구분해서 비교 자체를 끈다.
+const NO_COMPARISON = '__none__';
+
 // cumRows: 상단 이벤트·그룹 필터가 반영된 누적 평균용 데이터
 // allRows: 필터와 무관하게 선택한 특정 경기의 실제 기록을 그대로 보여주기 위한 전체 데이터
 // (그룹 필터에 걸리지 않는 콜업 선수가 뛴 경기를 비교 경기로 선택해도 데이터가 사라지지 않도록 분리)
@@ -176,9 +179,12 @@ function computePosStats(cumRows: MatchRow[], allRows: MatchRow[], selectedMatch
   const dates = [...new Set(cumRows.map(r => r.match_date))].sort();
   const lastDate = dates[dates.length - 1];
 
+  const noComparison = selectedMatchKey === NO_COMPARISON;
   let refDate: string | null = null;
   let refOpp: string | null = null;
-  if (selectedMatchKey) {
+  if (noComparison) {
+    // 비교 없음: refDate를 비워 아래에서 lastMatch/lastLabel이 항상 비게 한다.
+  } else if (selectedMatchKey) {
     const idx = selectedMatchKey.indexOf('__');
     refDate = selectedMatchKey.slice(0, idx);
     refOpp  = selectedMatchKey.slice(idx + 2);
@@ -195,8 +201,8 @@ function computePosStats(cumRows: MatchRow[], allRows: MatchRow[], selectedMatch
     const matchOf = (rs: MatchRow[]) => rs.filter(r =>
       r.position_played === pos && r.match_date === refDate && (refOpp === null || r.opponent === refOpp)
     );
-    const fromCum = matchOf(cumRows);
-    const lastRows = fromCum.length ? fromCum : matchOf(allRows);
+    const fromCum = noComparison ? [] : matchOf(cumRows);
+    const lastRows = noComparison ? [] : (fromCum.length ? fromCum : matchOf(allRows));
     const lastOpp = lastRows[0]?.opponent ?? refOpp ?? '미정';
     const dt = refDate ? new Date(refDate) : null;
     result.set(pos, {
@@ -273,7 +279,7 @@ function OverallCompareChart({ filtered, selectedMatchKey }: {
   const cumAvg = useMemo(() => (filtered.length ? toMetrics(filtered) : null), [filtered]);
 
   const selectedRows = useMemo(() => {
-    if (!selectedMatchKey) return [];
+    if (!selectedMatchKey || selectedMatchKey === NO_COMPARISON) return [];
     const idx = selectedMatchKey.indexOf('__');
     const date = selectedMatchKey.slice(0, idx);
     const opp  = selectedMatchKey.slice(idx + 2);
@@ -285,14 +291,20 @@ function OverallCompareChart({ filtered, selectedMatchKey }: {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <h4 className="text-sm font-bold text-gray-700 mb-0.5">전체 포지션 누적 평균 비교</h4>
-      <p className="text-[11px] text-gray-400 mb-3">누적 전체 평균(회색) vs 선택 경기(파랑) · 풀 타임 {FULL_TIME}분 기준</p>
+      <p className="text-[11px] text-gray-400 mb-3">
+        {selectedMatchKey === NO_COMPARISON
+          ? '누적 전체 평균 · 풀 타임 ' + FULL_TIME + '분 기준'
+          : `누적 전체 평균(회색) vs 선택 경기(파랑) · 풀 타임 ${FULL_TIME}분 기준`}
+      </p>
       <div className="grid grid-cols-5 gap-3">
         {BENCH_METRICS.map(m => {
           const key = m.key as BenchKey;
-          const data = [
-            { name: '누적평균', value: cumAvg ? round1(cumAvg[key]) : 0 },
-            { name: '선택경기', value: selectedAvg ? round1(selectedAvg[key]) : 0 },
-          ];
+          const data = selectedMatchKey === NO_COMPARISON
+            ? [{ name: '누적평균', value: cumAvg ? round1(cumAvg[key]) : 0 }]
+            : [
+                { name: '누적평균', value: cumAvg ? round1(cumAvg[key]) : 0 },
+                { name: '선택경기', value: selectedAvg ? round1(selectedAvg[key]) : 0 },
+              ];
           const maxVal = Math.max(...data.map(d => d.value), 1);
           return (
             <div key={key} className="flex flex-col items-center">
@@ -610,6 +622,7 @@ export default function MatchTab() {
               className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
               <option value="">최근 경기 (자동)</option>
+              <option value={NO_COMPARISON}>없음</option>
               {matchKeys.map(m => (
                 <option key={m.key} value={m.key}>{m.label}</option>
               ))}
