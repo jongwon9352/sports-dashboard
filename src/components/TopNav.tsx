@@ -1,4 +1,5 @@
 import { MobileNav } from './MobileNav';
+import { supabase } from '../lib/supabase';
 
 export function TopNav() {
   return (
@@ -21,6 +22,13 @@ export function TopNav() {
       >
         GPS Training Load Dashboard
       </div>
+      <button
+        type="button"
+        onClick={() => supabase?.auth.signOut()}
+        className="ml-auto text-white/70 hover:text-white text-xs px-3 py-1.5 rounded-lg border border-white/20 hover:border-white/40 transition-colors"
+      >
+        로그아웃
+      </button>
     </nav>
   );
 }
