@@ -129,6 +129,7 @@ export function Upload() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<UploadStatus[]>([]);
   const [seasonYear, setSeasonYear] = useState(CURRENT_YEAR);
+  const [valdRound, setValdRound] = useState('');
   const [ambiguousDialog, setAmbiguousDialog] = useState<AmbiguousDialogState | null>(null);
   const loadData = useCallback(async () => {
     try {
@@ -209,7 +210,7 @@ export function Upload() {
           const rows = parsePhysicalCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           const overrides = await resolvePlayersForNames(rows, file.name);
-          rowCount = await importPhysicalCsvRows(rows, date, seasonYear, overrides);
+          rowCount = await importPhysicalCsvRows(rows, date, seasonYear, overrides, valdRound);
         } else if (type === 'body_composition') {
           const rows = parseBodyCompositionCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
@@ -219,22 +220,22 @@ export function Upload() {
           const rows = parseForcedecksCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           const overrides = await resolvePlayersForNames(rows, file.name);
-          rowCount = await importForcedecksCsvRows(rows, seasonYear, overrides);
+          rowCount = await importForcedecksCsvRows(rows, seasonYear, overrides, valdRound);
         } else if (type === 'nordbord') {
           const rows = parseNordbordCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           const overrides = await resolvePlayersForNames(rows, file.name);
-          rowCount = await importNordbordCsvRows(rows, seasonYear, overrides);
+          rowCount = await importNordbordCsvRows(rows, seasonYear, overrides, valdRound);
         } else if (type === 'forceframe') {
           const rows = parseForceframeCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           const overrides = await resolvePlayersForNames(rows, file.name);
-          rowCount = await importForceframeCsvRows(rows, seasonYear, overrides);
+          rowCount = await importForceframeCsvRows(rows, seasonYear, overrides, valdRound);
         } else if (type === 'smartspeed') {
           const rows = parseSmartspeedCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
           const overrides = await resolvePlayersForNames(rows, file.name);
-          rowCount = await importSmartspeedCsvRows(rows, seasonYear, overrides);
+          rowCount = await importSmartspeedCsvRows(rows, seasonYear, overrides, valdRound);
         } else {
           const rows = parseDailyCsv(text);
           if (rows.length === 0) throw new Error('CSV에서 데이터를 파싱할 수 없습니다.');
@@ -275,7 +276,7 @@ export function Upload() {
     }
 
     await loadData();
-  }, [loadData, resolvePlayersForNames, seasonYear]);
+  }, [loadData, resolvePlayersForNames, seasonYear, valdRound]);
 
   const handleDownload = (record: CsvUploadRecord) => {
     const blob = new Blob([record.csv_content], { type: 'text/csv;charset=utf-8;' });
@@ -323,16 +324,28 @@ export function Upload() {
           <p className="text-sm text-text-secondary flex items-center gap-2">
             📁 CSV 파일 업로드
           </p>
-          <label className="text-xs text-text-secondary flex items-center gap-2">
-            시즌
-            <select
-              value={seasonYear}
-              onChange={e => setSeasonYear(Number(e.target.value))}
-              className="px-2 py-1 text-xs rounded border border-surface-secondary bg-[var(--bg)]"
-            >
-              {SEASON_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </label>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-text-secondary flex items-center gap-2">
+              시즌
+              <select
+                value={seasonYear}
+                onChange={e => setSeasonYear(Number(e.target.value))}
+                className="px-2 py-1 text-xs rounded border border-surface-secondary bg-[var(--bg)]"
+              >
+                {SEASON_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-text-secondary flex items-center gap-2">
+              VALD 회차
+              <input
+                type="text"
+                placeholder="예: 26_3"
+                value={valdRound}
+                onChange={e => setValdRound(e.target.value)}
+                className="w-20 px-2 py-1 text-xs rounded border border-surface-secondary bg-[var(--bg)]"
+              />
+            </label>
+          </div>
         </div>
         <div
           onDragOver={onDragOver}

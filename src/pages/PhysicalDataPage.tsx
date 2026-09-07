@@ -26,6 +26,7 @@ function fmt(v: number | string | null): string {
 interface ValdFormState {
   player_id: string;
   test_date: string;
+  test_round: string;
   height: string;
   weight: string;
   cmj_height: string;
@@ -48,7 +49,7 @@ interface ValdFormState {
 }
 
 const EMPTY_VALD_FORM: ValdFormState = {
-  player_id: '', test_date: '', height: '', weight: '',
+  player_id: '', test_date: '', test_round: '', height: '', weight: '',
   cmj_height: '', squat_jump_height: '', cmj_peak_force: '', squat_jump_peak_force: '',
   nordic_curl_left: '', nordic_curl_right: '', ham_iso_left: '', ham_iso_right: '',
   hip_ad_left: '', hip_ad_right: '', hip_ab_left: '', hip_ab_right: '',
@@ -101,6 +102,7 @@ function ValdModal({ players, initial, onClose, onSaved }: {
       await upsertPhysicalTestRecord({
         player_id: form.player_id,
         test_date: form.test_date,
+        test_round: form.test_round || null,
         height: num(form.height),
         weight: num(form.weight),
         cmj_height: num(form.cmj_height),
@@ -143,9 +145,14 @@ function ValdModal({ players, initial, onClose, onSaved }: {
               {players.map(p => <option key={p.id} value={p.id}>{p.name} ({p.position})</option>)}
             </select>
           </label>
-          <label className="col-span-2 text-xs text-text-secondary">
+          <label className="text-xs text-text-secondary">
             측정일
             <input type="date" value={form.test_date} onChange={e => set('test_date', e.target.value)}
+              className="w-full mt-1 px-2 py-1.5 text-sm rounded border border-surface-secondary bg-[var(--bg)]" />
+          </label>
+          <label className="text-xs text-text-secondary">
+            회차 (예: 26_3)
+            <input type="text" value={form.test_round} onChange={e => set('test_round', e.target.value)}
               className="w-full mt-1 px-2 py-1.5 text-sm rounded border border-surface-secondary bg-[var(--bg)]" />
           </label>
         </div>
@@ -355,6 +362,7 @@ function ValdTab() {
   const openEdit = (row: PhysicalTestRow) => setModalForm({
     player_id: row.player_id,
     test_date: row.test_date,
+    test_round: row.test_round ?? '',
     height: row.height != null ? String(row.height) : '',
     weight: row.weight != null ? String(row.weight) : '',
     cmj_height: row.cmj_height != null ? String(row.cmj_height) : '',

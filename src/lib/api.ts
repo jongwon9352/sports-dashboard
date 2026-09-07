@@ -3237,6 +3237,7 @@ export async function fetchPhysicalTestRecords(): Promise<PhysicalTestRow[]> {
 export async function upsertPhysicalTestRecord(input: {
   player_id: string;
   test_date: string;
+  test_round: string | null;
   height: number | null;
   weight: number | null;
   cmj_height: number | null;
@@ -3355,7 +3356,7 @@ export async function upsertValdThresholds(rows: ValdThreshold[]): Promise<void>
   if (error) throw error;
 }
 
-export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: string, seasonYear: number, overrides?: Map<string, string>) {
+export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: string, seasonYear: number, overrides?: Map<string, string>, testRound?: string) {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
@@ -3363,6 +3364,7 @@ export async function importPhysicalCsvRows(rows: ParsedPhysicalRow[], date: str
   const physicalRows = validRows.map(row => ({
     player_id: playerMap.get(normalizeName(row.player_name)),
     test_date: date,
+    ...(testRound ? { test_round: testRound } : {}),
     nordic_curl_left: row.nordic_curl_left,
     nordic_curl_right: row.nordic_curl_right,
     hip_ab_left: row.hip_ab_left,
@@ -3513,7 +3515,7 @@ export async function updateSpeedCustomOverride(playerId: string, masValue: numb
 // 모두 physical_report에 (player_id, test_date) 기준으로 부분 upsert된다.
 // 같은 날짜에 여러 계측기 파일을 순서대로 올려도 서로 다른 컬럼만 채워지므로 값이 덮어써지지 않는다.
 
-export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear: number, overrides?: Map<string, string>, testRound?: string): Promise<number> {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
@@ -3532,6 +3534,7 @@ export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear:
       player_id: playerMap.get(normalizeName(row.player_name)),
       test_date: row.test_date,
       weight: row.bodyWeight,
+      ...(testRound ? { test_round: testRound } : {}),
     };
     if (row.metric === 'cmj') {
       base.cmj_height = row.jumpHeight;
@@ -3549,7 +3552,7 @@ export async function importForcedecksCsvRows(rows: ForcedecksRow[], seasonYear:
   return physicalRows.length;
 }
 
-export async function importNordbordCsvRows(rows: NordbordRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+export async function importNordbordCsvRows(rows: NordbordRow[], seasonYear: number, overrides?: Map<string, string>, testRound?: string): Promise<number> {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
@@ -3560,7 +3563,7 @@ export async function importNordbordCsvRows(rows: NordbordRow[], seasonYear: num
     const playerId = playerMap.get(normalizeName(row.player_name));
     if (!playerId) continue;
     const key = `${playerId}__${row.test_date}`;
-    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date };
+    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date, ...(testRound ? { test_round: testRound } : {}) };
     if (row.test === 'Nordic') {
       entry.nordic_curl_left = row.leftForce;
       entry.nordic_curl_right = row.rightForce;
@@ -3578,7 +3581,7 @@ export async function importNordbordCsvRows(rows: NordbordRow[], seasonYear: num
   return physicalRows.length;
 }
 
-export async function importForceframeCsvRows(rows: ForceframeRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+export async function importForceframeCsvRows(rows: ForceframeRow[], seasonYear: number, overrides?: Map<string, string>, testRound?: string): Promise<number> {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
@@ -3589,7 +3592,7 @@ export async function importForceframeCsvRows(rows: ForceframeRow[], seasonYear:
     const playerId = playerMap.get(normalizeName(row.player_name));
     if (!playerId) continue;
     const key = `${playerId}__${row.test_date}`;
-    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date };
+    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date, ...(testRound ? { test_round: testRound } : {}) };
     if (row.direction === 'Squeeze') {
       entry.hip_ad_left = row.leftForce;
       entry.hip_ad_right = row.rightForce;
@@ -3607,7 +3610,7 @@ export async function importForceframeCsvRows(rows: ForceframeRow[], seasonYear:
   return physicalRows.length;
 }
 
-export async function importSmartspeedCsvRows(rows: SmartspeedRow[], seasonYear: number, overrides?: Map<string, string>): Promise<number> {
+export async function importSmartspeedCsvRows(rows: SmartspeedRow[], seasonYear: number, overrides?: Map<string, string>, testRound?: string): Promise<number> {
   const client = requireSupabase();
   const validRows = rows.filter(row => normalizeName(row.player_name));
   const playerMap = await getOrCreatePlayers(validRows.map(r => ({ player_name: r.player_name, jersey_number: 0 })), seasonYear, overrides);
@@ -3625,7 +3628,7 @@ export async function importSmartspeedCsvRows(rows: SmartspeedRow[], seasonYear:
     const playerId = playerMap.get(normalizeName(row.player_name));
     if (!playerId) continue;
     const key = `${playerId}__${row.test_date}`;
-    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date };
+    const entry = merged.get(key) ?? { player_id: playerId, test_date: row.test_date, ...(testRound ? { test_round: testRound } : {}) };
     if (row.testName === '30m Sprint') {
       entry.sprint_5m_time = row.split5m;
       entry.sprint_10m_time = row.split10m;
