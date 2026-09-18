@@ -2428,10 +2428,15 @@ export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], f
     const { data: matches } = await client
       .from('match_data')
       .select('opponent')
-      .eq('match_date', date)
-      .limit(1);
-    opponent = matches?.[0]?.opponent ?? '';
-    if (!opponent) throw new Error(`${date} 날짜의 경기 데이터가 없습니다. 경기 데이터 CSV를 먼저 업로드해주세요.`);
+      .eq('match_date', date);
+    const opponents = [...new Set(((matches as R[]) ?? []).map(m => m.opponent as string))];
+    if (opponents.length === 0) throw new Error(`${date} 날짜의 경기 데이터가 없습니다. 경기 데이터 CSV를 먼저 업로드해주세요.`);
+    // 하루에 경기가 둘 이상이면 파일명 없이는 어느 경기인지 알 수 없다. 예전엔 limit(1)로
+    // 아무거나 골라서, 두 경기의 세션 데이터가 한 경기에 뭉치고 겹치는 선수는 덮어써졌다.
+    if (opponents.length > 1) {
+      throw new Error(`${date}에 경기가 ${opponents.length}개(${opponents.join(', ')}) 있어 어느 경기의 세션 데이터인지 알 수 없습니다. 파일명에 상대팀을 넣어주세요. (예: ${date}-${matchInfo.event_type || '경기데이터'}-${opponents[0]}-세션별데이터.csv)`);
+    }
+    opponent = opponents[0];
   }
 
   const validRows = rows.filter(row => normalizeName(row.player_name));
@@ -2465,6 +2470,25 @@ export async function importMatchSessionCsvRows(rows: ParsedMatchSessionRow[], f
   }).filter(row => row.player_id);
 
   if (sessionRows.length === 0) return 0;
+
+  // 세션 파일이 엉뚱한 경기에 붙는 것을 막는다. 경기 데이터보다 세션 파일을 먼저 올리면
+  // 그 시점엔 그 날짜의 다른 경기 하나만 보여서 조용히 그쪽으로 들어가고,
+  // 두 경기에 모두 뛴 선수는 기존 기록이 덮어써진다. 정상 업로드는 세션 선수가 전원
+  // 그 경기 명단에 있고, 잘못 붙은 경우는 10~20%대라 과반을 기준으로 가른다.
+  const { data: rosterRows } = await client
+    .from('match_data')
+    .select('player_id')
+    .eq('match_date', date)
+    .eq('opponent', opponent);
+  const roster = new Set(((rosterRows as R[]) ?? []).map(r => r.player_id as string));
+  if (roster.size === 0) {
+    throw new Error(`${date} ${opponent} 경기 데이터가 없습니다. 경기 데이터 CSV를 먼저 업로드하거나 파일명의 상대팀을 확인해주세요.`);
+  }
+  const sessionPlayerIds = [...new Set(sessionRows.map(r => r.player_id as string))];
+  const inRoster = sessionPlayerIds.filter(id => roster.has(id)).length;
+  if (inRoster * 2 < sessionPlayerIds.length) {
+    throw new Error(`세션 파일의 선수 ${sessionPlayerIds.length}명 중 ${inRoster}명만 ${date} ${opponent} 경기 명단에 있습니다. 다른 경기의 세션 파일이 아닌지 확인하고, 파일명에 상대팀을 넣어주세요. (예: ${date}-${matchInfo.event_type || '경기데이터'}-${opponent}-세션별데이터.csv)`);
+  }
 
   const { error } = await client
     .from('match_session_data')
