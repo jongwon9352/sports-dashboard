@@ -233,7 +233,10 @@ function PosAvgRow({ label, rows, cls }: { label: string; rows: MatchReportRow[]
   if (!rows.length) return null;
   return (
     <tr className="bg-surface-secondary/30 pos-avg-row">
-      <td className={`${cls.name} sticky left-0 bg-surface-secondary/20 z-10`}>{label}</td>
+      <td className={`${cls.name} sticky left-0 bg-surface-secondary/20 z-10`}>
+        {label}
+        <span className="ml-1 font-normal text-text-secondary">({rows.length}명)</span>
+      </td>
       <td className={cls.name}></td>
       <td className={cls.td}>{fmtD(avgOf(rows, r => r.play_time_min), 0)}</td>
       <td className={cls.td}>{fmtN(avgOf(rows, r => r.total_distance))}</td>
