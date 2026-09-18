@@ -15,6 +15,16 @@ type Position = typeof POSITIONS[number];
 function fmtN(v: number): string { return v ? Math.round(v).toLocaleString() : '0'; }
 function fmtD(v: number, d = 1): string { return v ? Number(v).toFixed(d) : '0'; }
 
+// 경기 최장 출전 시간 기준 75% 컷은 전원 교체로만 뛴 포지션(예: FB 전원이 풀타임의 75%를 못 채움)에서
+// 평균 대상이 0명이 되어 그 포지션 평균 행 자체가 사라지는 문제가 있었다.
+// 이런 경우 그 포지션 안에서의 최장 출전 시간 기준 75%로 대체해 포지션이 누락되지 않게 한다.
+function posAvgRows(rows: MatchReportRow[], globalMinTime: number): MatchReportRow[] {
+  const avgRows = rows.filter(r => r.play_time_min >= globalMinTime);
+  if (avgRows.length > 0 || rows.length === 0) return avgRows;
+  const posMaxTime = Math.max(...rows.map(r => r.play_time_min));
+  return rows.filter(r => r.play_time_min >= posMaxTime * 0.75);
+}
+
 function formatKoreanDate(dateStr: string): string {
   const d = new Date(dateStr);
   const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -325,7 +335,7 @@ export function MatchReport() {
     const groups: { pos: Position; rows: MatchReportRow[]; avgRows: MatchReportRow[] }[] = [];
     for (const pos of positionOrder) {
       const rows = assignedRows.filter(r => positions[r.id] === pos);
-      const avgRows = rows.filter(r => r.play_time_min >= posAvgMinTime);
+      const avgRows = posAvgRows(rows, posAvgMinTime);
       if (rows.length) groups.push({ pos, rows, avgRows });
     }
     return groups;
@@ -359,7 +369,8 @@ export function MatchReport() {
   const posChartData = useMemo(() => {
     const display: Position[] = ['CB', 'FB', 'MF', 'WF', 'CF'];
     return display.map(pos => {
-      const rows = assignedRows.filter(r => positions[r.id] === pos && r.play_time_min >= posAvgMinTime);
+      const posRows = assignedRows.filter(r => positions[r.id] === pos);
+      const rows = posAvgRows(posRows, posAvgMinTime);
       if (!rows.length) return null;
       return {
         name: pos,
