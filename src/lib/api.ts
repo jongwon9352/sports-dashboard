@@ -905,6 +905,21 @@ export interface DailySessionReport {
   rows: DailyReportRow[];
 }
 
+// 세션 라벨은 파일명에서 뽑는다. 예전엔 '오전'/'오후'가 없으면 파일명 전체가 라벨이 돼서,
+// '2026-10-05-U13운동부하.csv' 같은 파일은 화면의 '오후' 선택과 매칭되지 않아 빈 목록이 됐다.
+// '오전'/'오후'는 그대로 둔다 — session_rpe_manual·session_group_manual에 이 값으로 저장된 키가 있다.
+export function sessionLabelFromFilename(filename: string): string {
+  const name = filename.normalize('NFC');
+  if (name.includes('오전')) return '오전';
+  if (name.includes('오후')) return '오후';
+  const stripped = name
+    .replace(/\.csv$/i, '')
+    .replace(/^\d{4}-\d{2}-\d{2}-?/, '')
+    .replace(/운동부하.*$/, '')
+    .trim();
+  return stripped || name;
+}
+
 export async function fetchDailySessionReports(date: string): Promise<DailySessionReport[]> {
   const client = requireSupabase();
   const { data: uploads } = await client
@@ -937,9 +952,7 @@ export async function fetchDailySessionReports(date: string): Promise<DailySessi
   const manualGroupMap = new Map((manualGroup as R[] ?? []).map(m => [`${m.session}|${m.player_id}`, m.group_type as string]));
 
   return (uploads as R[]).map(u => {
-    const filename = u.filename as string;
-    const normalizedFilename = filename.normalize('NFC');
-    const label = normalizedFilename.includes('오전') ? '오전' : normalizedFilename.includes('오후') ? '오후' : filename;
+    const label = sessionLabelFromFilename(u.filename as string);
 
     const parsed = parseDailyCsv(u.csv_content as string);
     const rows: DailyReportRow[] = parsed.filter(r => normalizeName(r.player_name)).map(r => {
@@ -982,19 +995,24 @@ export interface RawDataSessionReport {
   rows: RawDataRow[];
 }
 
-export async function fetchDatesWithMultipleSessions(): Promise<Set<string>> {
+// 세션이 둘 이상인 날짜 → 그 날의 세션 라벨 목록. 화면이 라벨을 하드코딩하면
+// '오전'/'오후'가 아닌 파일명(예: U13)은 선택해도 매칭되지 않아 빈 목록이 된다.
+export async function fetchDatesWithMultipleSessions(): Promise<Map<string, string[]>> {
   const client = requireSupabase();
   const { data } = await client
     .from('csv_uploads')
-    .select('training_date')
-    .eq('file_type', 'daily');
-  const counts = new Map<string, number>();
+    .select('training_date, filename, created_at')
+    .eq('file_type', 'daily')
+    .order('created_at', { ascending: true });
+  const byDate = new Map<string, string[]>();
   for (const row of (data as R[]) ?? []) {
     const date = row.training_date as string;
     if (!date) continue;
-    counts.set(date, (counts.get(date) ?? 0) + 1);
+    const labels = byDate.get(date) ?? [];
+    labels.push(sessionLabelFromFilename(row.filename as string));
+    byDate.set(date, labels);
   }
-  return new Set([...counts.entries()].filter(([, c]) => c >= 2).map(([date]) => date));
+  return new Map([...byDate.entries()].filter(([, labels]) => labels.length >= 2));
 }
 
 export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataSessionReport[]> {
@@ -1026,8 +1044,7 @@ export async function fetchRawDataSessionsByDate(date: string): Promise<RawDataS
   const manualGroupMap = new Map((manualGroup as R[] ?? []).map(m => [`${m.session}|${m.player_id}`, m.group_type as string]));
 
   return (uploads as R[]).map(u => {
-    const filenameForLabel = (u.filename as string).normalize('NFC');
-    const sessionLabel = filenameForLabel.includes('오전') ? '오전' : filenameForLabel.includes('오후') ? '오후' : filenameForLabel;
+    const sessionLabel = sessionLabelFromFilename(u.filename as string);
 
     const parsed = parseDailyCsv(u.csv_content as string);
     const rows: RawDataRow[] = parsed.filter(r => normalizeName(r.player_name)).map(r => {
@@ -1105,7 +1122,7 @@ async function recomputeMergedTrainingDaily(date: string, playerId: string) {
   await updateRpe((existing as R).id as string, rpe);
 }
 
-export async function upsertSessionRpe(trainingDate: string, session: '오전' | '오후', playerId: string, rpe: number) {
+export async function upsertSessionRpe(trainingDate: string, session: string, playerId: string, rpe: number) {
   const client = requireSupabase();
   const { error } = await client
     .from('session_rpe_manual')
@@ -1114,7 +1131,7 @@ export async function upsertSessionRpe(trainingDate: string, session: '오전' |
   await recomputeMergedTrainingDaily(trainingDate, playerId);
 }
 
-export async function upsertSessionGroup(trainingDate: string, session: '오전' | '오후', playerId: string, groupType: string) {
+export async function upsertSessionGroup(trainingDate: string, session: string, playerId: string, groupType: string) {
   const client = requireSupabase();
   const { error } = await client
     .from('session_group_manual')

@@ -39,7 +39,7 @@ export function RawDataPage() {
   const [data, setData] = useState<RawDataRow[]>([]);
   const [sheetRpe, setSheetRpe] = useState<GoogleSheetRpe[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
-  const [multiSessionDates, setMultiSessionDates] = useState<Set<string>>(new Set());
+  const [multiSessionDates, setMultiSessionDates] = useState<Map<string, string[]>>(new Map());
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -192,7 +192,7 @@ export function RawDataPage() {
     setSavingRpe(row.id);
     try {
       if (isSessionView) {
-        await upsertSessionRpe(dateOnly, sessionLabel as '오전' | '오후', row.player_id, rpe);
+        await upsertSessionRpe(dateOnly, sessionLabel, row.player_id, rpe);
       } else {
         await updateRpe(row.id, rpe, row.source);
       }
@@ -243,7 +243,7 @@ export function RawDataPage() {
   const handleGroupChange = async (row: RawDataRow, val: string) => {
     try {
       if (isSessionView) {
-        await upsertSessionGroup(dateOnly, sessionLabel as '오전' | '오후', row.player_id, val);
+        await upsertSessionGroup(dateOnly, sessionLabel, row.player_id, val);
       } else {
         await updateGroupType(row.id, val, row.source);
       }
@@ -355,8 +355,9 @@ export function RawDataPage() {
               multiSessionDates.has(date) ? (
                 <optgroup key={date} label={date}>
                   <option value={date}>{date} (합계)</option>
-                  <option value={`${date}::오전`}>{date} (오전)</option>
-                  <option value={`${date}::오후`}>{date} (오후)</option>
+                  {multiSessionDates.get(date)!.map(label => (
+                    <option key={label} value={`${date}::${label}`}>{date} ({label})</option>
+                  ))}
                 </optgroup>
               ) : (
                 <option key={date} value={date}>{date}</option>
