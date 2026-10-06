@@ -32,10 +32,17 @@ function parseGoogleTimestamp(ts: string): string {
   return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
 }
 
+// 제출 시각의 '오전'/'오후' 토큰은 세션 판별에 쓸 수 없다. 한국어 로케일은 낮 12시대를
+// '오후 12:24'로 찍기 때문에, 오전 훈련 직후(12:24~12:44)에 낸 응답이 전부 오후로 분류돼
+// 오전 세션 리포트에는 RPE가 비고 합계 행에만 남았다(2026-10-05).
+// 선수는 세션이 끝난 뒤에 제출하므로 실제 시각으로 가른다 — 관측상 오전 직후는 12시대,
+// 오후 직후는 18~20시대라 그 사이인 14시를 경계로 쓴다.
+const RPE_SESSION_CUTOFF_HOUR = 14;
 function parseGoogleTimestampSession(ts: string): '오전' | '오후' | null {
-  if (ts.includes('오전')) return '오전';
-  if (ts.includes('오후')) return '오후';
-  return null;
+  const m = ts.match(/(오전|오후)\s*(\d{1,2}):/);
+  if (!m) return null;
+  const hour = (Number(m[2]) % 12) + (m[1] === '오후' ? 12 : 0);
+  return hour < RPE_SESSION_CUTOFF_HOUR ? '오전' : '오후';
 }
 
 export async function fetchGoogleSheetRpe(): Promise<GoogleSheetRpe[]> {
