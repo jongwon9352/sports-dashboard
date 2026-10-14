@@ -185,33 +185,46 @@ export interface ParsedDailyRow {
   max_speed: number;
 }
 
+// 열 위치를 헤더에서 찾는다. 2026-10-14 수출본부터 앞에 '등번호'·'포지션' 열이 붙고
+// 이름 헤더가 '이름' → '선수 이름' 으로 바뀌면서 위치 고정 파싱이 통째로 한 칸 밀렸다
+// (이름 칸에 등번호가 들어가 등번호 이름의 유령 선수 29명이 생성됐다).
+// 예전 파일도 세션별 화면에서 csv_content 를 다시 파싱하므로 두 형식을 모두 읽어야 한다.
+// '뛴 시간 (min)' 이후 열 순서는 두 형식이 같아서 그 위치만 찾으면 나머지는 상대 위치로 따라간다.
 export function parseDailyCsv(csvText: string): ParsedDailyRow[] {
   const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
   const rows = result.data;
   if (rows.length < 2) return [];
 
+  const header = (rows[0] ?? []).map(h => (h ?? '').replace(/^\uFEFF/, '').trim());
+  const idxOf = (...names: string[]) => header.findIndex(h => names.includes(h));
+  const found = (i: number, fallback: number) => (i >= 0 ? i : fallback);
+
+  const nameIdx = found(idxOf('선수 이름', '이름'), 0);
+  const jerseyIdx = found(idxOf('등번호'), 1);
+  const base = found(idxOf('뛴 시간 (min)'), 2); // 이 열부터는 두 형식의 순서가 동일하다
+
   return rows.slice(1).map(row => ({
-    player_name: row[0] || '',
-    jersey_number: parseNumber(row[1]),
-    duration_min: parseNumber(row[2]),
-    rpe: parseNullableNumber(row[3]),
-    total_distance: parseNumber(row[4]),
-    speed_zone_1: parseNumber(row[5]),
-    speed_zone_2: parseNumber(row[6]),
-    speed_zone_3: parseNumber(row[7]),
-    speed_zone_4: parseNumber(row[8]),
-    speed_zone_5: parseNumber(row[9]),
-    m_per_min: parseNumber(row[10]),
-    hsr_distance: parseNumber(row[11]),
-    hsr_custom: parseNumber(row[12]),
-    sprint_distance: parseNumber(row[13]),
-    sprint_custom: parseNumber(row[14]),
-    sprint_count: parseNumber(row[15]),
-    sprint_count_custom: parseNumber(row[16]),
-    acc_count: parseNumber(row[17]),
-    dec_count: parseNumber(row[18]),
-    acd_load: parseNumber(row[19]),
-    max_speed: parseNumber(row[20]),
+    player_name: row[nameIdx] || '',
+    jersey_number: parseNumber(row[jerseyIdx]),
+    duration_min: parseNumber(row[base]),
+    rpe: parseNullableNumber(row[base + 1]),
+    total_distance: parseNumber(row[base + 2]),
+    speed_zone_1: parseNumber(row[base + 3]),
+    speed_zone_2: parseNumber(row[base + 4]),
+    speed_zone_3: parseNumber(row[base + 5]),
+    speed_zone_4: parseNumber(row[base + 6]),
+    speed_zone_5: parseNumber(row[base + 7]),
+    m_per_min: parseNumber(row[base + 8]),
+    hsr_distance: parseNumber(row[base + 9]),
+    hsr_custom: parseNumber(row[base + 10]),
+    sprint_distance: parseNumber(row[base + 11]),
+    sprint_custom: parseNumber(row[base + 12]),
+    sprint_count: parseNumber(row[base + 13]),
+    sprint_count_custom: parseNumber(row[base + 14]),
+    acc_count: parseNumber(row[base + 15]),
+    dec_count: parseNumber(row[base + 16]),
+    acd_load: parseNumber(row[base + 17]),
+    max_speed: parseNumber(row[base + 18]),
   }));
 }
 
