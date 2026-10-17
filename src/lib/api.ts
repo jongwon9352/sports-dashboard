@@ -146,6 +146,15 @@ async function getOrCreatePlayers(
   const names = [...requested.keys()].filter(name => !playerMap.has(name));
   if (names.length === 0) return playerMap;
 
+  // CSV 열이 한 칸만 밀려도 이름 칸에 등번호가 들어오고, 여기서 검증 없이 새 선수가 만들어져
+  // 로스터가 통째로 오염된다(2026-10-14 운동부하 29명 · 2026-10-17 세션별 12명).
+  // 선수 이름이 숫자만인 경우는 없으므로, 만들기 전에 여기서 끊는다.
+  // 임포터 전부가 이 함수를 지나므로, 아직 위치 고정인 파서들까지 한 번에 막힌다.
+  const numericNames = names.filter(name => /^\d+$/.test(name));
+  if (numericNames.length > 0) {
+    throw new Error(`선수 이름이 숫자입니다(${numericNames.slice(0, 5).join(', ')}${numericNames.length > 5 ? ' 외' : ''}). CSV 열이 밀린 것 같습니다 — 수출 형식이 바뀌지 않았는지 확인해주세요.`);
+  }
+
   const missing = names.map(name => defaultPlayer(name, requested.get(name) ?? 0));
 
   const { data: inserted, error: insertError } = await client
