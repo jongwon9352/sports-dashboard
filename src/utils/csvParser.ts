@@ -57,21 +57,17 @@ export interface ParsedMatchSessionRow {
   max_speed: number;
 }
 
-export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
-  const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
-  const rows = result.data;
-  if (rows.length < 2) return [];
-
-  // 운동부하 CSV와 같은 이유로 열을 헤더에서 찾는다 — 수출 형식이 바뀌며 앞에 '등번호'·'포지션'이
-  // 붙으면 위치 고정 파싱이 밀려 이름 칸에 등번호가 들어간다(2026-10-17, 유령 선수 12명).
-  // 여기선 열 이름을 전부 찾는다. 이 형식은 운동부하와 꼬리 순서가 달라 상대 위치를 믿을 수 없다.
-  // 헤더를 못 찾는 열은 예전 고정 위치로 떨어진다.
-  const header = (rows[0] ?? []).map(h => (h ?? '').replace(/^\uFEFF/, '').trim());
+// 세션 CSV(훈련 세션·경기 세션별)는 열 구성이 같다. 수출 형식이 바뀌며 앞에 '등번호'·'포지션'이
+// 붙으면 위치 고정 파싱이 밀려 이름 칸에 등번호가 들어간다(2026-10-17, 유령 선수 12명).
+// 그래서 열을 전부 헤더 이름으로 찾는다 — 이 형식은 운동부하와 꼬리 순서가 달라 상대 위치를 믿을 수 없다.
+// 헤더를 못 찾는 열은 예전 고정 위치로 떨어지므로, 헤더가 전부 달라져도 지금 동작 그대로다.
+function sessionColumns(headerRow: string[] | undefined) {
+  const header = (headerRow ?? []).map(h => (h ?? '').replace(/^\uFEFF/, '').trim());
   const col = (fallback: number, ...names: string[]) => {
     const i = header.findIndex(h => names.includes(h));
     return i >= 0 ? i : fallback;
   };
-  const c = {
+  return {
     session: col(0, '세션 이름', '세션'),
     name: col(1, '선수 이름', '이름'),
     jersey: col(2, '등번호'),
@@ -89,8 +85,10 @@ export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
     acd: col(14, 'ACD Load'),
     maxSpeed: col(15, '최고 속도 (km/h)'),
   };
+}
 
-  const parsed = rows.slice(1).map(row => ({
+function toSessionRow(row: string[], c: ReturnType<typeof sessionColumns>) {
+  return {
     session_name: row[c.session] || '',
     player_name: row[c.name] || '',
     jersey_number: parseNumber(row[c.jersey]),
@@ -107,7 +105,18 @@ export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
     dec_count: parseNumber(row[c.dec]),
     acd_load: parseNumber(row[c.acd]),
     max_speed: parseNumber(row[c.maxSpeed]),
-  })).filter(r => r.session_name && r.player_name);
+  };
+}
+
+export function parseMatchSessionCsv(csvText: string): ParsedMatchSessionRow[] {
+  const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
+  const rows = result.data;
+  if (rows.length < 2) return [];
+
+  const c = sessionColumns(rows[0]);
+  const parsed = rows.slice(1)
+    .map(row => toSessionRow(row, c))
+    .filter(r => r.session_name && r.player_name);
 
   // 같은 선수가 같은 세션(전반/후반)에 교체 출전 등으로 여러 줄에 나뉘어 기록된 경우 합산
   // (player_id, match_date, opponent, session_name) 유니크 제약 위반으로 upsert가 실패하는 것을 방지
@@ -169,24 +178,8 @@ export function parseSessionCsv(csvText: string): ParsedSessionRow[] {
   const rows = result.data;
   if (rows.length < 2) return [];
 
-  return rows.slice(1).map(row => ({
-    session_name: row[0] || '',
-    player_name: row[1] || '',
-    jersey_number: parseNumber(row[2]),
-    duration_min: parseNumber(row[3]),
-    total_distance: parseNumber(row[4]),
-    m_per_min: parseNumber(row[5]),
-    hsr_distance: parseNumber(row[6]),
-    hsr_custom: parseNumber(row[7]),
-    sprint_distance: parseNumber(row[8]),
-    sprint_custom: parseNumber(row[9]),
-    sprint_count: parseNumber(row[10]),
-    sprint_count_custom: parseNumber(row[11]),
-    acc_count: parseNumber(row[12]),
-    dec_count: parseNumber(row[13]),
-    acd_load: parseNumber(row[14]),
-    max_speed: parseNumber(row[15]),
-  }));
+  const c = sessionColumns(rows[0]);
+  return rows.slice(1).map(row => toSessionRow(row, c));
 }
 
 export interface ParsedDailyRow {
