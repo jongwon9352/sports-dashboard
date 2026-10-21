@@ -1242,59 +1242,86 @@ function AiPrescriptionCards({ record, history, grade, thresholds, teamScores }:
 }
 
 // 팀 전체 기준 "이달의 변화" TOP 5 (최근 두 달 사이 체중 증가량) — 개인 대시보드에서도 팀 맥락을 참고할 수 있도록 표시
-function MonthlyChangeLeaderboard({ allBodyComp, selectedId }: { allBodyComp: BodyCompositionRow[]; selectedId: string }) {
-  const months = useMemo(() => {
-    const set = new Set<string>();
-    for (const row of allBodyComp) set.add(`${row.year}-${row.month}`);
-    return [...set]
-      .map(key => { const [year, month] = key.split('-').map(Number); return { year, month, key }; })
-      .sort((a, b) => a.year - b.year || a.month - b.month);
-  }, [allBodyComp]);
+// 이달의 변화 — 그 선수의 직전 월 대비 변화.
+// 성숙도는 월별 비교를 하지 않는다: Mirwald 성숙 단계는 앉은키(leg length)가 필요한데
+// growth_tracking 에는 키·몸무게만 쌓이고 앉은키는 players 의 1회성 기준 측정값뿐이다.
+// 없는 월별 앉은키로 단계를 만들면 지어낸 숫자가 되므로 현재값으로만 보여준다.
+function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null }) {
+  const sorted = useMemo(
+    () => [...bodyComp].sort((a, b) => a.year - b.year || a.month - b.month),
+    [bodyComp]);
+  const latest = sorted[sorted.length - 1];
+  const prev = sorted[sorted.length - 2];
 
-  const leaderboard = useMemo(() => {
-    if (months.length < 2) return [];
-    const lastKey = months[months.length - 1].key, prevKey = months[months.length - 2].key;
-    const byPlayer = new Map<string, { name: string; from: number | null; to: number | null }>();
-    for (const row of allBodyComp) {
-      if (!byPlayer.has(row.player_id)) byPlayer.set(row.player_id, { name: row.player_name, from: null, to: null });
-      const key = `${row.year}-${row.month}`;
-      if (key === prevKey) byPlayer.get(row.player_id)!.from = row.weight;
-      if (key === lastKey) byPlayer.get(row.player_id)!.to = row.weight;
-    }
-    return [...byPlayer.entries()]
-      .map(([id, p]) => (p.from == null || p.to == null) ? null : { id, name: p.name, delta: +(p.to - p.from).toFixed(2), from: p.from, to: p.to })
-      .filter((x): x is { id: string; name: string; delta: number; from: number; to: number } => x != null)
-      .sort((a, b) => b.delta - a.delta)
-      .slice(0, 5);
-  }, [allBodyComp, months]);
+  if (!latest) return null;
 
-  if (leaderboard.length === 0) return null;
-  const maxDelta = Math.max(...leaderboard.map(r => r.delta), 0.1);
+  const metrics = ([['height', '키', 'cm'], ['weight', '몸무게', 'kg']] as const).map(([key, label, unit]) => {
+    const to = latest[key];
+    const from = prev?.[key] ?? null;
+    const delta = from != null && to != null ? +(to - from).toFixed(1) : null;
+    return { key, label, unit, from, to, delta };
+  });
+
+  const period = prev
+    ? `${prev.month}월 → ${latest.month}월`
+    : `${latest.month}월`;
 
   return (
     <div className="chart-card">
       <div className="chart-title">
-        이달의 변화 TOP 5 <span className="text-text-secondary font-normal text-xs">({months[months.length - 2].month}월 → {months[months.length - 1].month}월, 팀 전체 체중 증가량 기준)</span>
+        이달의 변화 <span className="text-text-secondary font-normal text-xs">({period} · 직전 측정 월 대비)</span>
       </div>
-      <div className="space-y-2 mt-2">
-        {leaderboard.map((r, i) => (
-          <div key={r.id} className={`flex items-center gap-3 ${r.id === selectedId ? 'bg-cyan-50 -mx-2 px-2 py-1 rounded-lg' : ''}`}>
-            <span className="w-5 text-text-secondary text-xs" style={{ fontFamily: 'var(--font-data)' }}>{i + 1}</span>
-            <span className="w-20 text-sm font-medium truncate">{r.name}</span>
-            <span className="w-28 text-sm font-semibold" style={{ color: colors.safe, fontFamily: 'var(--font-data)' }}>+{r.delta}kg</span>
-            <span className="w-28 text-xs text-text-secondary" style={{ fontFamily: 'var(--font-data)' }}>{r.from.toFixed(1)} → {r.to.toFixed(1)}kg</span>
-            <div className="flex-1 h-1.5 rounded bg-surface-secondary overflow-hidden">
-              <div className="h-full rounded" style={{ width: `${(r.delta / maxDelta) * 100}%`, background: colors.safe }} />
+      <div className="grid grid-cols-3 gap-3 stat-grid-4">
+        {metrics.map(m => (
+          <div key={m.key} className="rounded-lg border border-surface-secondary p-3">
+            <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{m.label}</p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>
+                {m.to != null ? `${m.to}${m.unit}` : '—'}
+              </span>
+              {m.delta != null && m.delta !== 0 && (
+                <span className={`text-xs font-medium ${m.delta > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {m.delta > 0 ? '▲' : '▼'}{Math.abs(m.delta)}{m.unit}
+                </span>
+              )}
+              {m.delta === 0 && <span className="text-xs text-text-disabled">변화 없음</span>}
             </div>
+            <p className="text-[11px] text-text-secondary mt-0.5" style={{ fontFamily: 'var(--font-data)' }}>
+              {m.from != null && m.to != null ? `${m.from} → ${m.to}${m.unit}` : '직전 월 기록 없음'}
+            </p>
           </div>
         ))}
+
+        <div className="rounded-lg border border-surface-secondary p-3">
+          <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙도</p>
+          {maturity?.maturity_stage ? (
+            <>
+              <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{
+                  background: MATURITY_STAGE_LABEL[maturity.maturity_stage]?.bg ?? '#eee',
+                  color: MATURITY_STAGE_LABEL[maturity.maturity_stage]?.text ?? '#666',
+                }}>
+                {maturity.maturity_stage}
+              </span>
+              <p className="text-[11px] text-text-secondary mt-1" style={{ fontFamily: 'var(--font-data)' }}>
+                성장 도달률 {maturity.pah_percent != null ? `${maturity.pah_percent}%` : '—'}
+              </p>
+            </>
+          ) : (
+            <p className="text-lg font-bold mt-1">—</p>
+          )}
+          <p className="text-[10px] text-text-disabled mt-1">기준 측정일 기준 · 월별 비교 없음</p>
+        </div>
       </div>
+      <p className="text-[10px] text-text-disabled mt-2">
+        성숙 단계는 앉은키가 필요해 월별로 계산하지 않습니다(앉은키는 기준 측정 1회만 수집).
+      </p>
     </div>
   );
 }
 
-function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
-  record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[]; allBodyComp: BodyCompositionRow[]; selectedId: string;
+function PhysicalTabPanel({ record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[];
   maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
   grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
@@ -1303,7 +1330,7 @@ function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, 
       <PhysicalRadarSection record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
       <AiPrescriptionCards record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} />
       <BodyCompositionSection rows={bodyComp} />
-      <MonthlyChangeLeaderboard allBodyComp={allBodyComp} selectedId={selectedId} />
+      <MonthlyChangeCard bodyComp={bodyComp} maturity={maturity} />
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
       <ValdTrendSection history={history} />
@@ -1333,7 +1360,6 @@ export function PersonalDashboard() {
   const [physicalHistory, setPhysicalHistory] = useState<PhysicalTestRow[]>([]);
   // 선수별 측정 이력(최신순). 항목이 빠진 회차를 이전 회차로 보완하려면 최신 1건만으로는 부족하다.
   const [teamPhysicalHistory, setTeamPhysicalHistory] = useState<Map<string, PhysicalTestRow[]>>(new Map());
-  const [allBodyComp, setAllBodyComp] = useState<BodyCompositionRow[]>([]);
 
   useEffect(() => {
     fetchPlayersWithAcwr().then(p => {
@@ -1377,7 +1403,6 @@ export function PersonalDashboard() {
         if (list) list.push(r); else historyByPlayer.set(r.player_id, [r]);
       }
       setTeamPhysicalHistory(historyByPlayer);
-      setAllBodyComp(bodyRows);
       setBodyComp(bodyRows.filter(r => r.player_id === selectedId));
       setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
       setSpeed(speedRows.find(r => r.player_id === selectedId) ?? null);
@@ -1476,8 +1501,6 @@ export function PersonalDashboard() {
             record={physicalRecord}
             history={physicalHistory}
             bodyComp={bodyComp}
-            allBodyComp={allBodyComp}
-            selectedId={selectedId}
             maturity={maturity}
             speed={speed}
             speedHistory={speedHistory}
