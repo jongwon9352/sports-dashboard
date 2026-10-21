@@ -663,6 +663,16 @@ function ValdSection({ record }: { record: PhysicalTestRow | null }) {
 // VALD 차수별 추이. 종목마다 측정된 차수가 달라서(ham_iso 는 26_1 부터, cod_run 은 빠진 차수가 있다)
 // 그 선수에게 값이 2개 차수 이상 있는 종목만 그린다 — 점 하나짜리 빈 차트를 14개 늘어놓지 않기 위해서다.
 // 좌우가 있는 종목은 한 차트에 두 선으로 겹쳐 불균형이 시간에 따라 어떻게 변하는지 같이 보이게 한다.
+// Y축을 데이터 범위로만 잡으면(auto) 임계 라인이 축 밖으로 밀려 차트에 안 보인다.
+// 데이터와 임계치를 모두 담되, 눈금이 지저분해지지 않도록 자릿수에 맞춘 경계로 끊는다.
+function niceDomain(lo: number, hi: number): [number, number] {
+  if (!(hi > lo)) { const d = Math.abs(hi || 1) * 0.1; return [+(hi - d).toFixed(4), +(hi + d).toFixed(4)]; }
+  const span = hi - lo;
+  const step = Math.pow(10, Math.floor(Math.log10(span))) / 2;
+  const pad = span * 0.08;
+  return [+(Math.floor((lo - pad) / step) * step).toFixed(4), +(Math.ceil((hi + pad) / step) * step).toFixed(4)];
+}
+
 function ValdTrendSection({ history, thresholds }: {
   history: PhysicalTestRow[]; thresholds: ValdThreshold[];
 }) {
@@ -713,6 +723,10 @@ function ValdTrendSection({ history, thresholds }: {
         {charts.map(({ def, data, isLR, th }) => {
           const nums = data.flatMap(d => isLR ? [d.left, d.right] : [d.value]).filter((v): v is number => v != null);
           const last = nums[nums.length - 1];
+          // 축은 측정값과 임계 3선을 모두 포함해야 한다. 하나라도 빠지면 그 선이 안 보인다.
+          const axisVals = [...nums, th?.min_value, th?.avg_value, th?.max_value]
+            .filter((v): v is number => v != null);
+          const domain = axisVals.length ? niceDomain(Math.min(...axisVals), Math.max(...axisVals)) : undefined;
           return (
             <div key={def.key} className="rounded-lg border border-surface-secondary p-2.5">
               <div className="flex items-baseline gap-2 mb-1">
@@ -725,7 +739,7 @@ function ValdTrendSection({ history, thresholds }: {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 9 }} />
-                  <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
+                  <YAxis tick={{ fontSize: 9 }} domain={domain ?? ['auto', 'auto']} allowDataOverflow={false} width={38} />
                   <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
                   {th?.max_value != null && (
                     <ReferenceLine y={th.max_value} stroke={colors.green} strokeWidth={1} strokeDasharray="4 3" />
