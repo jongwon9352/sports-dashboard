@@ -107,19 +107,19 @@ function LoadTab({ dailyData, multiMetric, teamLoadRange }: {
           <div className="chart-title">최근 훈련 데이터 ({latestDaily.training_date})</div>
           <div className="grid grid-cols-4 gap-4 stat-grid-4">
             <div>
-              <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>총 뛴 거리</p>
+              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>총 뛴 거리</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.total_distance).toLocaleString()} m</p>
             </div>
             <div>
-              <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>HSR</p>
+              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>HSR</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.hsr_distance).toFixed(1)} m</p>
             </div>
             <div>
-              <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>Sprint</p>
+              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>Sprint</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.sprint_distance).toFixed(1)} m</p>
             </div>
             <div>
-              <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>최고 속도</p>
+              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>최고 속도</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.max_speed).toFixed(1)} km/h</p>
             </div>
           </div>
@@ -540,7 +540,7 @@ function imbalanceColor(pct: number): string {
 function StatMiniCard({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
   return (
     <div className="rounded-lg border border-surface-secondary p-3">
-      <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
       <p className="text-lg font-bold mt-1">{value}</p>
       {sub && <p className="text-[11px] mt-0.5" style={{ color: subColor ?? undefined }}>{sub}</p>}
     </div>
@@ -615,7 +615,7 @@ function MaturitySection({ row }: { row: MaturityRow | null }) {
         <StatMiniCard label="성장 도달률 (PAH%)" value={row.pah_percent != null ? `${row.pah_percent}%` : '—'} />
         <StatMiniCard label="APHV 도달 나이" value={row.mirwald_aphv_age != null ? `${row.mirwald_aphv_age}세` : '—'} />
         <div className="rounded-lg border border-surface-secondary p-3">
-          <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙 단계</p>
+          <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙 단계</p>
           {stage ? (
             <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stage.bg, color: stage.text }}>
               {stage.label}
@@ -1038,13 +1038,13 @@ function PhysicalRadarSection({ record, history, grade, thresholds, teamScores, 
           <div className="grid grid-cols-5 gap-2 stat-grid-4 mt-1">
             {RADAR_AXES.map(a => (
               <div key={a.key} className="text-center">
-                <p className="text-[10px] text-text-disabled" style={{ fontFamily: 'var(--font-data)' }}>{a.en}</p>
+                <p className="text-[10px] text-text-secondary" style={{ fontFamily: 'var(--font-data)' }}>{a.en}</p>
                 <p className="text-lg font-bold" style={{ color: colors.danger }}>{scores[a.key] != null ? Math.round(scores[a.key]!) : '—'}</p>
               </div>
             ))}
           </div>
           {carriedOver.length > 0 && (
-            <p className="text-[10px] text-text-disabled mt-2 text-center">
+            <p className="text-[10px] text-text-secondary mt-2 text-center">
               최신 측정({record.test_date})에 값이 없어 이전 측정값 사용:{' '}
               {carriedOver.map(a => `${a.en} ${dates[a.key]}`).join(' · ')}
             </p>
@@ -1138,8 +1138,8 @@ interface Finding {
 
 const LEVEL_STYLE: Record<Finding['level'], { border: string; bg: string; badge: string }> = {
   danger: { border: '#F0C9D1', bg: '#FDF4F6', badge: colors.danger },
-  warn:   { border: '#EDE0B8', bg: '#FDFAF0', badge: '#B08A00' },
-  ok:     { border: 'var(--color-surface-secondary)', bg: 'transparent', badge: '#7D8990' },
+  warn:   { border: '#EDE0B8', bg: '#FDFAF0', badge: '#8A6B00' },
+  ok:     { border: 'var(--color-surface-secondary)', bg: 'transparent', badge: '#4F5B63' },
 };
 
 function FindingCard({ f }: { f: Finding }) {
@@ -1153,17 +1153,17 @@ function FindingCard({ f }: { f: Finding }) {
           <p className="text-[13px] font-bold mb-0.5">{f.title}</p>
           <p className="text-[11.5px] text-text-secondary">{f.why}</p>
           {f.metric && (
-            <p className="text-[11px] text-text-disabled mt-0.5" style={{ fontFamily: 'var(--font-data)' }}>{f.metric}</p>
+            <p className="text-[11px] text-text-secondary mt-0.5" style={{ fontFamily: 'var(--font-data)' }}>{f.metric}</p>
           )}
         </div>
       </div>
       {f.exercises.length > 0 && (
         <div className="px-3 pt-2.5 pb-3 border-t border-dashed border-surface-secondary">
-          <p className="text-[10.5px] text-text-disabled font-semibold tracking-[1px] mb-2">처방</p>
+          <p className="text-[10.5px] text-text-secondary font-semibold tracking-[1px] mb-2">처방</p>
           {f.exercises.map((ex, i) => <ExerciseItem key={i} ex={ex} />)}
         </div>
       )}
-      {f.ref && <p className="px-3 pb-2 text-[10px] text-text-disabled">근거 · {f.ref}</p>}
+      {f.ref && <p className="px-3 pb-2 text-[10px] text-text-secondary">근거 · {f.ref}</p>}
     </div>
   );
 }
@@ -1288,7 +1288,7 @@ function PrescriptionSection({ record, history, grade, thresholds, teamScores, m
           <span className="text-[11.5px] text-text-secondary">
             {maturity?.pah_percent != null ? `· 성장 도달률 ${maturity.pah_percent}% ` : ''}· {stageNote[stage] ?? ''} 아래 처방 강도의 전제입니다.
           </span>
-          <span className="text-[10px] text-text-disabled w-full">근거 · Lloyd &amp; Oliver 2012 Youth Physical Development 모델</span>
+          <span className="text-[10px] text-text-secondary w-full">근거 · Lloyd &amp; Oliver 2012 Youth Physical Development 모델</span>
         </div>
       )}
 
@@ -1329,7 +1329,7 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
       <div className="grid grid-cols-3 gap-3 stat-grid-4">
         {metrics.map(m => (
           <div key={m.key} className="rounded-lg border border-surface-secondary p-3">
-            <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{m.label}</p>
+            <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{m.label}</p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>
                 {m.to != null ? `${m.to}${m.unit}` : '—'}
@@ -1348,7 +1348,7 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
         ))}
 
         <div className="rounded-lg border border-surface-secondary p-3">
-          <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙도</p>
+          <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙도</p>
           {maturity?.maturity_stage ? (
             <>
               <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium"
@@ -1365,10 +1365,10 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
           ) : (
             <p className="text-lg font-bold mt-1">—</p>
           )}
-          <p className="text-[10px] text-text-disabled mt-1">기준 측정일 기준 · 월별 비교 없음</p>
+          <p className="text-[10px] text-text-secondary mt-1">기준 측정일 기준 · 월별 비교 없음</p>
         </div>
       </div>
-      <p className="text-[10px] text-text-disabled mt-2">
+      <p className="text-[10px] text-text-secondary mt-2">
         성숙 단계는 앉은키가 필요해 월별로 계산하지 않습니다(앉은키는 기준 측정 1회만 수집).
       </p>
     </div>
