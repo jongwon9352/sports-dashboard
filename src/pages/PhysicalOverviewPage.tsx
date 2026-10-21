@@ -6,10 +6,10 @@ import {
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import {
-  fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchValdThresholds,
+  fetchAllPlayers, fetchPhysicalTestRecords, fetchMaturityRecords, fetchSpeedCustomTestRows, fetchValdThresholds,
   fetchBodyCompositionRecords, computeValdValue,
   VALD_METRIC_DEFS, VALD_GRADES, VALD_ACCESSORS,
-  type PhysicalTestRow, type MaturityRow, type SpeedCustomRow, type ValdThreshold, type BodyCompositionRow,
+  type PhysicalTestRow, type MaturityRow, type SpeedCustomTestRow, type ValdThreshold, type BodyCompositionRow,
 } from '../lib/api';
 import type { Player, Grade } from '../types';
 import { colors, chartColors } from '../styles/colors';
@@ -868,18 +868,19 @@ function MaturityCharts({ rows, players }: { rows: MaturityRow[]; players: Playe
   );
 }
 
-type GroupMode = '전체' | '학년' | '포지션' | '성숙도';
-const GROUP_MODES: GroupMode[] = ['전체', '학년', '포지션', '성숙도'];
 const POSITION_ORDER = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'];
+const ALL = '전체';
 
-function groupKey(mode: GroupMode, r: SpeedCustomRow, gradeMap: Map<string, string>, stageMap: Map<string, string | null>): string | null {
-  if (mode === '학년') return gradeMap.get(r.player_id) ?? null;
-  if (mode === '포지션') return r.position;
-  if (mode === '성숙도') return stageMap.get(r.player_id) ?? null;
-  return null;
-}
+// 학년·포지션·성숙도·차수를 각각 독립으로 고르고 AND 로 겹쳐 거른다.
+// 예전엔 네 가지 중 하나만 고를 수 있어 "3학년 FW 성장급증기 후 2차수" 같은 조합이 안 됐다.
+interface SpeedFilters { 학년: string; 포지션: string; 성숙도: string; 차수: string }
 
-function SpeedMetricChart({ data, dataKey, unit, color, avg }: { data: SpeedCustomRow[]; dataKey: 'mas' | 'mss'; unit: string; color: string; avg: number }) {
+// 차트·인사이트가 실제로 쓰는 칸만 요구한다. 선수별 최고값 행(SpeedCustomRow)과
+// 차수별 원본 행(SpeedCustomTestRow) 양쪽이 이 모양을 만족한다.
+type SpeedChartRow = { player_id: string; player_name: string; position: string | null; mas: number; mss: number };
+const EMPTY_FILTERS: SpeedFilters = { 학년: ALL, 포지션: ALL, 성숙도: ALL, 차수: ALL };
+
+function SpeedMetricChart({ data, dataKey, unit, color, avg }: { data: SpeedChartRow[]; dataKey: 'mas' | 'mss'; unit: string; color: string; avg: number }) {
   const sorted = useMemo(() => [...data].sort((a, b) => b[dataKey] - a[dataKey]), [data, dataKey]);
 
   return (
@@ -910,7 +911,7 @@ function classifyMAS(v: number): string {
   return (MAS_TIERS.find(t => v <= t.max) ?? MAS_TIERS[MAS_TIERS.length - 1]).label;
 }
 
-function SpeedInsightBox({ rows, gradeMap, stageMap }: { rows: SpeedCustomRow[]; gradeMap: Map<string, string>; stageMap: Map<string, string | null> }) {
+function SpeedInsightBox({ rows, gradeMap, stageMap }: { rows: SpeedChartRow[]; gradeMap: Map<string, string>; stageMap: Map<string, string | null> }) {
   const masInsight = useMemo(() => {
     const tierCounts = new Map<string, number>();
     rows.forEach(r => tierCounts.set(classifyMAS(r.mas), (tierCounts.get(classifyMAS(r.mas)) ?? 0) + 1));
@@ -995,26 +996,45 @@ function SpeedInsightBox({ rows, gradeMap, stageMap }: { rows: SpeedCustomRow[];
   );
 }
 
-function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomRow[]; players: Player[]; maturityRows: MaturityRow[] }) {
-  const [mode, setMode] = useState<GroupMode>('전체');
-  const [subValue, setSubValue] = useState<string>('');
+function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomTestRow[]; players: Player[]; maturityRows: MaturityRow[] }) {
+  const [filters, setFilters] = useState<SpeedFilters>(EMPTY_FILTERS);
 
   const gradeMap = useMemo(() => new Map(players.map(p => [p.id, p.grade as string])), [players]);
   const stageMap = useMemo(() => new Map(maturityRows.map(r => [r.player_id, r.maturity_stage])), [maturityRows]);
 
-  const subOptions = useMemo(() => {
-    if (mode === '학년') return GRADE_ORDER.filter(g => rows.some(r => gradeMap.get(r.player_id) === g));
-    if (mode === '포지션') return POSITION_ORDER.filter(pos => rows.some(r => r.position === pos));
-    if (mode === '성숙도') return STAGE_ORDER.filter(s => rows.some(r => stageMap.get(r.player_id) === s));
-    return [];
-  }, [mode, rows, gradeMap, stageMap]);
+  // MAS·MSS 가 모두 있는 행만 비교 대상이다(둘 중 하나만 있으면 Zone 도 못 만든다).
+  const usable = useMemo(
+    () => rows.filter(r => r.mas != null && r.mss != null) as (SpeedCustomTestRow & { mas: number; mss: number })[],
+    [rows]);
 
-  const activeSubValue = subOptions.includes(subValue) ? subValue : (subOptions[0] ?? '');
+  const roundOptions = useMemo(() => {
+    const rs = [...new Set(usable.map(r => r.test_round).filter((r): r is string => r != null))];
+    return rs.sort((a, b) => b.localeCompare(a));
+  }, [usable]);
 
-  const filtered = useMemo(() => {
-    if (mode === '전체') return rows;
-    return rows.filter(r => groupKey(mode, r, gradeMap, stageMap) === activeSubValue);
-  }, [mode, activeSubValue, rows, gradeMap, stageMap]);
+  // 차수를 고르면 그 회차 기록, '전체'면 선수별 역대 최고(= 기존 동작)를 쓴다.
+  const perPlayer = useMemo(() => {
+    const scoped = filters.차수 === ALL ? usable : usable.filter(r => r.test_round === filters.차수);
+    const best = new Map<string, SpeedCustomTestRow & { mas: number; mss: number }>();
+    for (const r of scoped) {
+      const prev = best.get(r.player_id);
+      if (!prev || r.mas > prev.mas) best.set(r.player_id, r);
+    }
+    return [...best.values()];
+  }, [usable, filters.차수]);
+
+  const optionsFor = (key: keyof SpeedFilters): string[] => {
+    if (key === '차수') return roundOptions;
+    if (key === '학년') return GRADE_ORDER.filter(g => perPlayer.some(r => gradeMap.get(r.player_id) === g));
+    if (key === '포지션') return POSITION_ORDER.filter(pos => perPlayer.some(r => r.position === pos));
+    return STAGE_ORDER.filter(st => perPlayer.some(r => stageMap.get(r.player_id) === st));
+  };
+
+  const filtered = useMemo(() => perPlayer.filter(r =>
+    (filters.학년 === ALL || gradeMap.get(r.player_id) === filters.학년) &&
+    (filters.포지션 === ALL || r.position === filters.포지션) &&
+    (filters.성숙도 === ALL || stageMap.get(r.player_id) === filters.성숙도)
+  ), [perPlayer, filters, gradeMap, stageMap]);
 
   const masAvg = filtered.length ? filtered.reduce((s, r) => s + r.mas, 0) / filtered.length : 0;
   const mssAvg = filtered.length ? filtered.reduce((s, r) => s + r.mss, 0) / filtered.length : 0;
@@ -1037,17 +1057,24 @@ function SpeedCustomCharts({ rows, players, maturityRows }: { rows: SpeedCustomR
 
   return (
     <div className="flex flex-col gap-5">
-      <SpeedInsightBox rows={rows} gradeMap={gradeMap} stageMap={stageMap} />
+      <SpeedInsightBox rows={perPlayer} gradeMap={gradeMap} stageMap={stageMap} />
 
       <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
-          {GROUP_MODES.map(m => groupTabBtn(m, mode === m, () => setMode(m)))}
-        </div>
-        {mode !== '전체' && (
-          <div className="flex gap-2 flex-wrap">
-            {subOptions.map(v => groupTabBtn(v, activeSubValue === v, () => setSubValue(v)))}
-          </div>
-        )}
+        {(['차수', '학년', '포지션', '성숙도'] as (keyof SpeedFilters)[]).map(key => {
+          const opts = optionsFor(key);
+          if (opts.length === 0) return null;
+          return (
+            <div key={key} className="flex gap-2 flex-wrap items-center">
+              <span className="text-xs text-text-disabled w-12 shrink-0" style={{ fontFamily: 'var(--font-data)' }}>{key}</span>
+              {groupTabBtn(ALL, filters[key] === ALL, () => setFilters(f => ({ ...f, [key]: ALL })))}
+              {opts.map(v => groupTabBtn(
+                key === '차수' ? `${v}차` : v,
+                filters[key] === v,
+                () => setFilters(f => ({ ...f, [key]: v })),
+              ))}
+            </div>
+          );
+        })}
       </div>
 
       {filtered.length === 0 ? (
@@ -1340,7 +1367,7 @@ export function PhysicalOverviewPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [allRecords, setAllRecords] = useState<PhysicalTestRow[]>([]);
   const [maturityRows, setMaturityRows] = useState<MaturityRow[]>([]);
-  const [speedCustomRows, setSpeedCustomRows] = useState<SpeedCustomRow[]>([]);
+  const [speedCustomRows, setSpeedCustomRows] = useState<SpeedCustomTestRow[]>([]);
   const [thresholds, setThresholds] = useState<ValdThreshold[]>([]);
   const [bodyRows, setBodyRows] = useState<BodyCompositionRow[]>([]);
   const [gradeFilter, setGradeFilter] = useState<string>(VALD_GRADES[0]);
@@ -1353,7 +1380,7 @@ export function PhysicalOverviewPage() {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords(), fetchSpeedCustomRecords(), fetchValdThresholds(), fetchBodyCompositionRecords()])
+    Promise.all([fetchAllPlayers(), fetchPhysicalTestRecords(), fetchMaturityRecords(), fetchSpeedCustomTestRows(), fetchValdThresholds(), fetchBodyCompositionRecords()])
       .then(([p, records, maturity, speed, th, body]) => {
         setPlayers(p);
         setAllRecords(records);

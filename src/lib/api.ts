@@ -3559,6 +3559,83 @@ export async function fetchSpeedCustomRecords(): Promise<SpeedCustomRow[]> {
   }).sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
 }
 
+// ── MAS/MSS 차수별 원본 기록 ────────────────────────────────────────────
+// player_speed_zones 뷰는 선수당 역대 최고값 1행으로 접기 때문에 차수별 추이를 볼 수 없다.
+// 로우 데이터·차수 필터는 speed_custom_test 원본을 그대로 읽는다.
+export interface SpeedCustomTestRow {
+  id: string;
+  player_id: string;
+  player_name: string;
+  jersey_number: number | null;
+  position: string | null;
+  test_date: string;
+  test_round: string | null;
+  mas: number | null;
+  mss: number | null;
+  asr: number | null;
+  zone1_mas60: number | null;
+  zone2_mas80: number | null;
+  zone3_mas100: number | null;
+  zone4_asr20: number | null;
+  zone5_mss80: number | null;
+}
+
+// Zone 공식은 player_speed_zones 뷰와 같다. MAS·MSS 둘 중 하나라도 없으면 구간을 만들지 않는다.
+export function speedZones(mas: number | null, mss: number | null) {
+  if (mas == null || mss == null) {
+    return { asr: null, zone1_mas60: null, zone2_mas80: null, zone3_mas100: null, zone4_asr20: null, zone5_mss80: null };
+  }
+  const asr = mss - mas;
+  return {
+    asr,
+    zone1_mas60: mas * 0.6,
+    zone2_mas80: mas * 0.8,
+    zone3_mas100: mas,
+    zone4_asr20: mas + asr * 0.2,
+    zone5_mss80: mss * 0.8,
+  };
+}
+
+export async function fetchSpeedCustomTestRows(): Promise<SpeedCustomTestRow[]> {
+  const client = requireSupabase();
+  const { data: players } = await client.from('players').select('id, name, jersey_number, position');
+  const playerMap = new Map(((players as R[]) ?? []).map(p => [p.id as string, p]));
+
+  const { data, error } = await client
+    .from('speed_custom_test')
+    .select('id, player_id, test_date, test_round, mas_value, max_speed')
+    .order('test_date', { ascending: false });
+  if (error) throw error;
+
+  return ((data as R[]) ?? []).map(r => {
+    const player = playerMap.get(r.player_id as string);
+    const mas = r.mas_value != null ? Number(r.mas_value) : null;
+    const mss = r.max_speed != null ? Number(r.max_speed) : null;
+    return {
+      id: r.id as string,
+      player_id: r.player_id as string,
+      player_name: (player?.name as string) ?? '',
+      jersey_number: player?.jersey_number as number ?? null,
+      position: player?.position as string ?? null,
+      test_date: r.test_date as string,
+      test_round: r.test_round as string ?? null,
+      mas,
+      mss,
+      ...speedZones(mas, mss),
+    };
+  });
+}
+
+// 로우 데이터 표에서 특정 차수의 값을 고친다 (선수 단위 override 가 아니라 그 회차 기록 자체).
+export async function updateSpeedCustomTestRow(id: string, mas: number | null, mss: number | null): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('speed_custom_test')
+    .update({ mas_value: mas, max_speed: mss })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // 선수의 MAS/MSS를 직접 수정 (player_speed_zones 뷰가 override 값을 우선 반영해 속도 구간에 즉시 반영됨)
 export async function updateSpeedCustomOverride(playerId: string, masValue: number, maxSpeed: number): Promise<void> {
   const client = requireSupabase();

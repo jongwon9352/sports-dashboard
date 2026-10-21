@@ -4,11 +4,11 @@ import {
 } from 'recharts';
 import {
   fetchPhysicalTestRecords, upsertPhysicalTestRecord, fetchAllPlayers,
-  fetchBodyCompositionRecords, syncBodyCompositionFromGoogleSheet, fetchSpeedCustomRecords, updateSpeedCustomOverride,
+  fetchBodyCompositionRecords, syncBodyCompositionFromGoogleSheet, fetchSpeedCustomTestRows, updateSpeedCustomTestRow, speedZones,
   fetchMaturityRecords, syncMaturityFromGoogleSheet, clearMaturityData,
   fetchKhamisRocheCoefficients, fetchValdThresholds, upsertValdThresholds, computeValdValue,
   VALD_METRIC_DEFS, VALD_GRADES,
-  type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomRow, type MaturityRow,
+  type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomTestRow, type MaturityRow,
   type KhamisRocheCoefficient, type ValdThreshold,
 } from '../lib/api';
 import type { Player } from '../types';
@@ -830,39 +830,37 @@ function BodyCompositionTab() {
 }
 
 // ── Speed custom 탭 ────────────────────────────────────────────────────
-function recomputeZones(mas: number, mss: number) {
-  const asr = mss - mas;
-  return {
-    zone1_mas60: mas * 0.6,
-    zone2_mas80: mas * 0.8,
-    zone3_mas100: mas,
-    zone4_asr20: mas + asr * 0.2,
-    zone5_mss80: mss * 0.8,
-  };
-}
-
 function SpeedCustomTab() {
-  const [data, setData] = useState<SpeedCustomRow[]>([]);
+  const [data, setData] = useState<SpeedCustomTestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedRound, setSelectedRound] = useState('전체');
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchSpeedCustomRecords().then(setData).finally(() => setLoading(false));
+    fetchSpeedCustomTestRows().then(setData).finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
-    return data.filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()));
-  }, [data, search]);
+  // 차수(test_round) 목록: 최신순, "전체" 포함 — VALD 탭과 같은 방식
+  const roundOptions = useMemo(() => {
+    const rounds = [...new Set(data.map(r => r.test_round).filter((r): r is string => r != null))];
+    rounds.sort((a, b) => b.localeCompare(a));
+    return ['전체', ...rounds];
+  }, [data]);
 
-  const handleSave = async (playerId: string, mas: number, mss: number) => {
-    if (!Number.isFinite(mas) || !Number.isFinite(mss) || mas <= 0 || mss <= 0) return;
-    setSavingId(playerId);
+  const filtered = useMemo(() => {
+    return data
+      .filter(row => !search || row.player_name.toLowerCase().includes(search.toLowerCase()))
+      .filter(row => selectedRound === '전체' || row.test_round === selectedRound)
+      .sort((a, b) => (b.test_round ?? '').localeCompare(a.test_round ?? '')
+        || (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
+  }, [data, search, selectedRound]);
+
+  const handleSave = async (row: SpeedCustomTestRow, mas: number | null, mss: number | null) => {
+    setSavingId(row.id);
     try {
-      await updateSpeedCustomOverride(playerId, mas, mss);
-      setData(prev => prev.map(row => row.player_id === playerId
-        ? { ...row, mas, mss, ...recomputeZones(mas, mss) }
-        : row));
+      await updateSpeedCustomTestRow(row.id, mas, mss);
+      setData(prev => prev.map(r => r.id === row.id ? { ...r, mas, mss, ...speedZones(mas, mss) } : r));
     } catch {
       alert('MAS/MSS 저장 중 오류가 발생했습니다.');
     } finally {
@@ -870,18 +868,32 @@ function SpeedCustomTab() {
     }
   };
 
+  const zone = (lo: number | null, hi: number | null) =>
+    lo == null || hi == null ? '—' : `${lo.toFixed(1)} ~ ${hi.toFixed(1)}`;
+
   return (
     <>
-      <input
-        type="text"
-        placeholder="이름 검색..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px] mb-2"
-        style={{ fontFamily: 'var(--font-data)' }}
-      />
+      <div className="flex items-center gap-3 flex-wrap mb-2">
+        <input
+          type="text"
+          placeholder="이름 검색..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400 w-[140px]"
+          style={{ fontFamily: 'var(--font-data)' }}
+        />
+        <select
+          value={selectedRound}
+          onChange={e => setSelectedRound(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-md border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
+        >
+          {roundOptions.map(r => <option key={r} value={r}>{r === '전체' ? '전체' : `${r}차`}</option>)}
+        </select>
+      </div>
       <p className="text-[11px] text-text-secondary mb-3">
-        역대 최고 MAS·MSS 기록 기준 커스텀 속도 Zone (Zone1 MAS60% · Zone2 MAS80% · Zone3 MAS100% · Zone4 ASR20% · Zone5 MSS80%). MAS/MSS 값을 직접 수정하면 속도 구간이 자동으로 재계산됩니다.
+        차수별 MAS·MSS 측정 기록입니다. 속도 Zone은 그 차수 값으로 계산됩니다
+        (Zone1 MAS60% · Zone2 MAS80% · Zone3 MAS100% · Zone4 ASR20% · Zone5 MSS80%).
+        MAS/MSS를 고치면 그 차수 기록이 바뀌고 Zone이 다시 계산됩니다.
       </p>
 
       {loading ? (
@@ -894,32 +906,30 @@ function SpeedCustomTab() {
             <table className="w-full text-sm border-collapse" style={{ fontFamily: 'var(--font-data)', minWidth: 'max-content' }}>
               <thead>
                 <tr className="border-b border-surface-secondary">
-                  {['이름', '포지션', '최고속도', '1구간', '2구간', '3구간', '4구간', '5구간', '6구간', 'MAS', 'MSS'].map(h => (
-                    <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">{h}</th>
+                  {['차수', '이름', '포지션', '측정일', 'MAS', 'MSS', 'ASR',
+                    'Zone1', 'Zone2', 'Zone3', 'Zone4', 'Zone5'].map(h => (
+                    <th key={h} className="px-2.5 py-2.5 text-left text-[11px] text-text-secondary font-medium whitespace-nowrap sticky top-0 bg-surface">
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(row => (
-                  <tr key={row.player_id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                  <tr key={row.id} className="border-b border-surface-secondary/50 hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-2.5 py-2 whitespace-nowrap font-medium text-cyan-400">{row.test_round ?? '—'}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap font-medium">{row.player_name}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{row.position ?? '—'}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.mss.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">0 ~ {row.zone1_mas60.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone1_mas60.toFixed(1)} ~ {row.zone2_mas80.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone2_mas80.toFixed(1)} ~ {row.zone3_mas100.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone3_mas100.toFixed(1)} ~ {row.zone4_asr20.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone4_asr20.toFixed(1)} ~ {row.zone5_mss80.toFixed(1)}</td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{row.zone5_mss80.toFixed(1)} ~</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.test_date}</td>
                     <td className="px-2.5 py-2 whitespace-nowrap">
                       <input
                         type="number"
                         step="0.1"
-                        defaultValue={row.mas}
-                        disabled={savingId === row.player_id}
+                        defaultValue={row.mas ?? ''}
+                        disabled={savingId === row.id}
                         onBlur={e => {
-                          const v = parseFloat(e.target.value);
-                          if (v !== row.mas) handleSave(row.player_id, v, row.mss);
+                          const v = e.target.value === '' ? null : parseFloat(e.target.value);
+                          if (v !== row.mas) handleSave(row, Number.isFinite(v as number) ? v : null, row.mss);
                         }}
                         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                         className="w-16 px-1.5 py-1 text-sm rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
@@ -930,17 +940,23 @@ function SpeedCustomTab() {
                       <input
                         type="number"
                         step="0.1"
-                        defaultValue={row.mss}
-                        disabled={savingId === row.player_id}
+                        defaultValue={row.mss ?? ''}
+                        disabled={savingId === row.id}
                         onBlur={e => {
-                          const v = parseFloat(e.target.value);
-                          if (v !== row.mss) handleSave(row.player_id, row.mas, v);
+                          const v = e.target.value === '' ? null : parseFloat(e.target.value);
+                          if (v !== row.mss) handleSave(row, row.mas, Number.isFinite(v as number) ? v : null);
                         }}
                         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                         className="w-16 px-1.5 py-1 text-sm rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
                         style={{ fontFamily: 'var(--font-data)' }}
                       />
                     </td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{row.asr != null ? row.asr.toFixed(1) : '—'}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{zone(0, row.zone1_mas60)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{zone(row.zone1_mas60, row.zone2_mas80)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{zone(row.zone2_mas80, row.zone3_mas100)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{zone(row.zone3_mas100, row.zone4_asr20)}</td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{zone(row.zone4_asr20, row.zone5_mss80)}</td>
                   </tr>
                 ))}
               </tbody>
