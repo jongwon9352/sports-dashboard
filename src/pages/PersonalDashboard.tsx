@@ -1278,6 +1278,8 @@ function PrescriptionSection({ record, history, grade, thresholds, teamScores, m
         측정값에서 발견한 것과 그에 대한 운동을 한 항목으로 묶어 위험도 순으로 보여줍니다.
       </p>
 
+      {/* 성숙도 수치의 단일 출처는 위 MaturitySection 이다. 이 바는 '처방 강도의 전제'로서
+          단계만 싣는다 — 성장 도달률까지 반복하면 한 화면에 같은 값이 세 번 나온다. */}
       {stage && (
         <div className="flex gap-2 flex-wrap items-center rounded-lg px-3 py-2.5 mb-4" style={{ background: 'var(--color-surface-secondary)' }}>
           <span className="text-[12px] font-bold">신체 성숙도</span>
@@ -1286,7 +1288,7 @@ function PrescriptionSection({ record, history, grade, thresholds, teamScores, m
             color: MATURITY_STAGE_LABEL[stage]?.text ?? '#666',
           }}>{MATURITY_STAGE_LABEL[stage]?.label ?? stage}</span>
           <span className="text-[11.5px] text-text-secondary">
-            {maturity?.pah_percent != null ? `· 성장 도달률 ${maturity.pah_percent}% ` : ''}· {stageNote[stage] ?? ''} 아래 처방 강도의 전제입니다.
+            · {stageNote[stage] ?? ''} 아래 처방 강도의 전제입니다.
           </span>
           <span className="text-[10px] text-text-secondary w-full">근거 · Lloyd &amp; Oliver 2012 Youth Physical Development 모델</span>
         </div>
