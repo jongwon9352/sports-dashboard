@@ -4,7 +4,7 @@ import {
   BarChart, Bar, Legend, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  Cell, LabelList, ReferenceArea, ReferenceLine,
+  Cell, LabelList, ReferenceLine,
 } from 'recharts';
 import type { RenderableText } from 'recharts/types/component/Text';
 import {
@@ -663,14 +663,13 @@ function ValdSection({ record }: { record: PhysicalTestRow | null }) {
 // VALD 차수별 추이. 종목마다 측정된 차수가 달라서(ham_iso 는 26_1 부터, cod_run 은 빠진 차수가 있다)
 // 그 선수에게 값이 2개 차수 이상 있는 종목만 그린다 — 점 하나짜리 빈 차트를 14개 늘어놓지 않기 위해서다.
 // 좌우가 있는 종목은 한 차트에 두 선으로 겹쳐 불균형이 시간에 따라 어떻게 변하는지 같이 보이게 한다.
-function ValdTrendSection({ history, thresholds, grade }: {
-  history: PhysicalTestRow[]; thresholds: ValdThreshold[]; grade: string | null;
+function ValdTrendSection({ history, thresholds }: {
+  history: PhysicalTestRow[]; thresholds: ValdThreshold[];
 }) {
-  // 팀 대시보드 VALD 차트와 같은 기준: 학년별 임계값이 있으면 그걸 쓰고 없으면 '전체'로 떨어진다.
+  // 임계치는 항목별 '전체' 값을 쓴다. 학년별 값은 좌우 평균 기준이라 좌/우를 각각 그리는
+  // 이 차트와 축이 맞지 않아 구간이 바닥에 눌렸다.
   const thresholdFor = (key: string) =>
-    thresholds.find(x => x.metric_key === key && x.grade === grade)
-    ?? thresholds.find(x => x.metric_key === key && x.grade === '전체')
-    ?? null;
+    thresholds.find(x => x.metric_key === key && x.grade === '전체') ?? null;
   // 차수 라벨이 있는 측정만, 오름차순으로 (차수 없는 2025 행은 VALD 값이 아예 없다)
   const rounds = [...history]
     .filter(r => r.test_round != null)
@@ -702,15 +701,13 @@ function ValdTrendSection({ history, thresholds, grade }: {
         2개 차수 이상 측정된 종목만 표시합니다. 좌우 측정 종목은 한 차트에 겹쳐 그려 불균형 변화를 함께 봅니다.
       </p>
       <p className="text-[11px] text-text-secondary mb-3 flex gap-3 flex-wrap items-center">
-        <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-2.5 inline-block rounded-sm" style={{ background: colors.green, opacity: 0.25 }} />
-          팀 임계 구간(최저~최대)
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-0.5 inline-block" style={{ background: colors.navy }} />
-          팀 평균
-        </span>
-        <span className="text-text-disabled">· {grade ?? '전체'} 기준 · 데이터 관리 &gt; 피지컬에서 설정</span>
+        {([['최대', colors.green], ['평균', colors.navy], ['최저', colors.wine]] as const).map(([label, c]) => (
+          <span key={label} className="inline-flex items-center gap-1">
+            <span className="w-3 h-0.5 inline-block" style={{ background: c }} />
+            {label}
+          </span>
+        ))}
+        <span className="text-text-secondary">· 항목별 전체 기준 · 데이터 관리 &gt; 피지컬 데이터에서 설정</span>
       </p>
       <div className="grid grid-cols-3 gap-3 stat-grid-4">
         {charts.map(({ def, data, isLR, th }) => {
@@ -730,11 +727,14 @@ function ValdTrendSection({ history, thresholds, grade }: {
                   <XAxis dataKey="label" tick={{ fontSize: 9 }} />
                   <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
                   <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-                  {th?.min_value != null && th?.max_value != null && (
-                    <ReferenceArea y1={th.min_value} y2={th.max_value} fill={colors.green} fillOpacity={0.1} />
+                  {th?.max_value != null && (
+                    <ReferenceLine y={th.max_value} stroke={colors.green} strokeWidth={1} strokeDasharray="4 3" />
                   )}
                   {th?.avg_value != null && (
-                    <ReferenceLine y={th.avg_value} stroke={colors.navy} strokeWidth={1.5} strokeDasharray="5 3" />
+                    <ReferenceLine y={th.avg_value} stroke={colors.navy} strokeWidth={1} strokeDasharray="4 3" />
+                  )}
+                  {th?.min_value != null && (
+                    <ReferenceLine y={th.min_value} stroke={colors.wine} strokeWidth={1} strokeDasharray="4 3" />
                   )}
                   {isLR ? (
                     <>
@@ -1442,7 +1442,7 @@ function PhysicalTabPanel({ record, history, bodyComp, maturity, speed, speedHis
       <section id="sec-month"><MonthlyChangeCard bodyComp={bodyComp} maturity={maturity} /></section>
       <section id="sec-maturity"><MaturitySection row={maturity} /></section>
       <section id="sec-vald"><ValdSection record={record} /></section>
-      <section id="sec-valdtrend"><ValdTrendSection history={history} thresholds={thresholds} grade={grade} /></section>
+      <section id="sec-valdtrend"><ValdTrendSection history={history} thresholds={thresholds} /></section>
       <section id="sec-speed"><SpeedCustomSection row={speed} history={speedHistory} /></section>
       <section id="sec-rx"><PrescriptionSection record={record} history={history} grade={grade} thresholds={thresholds}
         teamScores={teamScores} maturity={maturity} speed={speed} /></section>
