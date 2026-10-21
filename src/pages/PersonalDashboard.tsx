@@ -1377,6 +1377,32 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
   );
 }
 
+const PHYSICAL_SECTIONS: { id: string; label: string }[] = [
+  { id: 'sec-radar', label: '프로필' },
+  { id: 'sec-body', label: '체성분' },
+  { id: 'sec-month', label: '이달의 변화' },
+  { id: 'sec-maturity', label: '성숙도' },
+  { id: 'sec-vald', label: 'VALD' },
+  { id: 'sec-valdtrend', label: 'VALD 추이' },
+  { id: 'sec-speed', label: 'Speed' },
+  { id: 'sec-rx', label: '운동 처방' },
+];
+
+function PhysicalSectionIndex() {
+  return (
+    <nav aria-label="피지컬 섹션" className="sticky top-[72px] z-30 -mx-1 px-1 py-2 bg-bg/95 backdrop-blur-sm">
+      <div className="flex gap-1.5 flex-wrap">
+        {PHYSICAL_SECTIONS.map(s => (
+          <a key={s.id} href={`#${s.id}`}
+            className="text-[11px] px-2.5 py-1 rounded-full border border-surface-secondary bg-surface text-text-secondary hover:border-brand hover:text-brand transition-colors">
+            {s.label}
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 function PhysicalTabPanel({ record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
   record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[];
   maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
@@ -1384,15 +1410,18 @@ function PhysicalTabPanel({ record, history, bodyComp, maturity, speed, speedHis
 }) {
   return (
     <div className="space-y-4">
-      <PhysicalRadarSection record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
-      <BodyCompositionSection rows={bodyComp} />
-      <MonthlyChangeCard bodyComp={bodyComp} maturity={maturity} />
-      <MaturitySection row={maturity} />
-      <ValdSection record={record} />
-      <ValdTrendSection history={history} />
-      <SpeedCustomSection row={speed} history={speedHistory} />
-      <PrescriptionSection record={record} history={history} grade={grade} thresholds={thresholds}
-        teamScores={teamScores} maturity={maturity} speed={speed} />
+      {/* 이 탭은 6화면 분량이라 인페이지 길잡이가 없으면 맨 아래 운동 처방에 뭐가 있는지 모른 채
+          스크롤해야 한다. 섹션 칩으로 목차와 이동을 함께 준다. */}
+      <PhysicalSectionIndex />
+      <section id="sec-radar"><PhysicalRadarSection record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} /></section>
+      <section id="sec-body"><BodyCompositionSection rows={bodyComp} /></section>
+      <section id="sec-month"><MonthlyChangeCard bodyComp={bodyComp} maturity={maturity} /></section>
+      <section id="sec-maturity"><MaturitySection row={maturity} /></section>
+      <section id="sec-vald"><ValdSection record={record} /></section>
+      <section id="sec-valdtrend"><ValdTrendSection history={history} /></section>
+      <section id="sec-speed"><SpeedCustomSection row={speed} history={speedHistory} /></section>
+      <section id="sec-rx"><PrescriptionSection record={record} history={history} grade={grade} thresholds={thresholds}
+        teamScores={teamScores} maturity={maturity} speed={speed} /></section>
     </div>
   );
 }

@@ -171,11 +171,14 @@ body {
   padding: 20px;
   box-shadow: var(--shadow-1);
 }
+/* 카드 제목은 긴 화면에서 유일한 길잡이다. 10px/text-disabled 는 본문 배경에서 3.36:1 로
+   AA(4.5:1) 미달이라, 페이지에서 가장 약한 글자가 랜드마크 역할을 하고 있었다.
+   트래킹 1.5px 는 영문 대문자 관습인데 한글 제목에서는 단어 경계를 흐린다. */
 .chart-title {
   font-family: var(--font-data);
-  font-size: 10px;
-  color: var(--color-text-disabled);
-  letter-spacing: 1.5px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.8px;
   text-transform: uppercase;
   margin-bottom: 16px;
 }
@@ -351,4 +354,9 @@ body {
 }
 .pdf-mode input[type="text"][placeholder="장소 입력"] {
   display: none !important;
+}
+
+/* 섹션 앵커로 이동할 때 sticky 상단바(72px)와 섹션 칩 줄 아래로 내려가지 않도록 여백을 둔다. */
+section[id^="sec-"] {
+  scroll-margin-top: 124px;
 }
