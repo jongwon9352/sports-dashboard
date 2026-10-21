@@ -660,6 +660,77 @@ function ValdSection({ record }: { record: PhysicalTestRow | null }) {
   );
 }
 
+// VALD 차수별 추이. 종목마다 측정된 차수가 달라서(ham_iso 는 26_1 부터, cod_run 은 빠진 차수가 있다)
+// 그 선수에게 값이 2개 차수 이상 있는 종목만 그린다 — 점 하나짜리 빈 차트를 14개 늘어놓지 않기 위해서다.
+// 좌우가 있는 종목은 한 차트에 두 선으로 겹쳐 불균형이 시간에 따라 어떻게 변하는지 같이 보이게 한다.
+function ValdTrendSection({ history }: { history: PhysicalTestRow[] }) {
+  // 차수 라벨이 있는 측정만, 오름차순으로 (차수 없는 2025 행은 VALD 값이 아예 없다)
+  const rounds = [...history]
+    .filter(r => r.test_round != null)
+    .sort((a, b) => a.test_date.localeCompare(b.test_date));
+
+  const charts = VALD_METRIC_DEFS.map(def => {
+    const acc = VALD_ACCESSORS[def.key];
+    const isLR = VALD_LR_KEYS.includes(def.key) && acc?.left && acc?.right;
+    const data = rounds.map(r => ({
+      label: r.test_round as string,
+      left: isLR ? acc.left!(r) : null,
+      right: isLR ? acc.right!(r) : null,
+      value: isLR ? null : computeValdValue(def.key, r),
+    }));
+    const count = isLR
+      ? data.filter(d => d.left != null || d.right != null).length
+      : data.filter(d => d.value != null).length;
+    return { def, data, isLR, count };
+  }).filter(c => c.count >= 2);
+
+  if (charts.length === 0) return null;
+
+  const digits = (unit: string, key: string) => unit === 'sec' ? 3 : key === 'eur' ? 2 : 1;
+
+  return (
+    <div className="chart-card">
+      <div className="chart-title">VALD 차수별 추이</div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        2개 차수 이상 측정된 종목만 표시합니다. 좌우 측정 종목은 한 차트에 겹쳐 그려 불균형 변화를 함께 봅니다.
+      </p>
+      <div className="grid grid-cols-3 gap-3 stat-grid-4">
+        {charts.map(({ def, data, isLR }) => {
+          const nums = data.flatMap(d => isLR ? [d.left, d.right] : [d.value]).filter((v): v is number => v != null);
+          const last = nums[nums.length - 1];
+          return (
+            <div key={def.key} className="rounded-lg border border-surface-secondary p-2.5">
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-[11px] font-medium truncate">{def.label}</span>
+                <span className="text-sm font-bold ml-auto" style={{ fontFamily: 'var(--font-data)' }}>
+                  {last != null ? `${last.toFixed(digits(def.unit, def.key))}${def.unit}` : '—'}
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={data}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 9 }} />
+                  <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
+                  <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
+                  {isLR ? (
+                    <>
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Line type="monotone" dataKey="left" name="좌" stroke={colors.navy} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
+                      <Line type="monotone" dataKey="right" name="우" stroke={colors.danger} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
+                    </>
+                  ) : (
+                    <Line type="monotone" dataKey="value" name={def.label} stroke={colors.green} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SpeedCustomSection({ row, history }: { row: SpeedCustomRow | null; history: SpeedCustomTestRow[] }) {
   // 차수별 추이는 오름차순으로 본다(표·차트 모두 1차 → 최신 순).
   const rounds = [...history].sort((a, b) => a.test_date.localeCompare(b.test_date));
@@ -1235,6 +1306,7 @@ function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, 
       <MonthlyChangeLeaderboard allBodyComp={allBodyComp} selectedId={selectedId} />
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
+      <ValdTrendSection history={history} />
       <SpeedCustomSection row={speed} history={speedHistory} />
       <PhysicalInsightBox record={record} maturity={maturity} speed={speed} />
     </div>
