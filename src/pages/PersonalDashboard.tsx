@@ -817,77 +817,6 @@ function classifyMAS(v: number): string {
   return (MAS_TIERS.find(t => v <= t.max) ?? MAS_TIERS[MAS_TIERS.length - 1]).label;
 }
 
-function InsightSection({ title, items, emptyText }: { title: string; items: { text: string; level: 'warning' | 'note' }[]; emptyText: string }) {
-  return (
-    <div>
-      <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">{title}</div>
-      {items.length === 0 ? (
-        <p className="text-sm text-text-secondary">✅ {emptyText}</p>
-      ) : (
-        <ul className="space-y-1">
-          {items.map((it, i) => (
-            <li key={i} className={`text-sm ${it.level === 'warning' ? 'text-red-700' : 'text-amber-700'}`}>
-              {it.level === 'warning' ? '⚠️ ' : '· '}{it.text}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function PhysicalInsightBox({ record, maturity, speed }: { record: PhysicalTestRow | null; maturity: MaturityRow | null; speed: SpeedCustomRow | null }) {
-  // 1. VALD (EUR, 좌우 불균형)
-  const valdItems: { text: string; level: 'warning' | 'note' }[] = [];
-  if (record) {
-    for (const key of VALD_LR_KEYS) {
-      const acc = VALD_ACCESSORS[key];
-      const def = VALD_METRIC_DEFS.find(d => d.key === key);
-      if (!acc.left || !acc.right || !def) continue;
-      const l = acc.left(record);
-      const r = acc.right(record);
-      if (l == null || r == null) continue;
-      const imb = imbalancePercent(l, r);
-      if (Math.abs(imb) >= 10) valdItems.push({ text: `${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 부상 위험 높음, 편측 보강 훈련 필요`, level: 'warning' });
-      else if (Math.abs(imb) >= 5) valdItems.push({ text: `${def.label} 좌우 불균형 ${imb.toFixed(1)}% — 주의 관찰`, level: 'note' });
-    }
-    const eur = computeValdValue('eur', record);
-    if (eur != null) {
-      if (eur <= 1.1) valdItems.push({ text: `EUR ${eur.toFixed(2)} — 폭발적인 힘을 위한 훈련(플라이오메트릭) 필요`, level: 'note' });
-      else if (eur >= 1.15) valdItems.push({ text: `EUR ${eur.toFixed(2)} — 최대근력 훈련 비중 확대 필요`, level: 'note' });
-      else valdItems.push({ text: `EUR ${eur.toFixed(2)} — 현재 훈련 비율 유지`, level: 'note' });
-    }
-  }
-
-  // 2. Speed custom
-  const speedItems: { text: string; level: 'warning' | 'note' }[] = [];
-  if (speed) {
-    const masTier = classifyMAS(speed.mas);
-    speedItems.push({ text: `MAS ${speed.mas}km/h — ${masTier} 수준`, level: (masTier === '매우 낮음' || masTier === '낮음') ? 'warning' : 'note' });
-    speedItems.push({ text: `MSS ${speed.mss}km/h — Zone5(MSS 80%) 기준 ${speed.zone5_mss80}km/h 이상에서 최고속주 훈련 권장`, level: 'note' });
-  }
-
-  // 3. 신체 성숙도
-  const maturityItems: { text: string; level: 'warning' | 'note' }[] = [];
-  if (maturity?.maturity_stage === '성장 급증기 전') maturityItems.push({ text: 'Pre-PHV(성장 급증기 전) 단계 — 코디네이션·기초 체력 위주 훈련 권장, 고강도 근력 훈련은 신중히 접근', level: 'note' });
-  if (maturity?.maturity_stage === '성장 급증기') maturityItems.push({ text: 'Mid-PHV(성장 급증기) 단계 — 성장통·부상 위험이 높은 시기, 훈련 부하 조절 필요', level: 'note' });
-  if (maturity?.maturity_stage === '성장 급증기 후') maturityItems.push({ text: 'Post-PHV(성장 급증기 후) 단계 — 근력·파워 훈련 비중을 늘려도 되는 시기', level: 'note' });
-  if (maturity?.pah_percent != null) maturityItems.push({ text: `예측 성인 키 도달률 ${maturity.pah_percent}%`, level: 'note' });
-
-  const hasWarning = [...valdItems, ...speedItems, ...maturityItems].some(i => i.level === 'warning');
-
-  return (
-    <div className={`chart-card border ${hasWarning ? 'border-red-200 bg-red-50' : 'border-surface-secondary'}`}>
-      <div className="chart-title !mb-3">운동 처방 솔루션 및 인사이트</div>
-      <div className="space-y-4">
-        <InsightSection title="1. VALD (EUR · 좌우 불균형)" items={valdItems} emptyText="VALD 지표 안정적인 범위입니다." />
-        <InsightSection title="2. Speed Custom" items={speedItems} emptyText="Speed 기록이 없습니다." />
-        <InsightSection title="3. 신체 성숙도" items={maturityItems} emptyText="신체 성숙도 기록이 없습니다." />
-      </div>
-    </div>
-  );
-}
-
 // ── 피지컬 프로필 레이더 차트 (Strength/Power/Speed/Agility/Balance) ──────
 // 데이터 관리에서 입력한 학년별 임계값(vald_thresholds)의 최저~최고 구간을 0~100점으로 환산해 사용한다.
 type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'balance';
@@ -1160,18 +1089,6 @@ function PhysicalRadarSection({ record, history, grade, thresholds, teamScores, 
   );
 }
 
-function AiPrescriptionCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
-  return (
-    <div className="chart-card">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">{icon}</span>
-        <span className="chart-title !mb-0">{title}</span>
-      </div>
-      <div className="space-y-3">{children}</div>
-    </div>
-  );
-}
-
 function ExerciseItem({ ex }: { ex: { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string } }) {
   return (
     <div className="rounded-lg border border-surface-secondary p-3">
@@ -1189,59 +1106,197 @@ function ExerciseItem({ ex }: { ex: { name: string; note: string; sets: string; 
   );
 }
 
-function AiPrescriptionCards({ record, history, grade, thresholds, teamScores }: {
-  record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
-}) {
-  if (!record) return null;
-  const { scores } = computeRadarScores(history, thresholds, grade);
-  const validAxes = RADAR_AXES.filter(a => scores[a.key] != null);
-  const teamAvg = Object.fromEntries(
-    RADAR_AXES.map(a => {
-      const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
-      return [a.key, vals.length > 0 ? vals.reduce((x, y) => x + y, 0) / vals.length : null];
-    }),
-  ) as Record<RadarAxisKey, number | null>;
-  const relativeWorst = [...validAxes]
-    .filter(a => teamAvg[a.key] != null)
-    .sort((a, b) => (scores[a.key]! - teamAvg[a.key]!) - (scores[b.key]! - teamAvg[b.key]!))[0] ?? null;
+// ── 운동 처방 (발견 + 처방 통합) ─────────────────────────────────────────
+// 예전엔 「AI 운동 처방」(운동만)과 「운동 처방 솔루션 및 인사이트」(수치만)가 따로 있어,
+// "Nordic 18% 불균형"과 "Nordic Curl 하세요"를 코치가 머릿속으로 이어야 했다.
+// 여기서는 발견 하나에 그 근거와 처방을 함께 붙이고 위험도 순으로 세운다.
+//
+// 임계값 근거 — 문헌이 뒷받침하는 만큼만 단정한다:
+// · 좌우 비대칭 10%: 복귀 판정·모니터링 기준으로 널리 쓰이지만 부상 '예측' 근거는 약하다
+//   (Bishop et al. 2018 체계적 고찰: 10~15% 역치가 근거 없이 인용되는 경우가 많음.
+//    Green et al. 2018 메타분석: 비대칭 자체의 햄스트링 부상 예측력은 제한적).
+//   그래서 '부상 위험 높음'이 아니라 '모니터링 기준 초과'로 적는다.
+// · Nordic Hamstring: 비대칭과 달리 '예방' 근거는 강하다
+//   (Al Attar et al. 2017 메타분석: NHE 포함 프로그램이 햄스트링 부상 51% 감소, IRR 0.49).
+// · Copenhagen adduction: Harøy et al. 2017 — 엘리트 U19 에서 편심성 고관절 내전근력 향상
+//   (부상 발생률이 아니라 근력 결과). FIFA 11+ 와 함께 서혜부 부상 위험 감소 보고.
+// · EUR: McGuigan et al. 2006 이 제안한 SSC 지표지만 타당성 논란이 있다
+//   (Kozinc et al. 2021 "Questionable Utility of the EUR"; 높은 EUR 이 좋은 탄성보다
+//    나쁜 SJ 를 뜻할 수 있음). 처방 근거가 아니라 참고 수치로만 둔다.
+// · 성숙 단계: Lloyd & Oliver 2012 YPD 모델 — 단계가 처방 강도의 전제라 맨 위에 둔다.
+type Exercise = { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string };
+interface Finding {
+  key: string;
+  level: 'danger' | 'warn' | 'ok';
+  badge: string;
+  title: string;
+  why: string;
+  metric?: string;
+  exercises: Exercise[];
+  ref?: string;
+}
 
-  const worstImbalance = findWorstImbalance(record);
-  const injuryExercises = worstImbalance && worstImbalance.imbalance >= 10
-    ? [...(RADAR_INJURY_EXERCISES[worstImbalance.key] ?? []), FIFA11_EXERCISE]
-    : [FIFA11_EXERCISE];
+const LEVEL_STYLE: Record<Finding['level'], { border: string; bg: string; badge: string }> = {
+  danger: { border: '#F0C9D1', bg: '#FDF4F6', badge: colors.danger },
+  warn:   { border: '#EDE0B8', bg: '#FDFAF0', badge: '#B08A00' },
+  ok:     { border: 'var(--color-surface-secondary)', bg: 'transparent', badge: '#7D8990' },
+};
 
+function FindingCard({ f }: { f: Finding }) {
+  const st = LEVEL_STYLE[f.level];
   return (
-    <div>
-      <div className="text-xs text-text-disabled uppercase tracking-[2px] mb-2" style={{ fontFamily: 'var(--font-data)' }}>AI 운동 처방</div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <AiPrescriptionCard icon="💪" title="보강">
-          {relativeWorst
-            ? RADAR_REINFORCE_EXERCISES[relativeWorst.key].map((ex, i) => <ExerciseItem key={i} ex={ex} />)
-            : <p className="text-sm text-text-secondary">임계값 데이터가 없어 추천할 수 없습니다.</p>}
-        </AiPrescriptionCard>
-        <AiPrescriptionCard icon="🛡️" title="부상 예방">
-          {injuryExercises.map((ex, i) => <ExerciseItem key={i} ex={ex} />)}
-        </AiPrescriptionCard>
-        <AiPrescriptionCard icon="🚀" title="퍼포먼스 향상">
-          <div className="rounded-lg border border-surface-secondary p-3">
-            <div className="flex items-baseline justify-between gap-2 mb-1.5">
-              <span className="text-sm font-bold">포지션별 반응 훈련</span>
-              <span className="text-[11px] text-text-secondary whitespace-nowrap">경기 전술 적용력</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5 mb-1.5">
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">3세트</span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">10분</span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-secondary">중강도</span>
-            </div>
-            <p className="text-[12px] text-text-secondary">경기 데이터가 안정적이라 현재 루틴을 유지하며 전술 적용력을 강화하세요.</p>
-          </div>
-        </AiPrescriptionCard>
+    <div className="rounded-lg overflow-hidden mb-2.5" style={{ border: `1px solid ${st.border}` }}>
+      <div className="flex gap-2.5 items-start p-3" style={{ background: st.bg }}>
+        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded whitespace-nowrap mt-0.5"
+          style={{ background: st.badge, color: f.level === 'ok' ? '#fff' : '#fff' }}>{f.badge}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-bold mb-0.5">{f.title}</p>
+          <p className="text-[11.5px] text-text-secondary">{f.why}</p>
+          {f.metric && (
+            <p className="text-[11px] text-text-disabled mt-0.5" style={{ fontFamily: 'var(--font-data)' }}>{f.metric}</p>
+          )}
+        </div>
       </div>
+      {f.exercises.length > 0 && (
+        <div className="px-3 pt-2.5 pb-3 border-t border-dashed border-surface-secondary">
+          <p className="text-[10.5px] text-text-disabled font-semibold tracking-[1px] mb-2">처방</p>
+          {f.exercises.map((ex, i) => <ExerciseItem key={i} ex={ex} />)}
+        </div>
+      )}
+      {f.ref && <p className="px-3 pb-2 text-[10px] text-text-disabled">근거 · {f.ref}</p>}
     </div>
   );
 }
 
-// 팀 전체 기준 "이달의 변화" TOP 5 (최근 두 달 사이 체중 증가량) — 개인 대시보드에서도 팀 맥락을 참고할 수 있도록 표시
+function PrescriptionSection({ record, history, grade, thresholds, teamScores, maturity, speed }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null;
+  thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
+  maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+}) {
+  const findings: Finding[] = [];
+
+  // 1) 좌우 불균형 — 4종 전부. 10% 이상은 처방까지, 5~10% 는 관찰만(과처방 방지).
+  if (record) {
+    for (const key of VALD_LR_KEYS) {
+      const acc = VALD_ACCESSORS[key];
+      const def = VALD_METRIC_DEFS.find(d => d.key === key);
+      if (!acc.left || !acc.right || !def) continue;
+      const l = acc.left(record), r = acc.right(record);
+      if (l == null || r == null) continue;
+      const imb = Math.abs(imbalancePercent(l, r));
+      if (imb < 5) continue;
+      const weak = l < r ? '좌' : '우';
+      findings.push(imb >= 10 ? {
+        key, level: 'danger', badge: '편측 보강',
+        title: `${def.label} 좌우 불균형 ${imb.toFixed(1)}%`,
+        why: `모니터링 기준(10%)을 넘습니다 — 약한 쪽(${weak}) 보강 대상입니다.`,
+        metric: `좌 ${l.toFixed(1)}${def.unit} · 우 ${r.toFixed(1)}${def.unit}`,
+        exercises: RADAR_INJURY_EXERCISES[key] ?? [],
+        ref: '10% 는 복귀·모니터링 기준. 비대칭 자체의 부상 예측력은 제한적 (Green et al. 2018; Bishop et al. 2018)',
+      } : {
+        key, level: 'warn', badge: '관찰',
+        title: `${def.label} 좌우 불균형 ${imb.toFixed(1)}%`,
+        why: '5~10% 구간입니다. 별도 처방 없이 다음 차수까지 추이를 봅니다.',
+        metric: `좌 ${l.toFixed(1)}${def.unit} · 우 ${r.toFixed(1)}${def.unit}`,
+        exercises: [],
+      });
+    }
+  }
+
+  // 2) 레이더 약점 축 — 팀 평균 대비 격차가 가장 큰 축. 처방에 근거 점수를 같이 보인다.
+  if (record) {
+    const { scores } = computeRadarScores(history, thresholds, grade);
+    const teamAvg = Object.fromEntries(RADAR_AXES.map(a => {
+      const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
+      return [a.key, vals.length > 0 ? vals.reduce((x, y) => x + y, 0) / vals.length : null];
+    })) as Record<RadarAxisKey, number | null>;
+    const worst = RADAR_AXES
+      .filter(a => scores[a.key] != null && teamAvg[a.key] != null)
+      .sort((a, b) => (scores[a.key]! - teamAvg[a.key]!) - (scores[b.key]! - teamAvg[b.key]!))[0];
+    if (worst) {
+      const gap = Math.round(scores[worst.key]! - teamAvg[worst.key]!);
+      findings.push({
+        key: `axis-${worst.key}`, level: 'warn', badge: '보강',
+        title: `${worst.ko} ${Math.round(scores[worst.key]!)}점 · 팀 평균보다 ${Math.abs(gap)}점 ${gap < 0 ? '낮음' : '높음'}`,
+        why: '5개 축 중 팀 평균과의 격차가 가장 큽니다 — 우선 보강 대상입니다.',
+        metric: RADAR_AXES.map(a => `${a.ko} ${scores[a.key] != null ? Math.round(scores[a.key]!) : '—'}`).join(' · '),
+        exercises: RADAR_REINFORCE_EXERCISES[worst.key],
+      });
+    }
+  }
+
+  // 3) EUR — 타당성 논란이 있어 처방이 아니라 참고 수치로만 싣는다.
+  const eur = record ? computeValdValue('eur', record) : null;
+  if (eur != null) {
+    findings.push({
+      key: 'eur', level: 'ok', badge: '참고',
+      title: `EUR ${eur.toFixed(2)}`,
+      why: eur <= 1.1 ? '반동 활용이 낮은 편입니다.' : eur >= 1.15 ? '반동 의존이 높은 편입니다.' : '일반적인 범위입니다.',
+      metric: 'CMJ ÷ Squat Jump',
+      exercises: [],
+      ref: 'SSC 지표로 제안됐으나 타당성 논란 (McGuigan et al. 2006; Kozinc et al. 2021). 높은 값이 나쁜 SJ 를 뜻할 수도 있어 단독 판단 금지',
+    });
+  }
+
+  // 4) 속도 — 현재 수준 안내.
+  if (speed) {
+    findings.push({
+      key: 'speed', level: 'ok', badge: '유지',
+      title: `MAS ${speed.mas}km/h (${classifyMAS(speed.mas)}) · MSS ${speed.mss}km/h`,
+      why: `Zone5(MSS 80%) 기준 ${speed.zone5_mss80.toFixed(1)}km/h 이상에서 최고속주 훈련을 권장합니다.`,
+      exercises: [],
+    });
+  }
+
+  // 5) 상시 루틴.
+  findings.push({
+    key: 'fifa11', level: 'ok', badge: '상시',
+    title: FIFA11_EXERCISE.name,
+    why: '훈련 전 필수 루틴입니다.',
+    exercises: [FIFA11_EXERCISE],
+    ref: 'FIFA 11+ · Copenhagen adduction 은 서혜부 부상 위험 감소 보고 (Harøy et al. 2017)',
+  });
+
+  const order = { danger: 0, warn: 1, ok: 2 };
+  findings.sort((a, b) => order[a.level] - order[b.level]);
+
+  const stageNote: Record<string, string> = {
+    '성장 급증기 전': '코디네이션·기초 체력 위주로, 고강도 근력 훈련은 신중히 접근합니다.',
+    '성장 급증기': '성장통·부상 위험이 높은 시기로 훈련 부하 조절이 필요합니다.',
+    '성장 급증기 후': '근력·파워 훈련 비중을 늘려도 되는 시기입니다.',
+  };
+  const stage = maturity?.maturity_stage ?? null;
+
+  if (!record && !speed) {
+    return <div className="chart-card text-center text-text-secondary py-8">처방에 필요한 측정 기록이 없습니다.</div>;
+  }
+
+  return (
+    <div className="chart-card">
+      <div className="chart-title">운동 처방</div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        측정값에서 발견한 것과 그에 대한 운동을 한 항목으로 묶어 위험도 순으로 보여줍니다.
+      </p>
+
+      {stage && (
+        <div className="flex gap-2 flex-wrap items-center rounded-lg px-3 py-2.5 mb-4" style={{ background: 'var(--color-surface-secondary)' }}>
+          <span className="text-[12px] font-bold">신체 성숙도</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
+            background: MATURITY_STAGE_LABEL[stage]?.bg ?? '#eee',
+            color: MATURITY_STAGE_LABEL[stage]?.text ?? '#666',
+          }}>{MATURITY_STAGE_LABEL[stage]?.label ?? stage}</span>
+          <span className="text-[11.5px] text-text-secondary">
+            {maturity?.pah_percent != null ? `· 성장 도달률 ${maturity.pah_percent}% ` : ''}· {stageNote[stage] ?? ''} 아래 처방 강도의 전제입니다.
+          </span>
+          <span className="text-[10px] text-text-disabled w-full">근거 · Lloyd &amp; Oliver 2012 Youth Physical Development 모델</span>
+        </div>
+      )}
+
+      {findings.map(f => <FindingCard key={f.key} f={f} />)}
+    </div>
+  );
+}
+
 // 이달의 변화 — 그 선수의 직전 월 대비 변화.
 // 성숙도는 월별 비교를 하지 않는다: Mirwald 성숙 단계는 앉은키(leg length)가 필요한데
 // growth_tracking 에는 키·몸무게만 쌓이고 앉은키는 players 의 1회성 기준 측정값뿐이다.
@@ -1328,14 +1383,14 @@ function PhysicalTabPanel({ record, history, bodyComp, maturity, speed, speedHis
   return (
     <div className="space-y-4">
       <PhysicalRadarSection record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} />
-      <AiPrescriptionCards record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} />
       <BodyCompositionSection rows={bodyComp} />
       <MonthlyChangeCard bodyComp={bodyComp} maturity={maturity} />
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
       <ValdTrendSection history={history} />
       <SpeedCustomSection row={speed} history={speedHistory} />
-      <PhysicalInsightBox record={record} maturity={maturity} speed={speed} />
+      <PrescriptionSection record={record} history={history} grade={grade} thresholds={thresholds}
+        teamScores={teamScores} maturity={maturity} speed={speed} />
     </div>
   );
 }
