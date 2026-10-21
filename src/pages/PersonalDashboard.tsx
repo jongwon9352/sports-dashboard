@@ -11,7 +11,7 @@ import {
   fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
   fetchPlayerAcwrMultiMetric, fetchTeamAcwrData, fetchValdThresholds,
-  fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords,
+  fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchSpeedCustomTestRows,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
@@ -20,7 +20,7 @@ import {
   AcwrComboChart, computeTeamLoadRange, METRIC_KEYS, getAcwrZone, ZONE_COLOR, ZONE_LABEL,
 } from './TeamDashboard';
 import type { PlayerWithAcwr, TrainingDaily, MatchData } from '../types';
-import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, ValdThreshold } from '../lib/api';
+import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, SpeedCustomTestRow, ValdThreshold } from '../lib/api';
 
 type Tab = 'load' | 'match' | 'physical';
 const TABS: { id: Tab; label: string }[] = [
@@ -660,24 +660,75 @@ function ValdSection({ record }: { record: PhysicalTestRow | null }) {
   );
 }
 
-function SpeedCustomSection({ row }: { row: SpeedCustomRow | null }) {
-  if (!row) {
+function SpeedCustomSection({ row, history }: { row: SpeedCustomRow | null; history: SpeedCustomTestRow[] }) {
+  // 차수별 추이는 오름차순으로 본다(표·차트 모두 1차 → 최신 순).
+  const rounds = [...history].sort((a, b) => a.test_date.localeCompare(b.test_date));
+  const chartData = rounds.map(r => ({
+    label: r.test_round ?? r.test_date.slice(5),
+    mas: r.mas,
+    mss: r.mss,
+  }));
+  const delta = (key: 'mas' | 'mss') => {
+    const vals = rounds.map(r => r[key]).filter((v): v is number => v != null);
+    if (vals.length < 2) return null;
+    return +(vals[vals.length - 1] - vals[vals.length - 2]).toFixed(1);
+  };
+
+  if (!row && rounds.length === 0) {
     return <div className="chart-card text-center text-text-secondary py-8">Speed custom 기록이 없습니다.</div>;
   }
+
   return (
-    <div className="chart-card">
-      <div className="chart-title">Speed Custom (MAS/MSS 기준 훈련 Zone)</div>
-      <div className="grid grid-cols-4 gap-3 mb-3 stat-grid-4">
-        <StatMiniCard label="MAS" value={`${row.mas}km/h`} />
-        <StatMiniCard label="MSS" value={`${row.mss}km/h`} />
-        <StatMiniCard label="Zone1 (MAS 60%)" value={`${row.zone1_mas60}km/h`} />
-        <StatMiniCard label="Zone2 (MAS 80%)" value={`${row.zone2_mas80}km/h`} />
-      </div>
-      <div className="grid grid-cols-3 gap-3 stat-grid-4">
-        <StatMiniCard label="Zone3 (MAS 100%)" value={`${row.zone3_mas100}km/h`} />
-        <StatMiniCard label="Zone4 (ASR 20%)" value={`${row.zone4_asr20}km/h`} />
-        <StatMiniCard label="Zone5 (MSS 80%)" value={`${row.zone5_mss80}km/h`} />
-      </div>
+    <div className="space-y-4">
+      {row && (
+        <div className="chart-card">
+          <div className="chart-title">Speed Custom (역대 최고 MAS/MSS 기준 훈련 Zone)</div>
+          <div className="grid grid-cols-4 gap-3 mb-3 stat-grid-4">
+            <StatMiniCard label="MAS" value={`${row.mas}km/h`} />
+            <StatMiniCard label="MSS" value={`${row.mss}km/h`} />
+            <StatMiniCard label="Zone1 (MAS 60%)" value={`${row.zone1_mas60}km/h`} />
+            <StatMiniCard label="Zone2 (MAS 80%)" value={`${row.zone2_mas80}km/h`} />
+          </div>
+          <div className="grid grid-cols-3 gap-3 stat-grid-4">
+            <StatMiniCard label="Zone3 (MAS 100%)" value={`${row.zone3_mas100}km/h`} />
+            <StatMiniCard label="Zone4 (ASR 20%)" value={`${row.zone4_asr20}km/h`} />
+            <StatMiniCard label="Zone5 (MSS 80%)" value={`${row.zone5_mss80}km/h`} />
+          </div>
+        </div>
+      )}
+
+      {rounds.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {([['mas', 'MAS', colors.green], ['mss', 'MSS', colors.danger]] as const).map(([key, label, color]) => {
+            const d = delta(key);
+            const latest = [...rounds].reverse().find(r => r[key] != null)?.[key] ?? null;
+            return (
+              <div key={key} className="chart-card">
+                <div className="flex items-baseline gap-2 mb-1">
+                  <div className="chart-title !mb-0">{label} 차수별</div>
+                  <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>
+                    {latest != null ? `${latest}km/h` : '—'}
+                  </span>
+                  {d != null && (
+                    <span className={`text-xs font-medium ${d >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {d >= 0 ? '▲' : '▼'}{Math.abs(d)}
+                    </span>
+                  )}
+                </div>
+                <ResponsiveContainer width="100%" height={140}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 9 }} />
+                    <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
+                    <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
+                    <Line type="monotone" dataKey={key} name={label} stroke={color} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1171,9 +1222,9 @@ function MonthlyChangeLeaderboard({ allBodyComp, selectedId }: { allBodyComp: Bo
   );
 }
 
-function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, maturity, speed, grade, thresholds, teamScores, playerName }: {
+function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
   record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[]; allBodyComp: BodyCompositionRow[]; selectedId: string;
-  maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+  maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
   grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
   return (
@@ -1184,7 +1235,7 @@ function PhysicalTabPanel({ record, history, bodyComp, allBodyComp, selectedId, 
       <MonthlyChangeLeaderboard allBodyComp={allBodyComp} selectedId={selectedId} />
       <MaturitySection row={maturity} />
       <ValdSection record={record} />
-      <SpeedCustomSection row={speed} />
+      <SpeedCustomSection row={speed} history={speedHistory} />
       <PhysicalInsightBox record={record} maturity={maturity} speed={speed} />
     </div>
   );
@@ -1203,6 +1254,7 @@ export function PersonalDashboard() {
   const [bodyComp, setBodyComp] = useState<BodyCompositionRow[]>([]);
   const [maturity, setMaturity] = useState<MaturityRow | null>(null);
   const [speed, setSpeed] = useState<SpeedCustomRow | null>(null);
+  const [speedHistory, setSpeedHistory] = useState<SpeedCustomTestRow[]>([]);
   const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
   const [valdThresholds, setValdThresholds] = useState<ValdThreshold[]>([]);
@@ -1238,7 +1290,8 @@ export function PersonalDashboard() {
       fetchBodyCompositionRecords(),
       fetchMaturityRecords(),
       fetchSpeedCustomRecords(),
-    ]).then(([multi, daily, matchData, physicalRows, bodyRows, maturityRows, speedRows]) => {
+      fetchSpeedCustomTestRows(),
+    ]).then(([multi, daily, matchData, physicalRows, bodyRows, maturityRows, speedRows, speedTestRows]) => {
       if (!active) return;
       setMultiMetric(multi);
       setDailyData(daily);
@@ -1256,6 +1309,7 @@ export function PersonalDashboard() {
       setBodyComp(bodyRows.filter(r => r.player_id === selectedId));
       setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
       setSpeed(speedRows.find(r => r.player_id === selectedId) ?? null);
+      setSpeedHistory(speedTestRows.filter(r => r.player_id === selectedId));
     });
     return () => { active = false; };
   }, [selectedId]);
@@ -1354,6 +1408,7 @@ export function PersonalDashboard() {
             selectedId={selectedId}
             maturity={maturity}
             speed={speed}
+            speedHistory={speedHistory}
             grade={player?.grade ?? null}
             thresholds={valdThresholds}
             teamScores={teamRadarScores}
