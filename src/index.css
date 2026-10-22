@@ -360,3 +360,113 @@ body {
 section[id^="sec-"] {
   scroll-margin-top: 124px;
 }
+
+/* ── 피지컬 리포트 (A4 인쇄) ─────────────────────────────────────────
+   화면에서는 숨기고 인쇄할 때만 #root 대신 이것을 찍는다. 그래서 리포트는
+   document.body 아래에 포털로 붙인다 (#root 안에 있으면 같이 숨겨진다).
+   본문 12.5px = 9.4pt — 첨부 레퍼런스 평가서 실측(9.38pt)에 맞춘 값이다. */
+.pr-root { display: none; }
+
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  html { background: #fff; }
+  #root { display: none !important; }
+  .pr-root { display: block !important; }
+  /* thead 배경·등급 점·그라데이션 띠는 기본값으로는 인쇄되지 않는다 */
+  .pr-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pr-page { break-after: page; }
+  .pr-page:last-child { break-after: auto; }
+}
+
+.pr-root {
+  --pr-warn: #8A6B00; /* load-moderate 원색은 흰 바탕 11px 에서 3.4:1 — AA 미달이라 어둡게 */
+  --pr-line: var(--color-surface-secondary);
+  --pr-line2: #F2F6F4;
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+}
+.pr-page {
+  width: 210mm; height: 297mm; background: #fff;
+  padding: 8mm 14mm 9mm; position: relative; overflow: hidden;
+}
+/* 앱 TopNav 와 같은 그라데이션. 표지에만 쓰고 속장은 가는 선으로 내린다 */
+.pr-hero {
+  height: 13mm; margin: -8mm -14mm 0;
+  background: linear-gradient(90deg, #101820 0%, #153E6F 42%, #008C7E 100%);
+}
+/* 띠 위에는 글자를 올리지 않는다 — 배경 그래픽이 꺼지면 흰 글자가 통째로 사라진다 */
+.pr-masthead {
+  display: flex; align-items: flex-end; gap: 7px;
+  padding: 3.4mm 0 2.8mm; margin-bottom: 4.2mm;
+  border-bottom: .5px solid var(--pr-line);
+}
+.pr-badge {
+  border-radius: 50%; border: 1.4px solid var(--color-brand); color: var(--color-brand);
+  font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none;
+}
+.pr-band {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 2.6mm; margin-bottom: 4.2mm; position: relative;
+}
+.pr-band::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.6px;
+  background: linear-gradient(90deg, #101820 0%, #153E6F 42%, #008C7E 100%);
+}
+.pr-foot {
+  position: absolute; left: 14mm; right: 14mm; bottom: 4.5mm;
+  display: flex; justify-content: space-between;
+  border-top: .5px solid var(--pr-line); padding-top: 1.8mm;
+  font-size: 9px; color: var(--color-text-disabled);
+}
+.pr-secno { font-size: 10px; font-weight: 800; letter-spacing: 1.4px; color: var(--color-brand); margin-bottom: 1.2mm; }
+.pr-h1 { font-size: 26px; font-weight: 800; letter-spacing: -.5px; line-height: 1.1; }
+.pr-sub { display: block; font-size: 11.5px; font-weight: 500; color: var(--color-text-secondary); margin-top: 1.8mm; line-height: 1.5; }
+.pr-tt { font-size: 11.5px; font-weight: 700; margin: 4.4mm 0 1.8mm; padding-left: 2.4mm; border-left: 2.5px solid var(--color-brand); }
+.pr-cap { font-size: 9.5px; color: var(--color-text-secondary); margin-top: 2.4mm; line-height: 1.6; }
+.pr-num { font-family: var(--font-data); font-weight: 500; }
+
+.pr-root table { width: 100%; border-collapse: collapse; }
+.pr-root th, .pr-root td {
+  text-align: left; padding: 2.4mm 2.2mm; font-size: 11px;
+  border-bottom: .5px solid var(--pr-line2); vertical-align: middle; line-height: 1.5;
+}
+.pr-root thead th {
+  background: var(--color-bg); color: var(--color-text-secondary);
+  font-size: 9.5px; font-weight: 700; border-bottom: .8px solid var(--pr-line);
+}
+.pr-root td.n, .pr-root th.n { text-align: right; white-space: nowrap; }
+.pr-root td.c, .pr-root th.c { text-align: center; white-space: nowrap; }
+.pr-root tbody tr:last-child td { border-bottom: .8px solid var(--pr-line); }
+.pr-crit { color: var(--color-text-disabled); font-size: 9.5px; line-height: 1.45; display: block; margin-top: .6mm; }
+.pr-soon { color: var(--color-text-disabled); font-size: 10.5px; }
+
+.pr-dots { display: inline-flex; gap: 2px; vertical-align: -1px; }
+.pr-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--pr-line); display: inline-block; }
+.pr-dots i.on { background: var(--color-brand); }
+.pr-gr { font-size: 11px; font-weight: 700; white-space: nowrap; margin-left: 4px; }
+
+.pr-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3.6mm 7mm; }
+.pr-ch { min-width: 0; }
+.pr-cht { font-size: 10.5px; font-weight: 700; margin-bottom: .6mm; }
+.pr-chs { font-size: 9px; color: var(--color-text-disabled); margin-bottom: 1.6mm; }
+.pr-root svg { display: block; width: 100%; overflow: visible; }
+.pr-lg { display: flex; gap: 4mm; font-size: 9px; color: var(--color-text-secondary); margin-top: 1.4mm; flex-wrap: wrap; }
+.pr-lg i { display: inline-block; width: 10px; height: 0; border-top: 1.8px solid; margin-right: 2.5px; vertical-align: 3px; }
+
+.pr-scores { display: flex; align-items: flex-end; gap: 10mm; margin: 4.2mm 0 3.6mm; }
+.pr-sc-lb { font-size: 9.5px; color: var(--color-text-disabled); font-weight: 600; margin-bottom: 1mm; }
+.pr-sc-v { font-size: 32px; font-weight: 500; line-height: .95; font-family: var(--font-data); }
+.pr-sc-v small { font-size: 12.5px; color: var(--color-text-disabled); font-family: var(--font-sans); font-weight: 600; }
+
+.pr-bar { display: flex; align-items: center; gap: 2.4mm; font-size: 10.5px; margin-bottom: 3.2mm; }
+.pr-bar-l { width: 24mm; flex: none; color: var(--color-text-secondary); font-weight: 600; }
+.pr-bar-t { flex: 1; height: 11px; background: var(--pr-line2); border-radius: 2px; position: relative; }
+.pr-bar-f { position: absolute; top: 0; bottom: 0; left: 0; background: var(--color-brand); border-radius: 2px; }
+.pr-bar-tick { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: var(--color-text-secondary); }
+.pr-bar-v { width: 22mm; flex: none; text-align: right; font-weight: 700; font-size: 10.5px; }
+
+.pr-strip { border: .5px solid var(--pr-line); border-radius: 3px; padding: 3mm 3.4mm; background: var(--color-bg); }
+.pr-strip-h { font-size: 9.5px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 1.8mm; }
+.pr-rx { border: .5px solid var(--pr-line); border-left: 2.6px solid var(--color-brand); border-radius: 3px; padding: 3.4mm 4mm; margin-bottom: 4mm; }
+.pr-rx h3 { font-size: 12.5px; font-weight: 800; margin-bottom: 1.4mm; }
+.pr-rx-why { font-size: 11px; color: var(--color-text-secondary); line-height: 1.7; margin-bottom: 2.6mm; }

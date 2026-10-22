@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import {
   BarChart, Bar, Legend, LineChart, Line,
@@ -1206,11 +1207,13 @@ function FindingCard({ f }: { f: Finding }) {
   );
 }
 
-function PrescriptionSection({ record, history, grade, thresholds, teamScores, maturity, speed }: {
+// 처방 계산부. 화면(PrescriptionSection)과 인쇄 리포트(PhysicalReport)가 같은 결과를 써야
+// 해서 컴포넌트 밖으로 뺐다. 둘이 각자 계산하면 종이와 화면이 다른 말을 하게 된다.
+function buildFindings({ record, history, grade, thresholds, teamScores, speed }: {
   record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null;
   thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
-  maturity: MaturityRow | null; speed: SpeedCustomRow | null;
-}) {
+  speed: SpeedCustomRow | null;
+}): Finding[] {
   const findings: Finding[] = [];
 
   // 1) 좌우 불균형 — 4종 전부. 10% 이상은 처방까지, 5~10% 는 관찰만(과처방 방지).
@@ -1297,6 +1300,15 @@ function PrescriptionSection({ record, history, grade, thresholds, teamScores, m
 
   const order = { danger: 0, warn: 1, ok: 2 };
   findings.sort((a, b) => order[a.level] - order[b.level]);
+  return findings;
+}
+
+function PrescriptionSection({ record, history, grade, thresholds, teamScores, maturity, speed }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null;
+  thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
+  maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+}) {
+  const findings = buildFindings({ record, history, grade, thresholds, teamScores, speed });
 
   const stageNote: Record<string, string> = {
     '성장 급증기 전': '코디네이션·기초 체력 위주로, 고강도 근력 훈련은 신중히 접근합니다.',
@@ -1441,13 +1453,826 @@ function PhysicalSectionIndex() {
   );
 }
 
-function PhysicalTabPanel({ record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
+// ── 피지컬 리포트 (A4 세로 5페이지 · 선수·학부모 전달용) ────────────────────
+// 인쇄 CSS 로 뽑는다(jspdf 는 한글 폰트가 없어 html2canvas 래스터가 되고, 9.4pt 한글 표가
+// 인쇄물에서 뭉개진다). 화면 카드를 재사용하지 않고 전용 레이아웃을 쓴다.
+// 색은 전부 index.css @theme 값이다. SVG 속성에는 CSS 변수를 못 넣어 상수로 둔다.
+const PR = {
+  brand: '#A42843', alt: '#153E6F', ok: '#008C7E', warn: '#8A6B00',
+  neutral: '#66717A', ink: '#101820', ink2: '#4F5B63', ink3: '#7D8990',
+  line: '#EEF3F1', bg: '#F6F8F7',
+};
+// 전달용 문서라 VALD 영문 지표명 대신 선수·학부모가 읽는 말로 바꿔 싣는다.
+const PR_LR_LABEL: Record<string, string> = {
+  nordic_curl: '뒷허벅지 버티는 힘',
+  ham_iso: '뒷허벅지 당기는 힘',
+  hip_adduction: '허벅지 모으는 힘',
+  hip_abduction: '허벅지 벌리는 힘',
+};
+const PR_LR_CRIT: Record<string, string> = {
+  nordic_curl: '다치기 쉬운 부위의 핵심 근력',
+  ham_iso: '달릴 때 쓰는 힘',
+  hip_adduction: '방향 바꿀 때 쓰는 힘',
+  hip_abduction: '몸의 중심을 잡는 힘',
+};
+const PR_JUMP_ROWS = [
+  { key: 'cmj_height', label: '제자리 점프 높이', crit: '반동을 쓴 최고 점프', unit: 'cm', dec: 1 },
+  { key: 'squat_jump_height', label: '반동 없는 점프', crit: '앉은 자세에서 바로 뛰기', unit: 'cm', dec: 1 },
+  { key: 'cmj_peak_force', label: '점프할 때 미는 힘', crit: '땅을 밀어내는 최대 힘', unit: 'N', dec: 0 },
+  { key: 'eur', label: '반동 활용도', crit: '반동을 얼마나 잘 쓰는지', unit: '', dec: 2 },
+];
+const PR_SPRINT_ROWS = [
+  { key: 'sprint_5m', label: '5m 달리기', crit: '출발 순간의 반응과 가속' },
+  { key: 'sprint_10m', label: '10m 달리기', crit: '짧은 거리 가속' },
+  { key: 'sprint_30m', label: '30m 달리기', crit: '최고 속도까지 올라가는 능력' },
+  { key: 'cod_ball', label: '볼을 몰고 방향 전환', crit: '공을 다루며 지그재그 코스 통과' },
+  { key: 'cod_run', label: '볼 없이 방향 전환', crit: '같은 코스를 공 없이 통과' },
+];
+const PR_TREND_CHARTS: { key: string; label: string; unit: string; lr?: boolean }[] = [
+  { key: 'cmj_height', label: '제자리 점프', unit: 'cm' },
+  { key: 'cmj_peak_force', label: '점프할 때 미는 힘', unit: 'N' },
+  { key: 'nordic_curl', label: '뒷허벅지 버티는 힘', unit: 'N', lr: true },
+  { key: 'hip_adduction', label: '허벅지 모으는 힘', unit: 'N', lr: true },
+];
+const PR_TREND_KEYS = [
+  { key: 'cmj_height', label: '제자리 점프', unit: 'cm' },
+  { key: 'nordic_curl', label: '뒷허벅지 버티는 힘', unit: 'N' },
+  { key: 'hip_adduction', label: '허벅지 모으는 힘', unit: 'N' },
+  { key: 'hip_abduction', label: '허벅지 벌리는 힘', unit: 'N' },
+  { key: 'sprint_30m', label: '30m 달리기', unit: '초' },
+];
+const PR_GRADE_LABEL = ['보완 필요', '보완 필요', '보통', '우수', '매우 우수'];
+const PR_NEXT = '다음 측정 차수';
+
+type PrSeries = { name: string; color: string; vals: (number | null)[] };
+
+function prLevel(score: number | null): number | null {
+  if (score == null) return null;
+  return Math.max(1, Math.min(5, Math.ceil(score / 20)));
+}
+
+function PrDots({ score }: { score: number | null }) {
+  const n = prLevel(score);
+  if (n == null) return <span className="pr-soon">{PR_NEXT}에 측정 예정</span>;
+  return (
+    <>
+      <span className="pr-dots">
+        {[1, 2, 3, 4, 5].map(i => <i key={i} className={i <= n ? 'on' : ''} />)}
+      </span>
+      <span className="pr-gr" style={{ color: n >= 4 ? PR.ok : n === 3 ? PR.ink2 : PR.warn }}>
+        {PR_GRADE_LABEL[n - 1]}
+      </span>
+    </>
+  );
+}
+
+function PrPending({ title, body }: { title: string; body: string }) {
+  return (
+    <div style={{
+      border: '.5px dashed #EEF3F1', borderRadius: 4, background: PR.bg,
+      padding: '6mm 8mm', textAlign: 'center', marginTop: '4mm',
+    }}>
+      <b style={{ display: 'block', fontSize: 13, fontWeight: 700, marginBottom: '2.2mm' }}>{title}</b>
+      <p style={{ fontSize: 11, color: PR.ink2, lineHeight: 1.8 }}>{body}</p>
+      <span style={{
+        display: 'inline-block', marginTop: '3mm', fontSize: 10.5, fontWeight: 700,
+        color: PR.brand, background: '#F4E4E8', padding: '1.4mm 3.5mm', borderRadius: 3,
+      }}>{PR_NEXT}에 측정 예정</span>
+    </div>
+  );
+}
+
+// 팀 임계(최대/평균/최저)를 점선으로 같이 그린다. 축 범위는 임계까지 포함해야
+// 임계선이 차트 밖으로 밀려나지 않는다.
+function PrLine({ labels, series, th, h = 104, w = 300 }: {
+  labels: string[]; series: PrSeries[]; th?: (number | null)[]; h?: number; w?: number;
+}) {
+  const pl = 30, pr = 8, pt = 10, pb = 18;
+  const all: number[] = [];
+  series.forEach(s => s.vals.forEach(v => { if (v != null) all.push(v); }));
+  th?.forEach(v => { if (v != null) all.push(v); });
+  if (all.length === 0) return null;
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (hi === lo) { const d = Math.abs(hi || 1) * 0.1; hi += d; lo -= d; }
+  const span0 = hi - lo;
+  lo -= span0 * 0.12; hi += span0 * 0.12;
+  const n = labels.length;
+  const X = (i: number) => pl + (w - pl - pr) * (n < 2 ? 0.5 : i / (n - 1));
+  const Y = (v: number) => pt + (h - pt - pb) * (1 - (v - lo) / (hi - lo));
+  const thName = ['팀 최고', '팀 평균', '팀 최저'];
+  const thColor = [PR.ok, PR.ink2, PR.brand];
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} height={h}>
+      <line x1={pl} y1={h - pb} x2={w - pr} y2={h - pb} stroke="#D7DEDB" strokeWidth={0.7} />
+      {th?.map((v, i) => v == null ? null : (
+        <g key={`th${i}`}>
+          <line x1={pl} y1={Y(v)} x2={w - pr} y2={Y(v)} stroke={thColor[i]} strokeWidth={0.8}
+            strokeDasharray="3.5 3" opacity={0.7} />
+          <text x={w - pr} y={Y(v) - 2.2} textAnchor="end" fontSize={7} fill={thColor[i]}>{thName[i]}</text>
+        </g>
+      ))}
+      {series.map(se => {
+        const segs: [number, number][][] = [];
+        let cur: [number, number][] = [];
+        se.vals.forEach((v, i) => {
+          if (v == null) { if (cur.length) segs.push(cur); cur = []; }
+          else cur.push([X(i), Y(v)]);
+        });
+        if (cur.length) segs.push(cur);
+        return (
+          <g key={se.name}>
+            {segs.map((g, gi) => g.length > 1 && (
+              <polyline key={gi} fill="none" stroke={se.color} strokeWidth={1.8} strokeLinejoin="round"
+                points={g.map(pt2 => pt2.join(',')).join(' ')} />
+            ))}
+            {se.vals.map((v, i) => v == null ? null : (
+              <circle key={i} cx={X(i)} cy={Y(v)} r={2.4} fill="#fff" stroke={se.color} strokeWidth={1.5} />
+            ))}
+          </g>
+        );
+      })}
+      {labels.map((t, i) => (
+        <text key={i} x={X(i)} y={h - pb + 10} textAnchor="middle" fontSize={7.6} fill={PR.ink3}
+          fontFamily="DM Mono, monospace">{t}</text>
+      ))}
+      {[lo, (lo + hi) / 2, hi].map((v, i) => (
+        <text key={i} x={pl - 4} y={Y(v) + 2.5} textAnchor="end" fontSize={7.4} fill={PR.ink3}
+          fontFamily="DM Mono, monospace">{v.toFixed(span0 < 5 ? 1 : 0)}</text>
+      ))}
+    </svg>
+  );
+}
+
+function PrRadar({ axes }: { axes: { ko: string; me: number | null }[] }) {
+  const w = 352, h = 362, cx = w / 2, cy = h / 2 + 2, R = 126, n = axes.length;
+  const pt = (i: number, r: number): [number, number] => {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / n;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  };
+  const poly = (r: (a: { me: number | null }) => number) =>
+    axes.map((a, i) => pt(i, r(a)).map(v => v.toFixed(1)).join(',')).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} height={h}>
+      {[0.25, 0.5, 0.75, 1].map(k => (
+        <polygon key={k} points={axes.map((_, i) => pt(i, R * k).map(v => v.toFixed(1)).join(',')).join(' ')}
+          fill="none" stroke={PR.line} strokeWidth={0.7} />
+      ))}
+      {axes.map((_, i) => {
+        const [x, y] = pt(i, R);
+        return <line key={i} x1={cx} y1={cy} x2={x.toFixed(1)} y2={y.toFixed(1)} stroke={PR.line} strokeWidth={0.7} />;
+      })}
+      <polygon points={poly(() => R * 0.5)} fill="rgba(102,113,122,.08)" stroke={PR.neutral} strokeWidth={1.3} />
+      <polygon points={poly(a => R * (a.me ?? 0) / 100)} fill="rgba(164,40,67,.14)" stroke={PR.brand} strokeWidth={1.8} />
+      {axes.map((a, i) => {
+        const [x, y] = pt(i, R + 16);
+        const n2 = prLevel(a.me);
+        return (
+          <g key={a.ko}>
+            <text x={x.toFixed(1)} y={y.toFixed(1)} textAnchor="middle" fontSize={8.4} fontWeight={700} fill={PR.ink}>{a.ko}</text>
+            <text x={x.toFixed(1)} y={(y + 10).toFixed(1)} textAnchor="middle" fontSize={8} fill={PR.brand} fontWeight={700}>
+              {n2 == null ? '측정 전' : PR_GRADE_LABEL[n2 - 1]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function PrZoneBar({ z, mss }: { z: number[]; mss: number }) {
+  const w = 560, h = 62;
+  const cols = ['#EEF3F1', '#E0F3F0', '#008C7E', '#F4E4E8', '#A42843'];
+  const seg: [number, number, string, number][] = [
+    [0, z[0], '매우 가벼움', 0], [z[0], z[1], '가벼움', 1], [z[1], z[2], '중간', 2],
+    [z[2], z[3], '빠름', 3], [z[3], z[4], '', -1], [z[4], mss, '최대', 4],
+  ];
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} height={h}>
+      {seg.map(([v1, v2, nm, ci], i) => {
+        const x1 = v1 / mss * w, x2 = v2 / mss * w;
+        return (
+          <g key={i}>
+            <rect x={x1.toFixed(1)} y={2} width={(x2 - x1).toFixed(1)} height={24} fill={ci < 0 ? PR.bg : cols[ci]} />
+            {nm && <text x={((x1 + x2) / 2).toFixed(1)} y={18.5} textAnchor="middle" fontSize={9}
+              fill={(ci === 2 || ci === 4) ? '#fff' : PR.ink} fontWeight={700}>{nm}</text>}
+            {v2 !== mss && <text x={x2.toFixed(1)} y={39} textAnchor="middle" fontSize={10} fill={PR.ink2}
+              fontWeight={700} fontFamily="DM Mono, monospace">{v2}</text>}
+          </g>
+        );
+      })}
+      <text x={0} y={54} fontSize={9.5} fill={PR.ink3} fontFamily="DM Mono, monospace">0 km/h</text>
+      <text x={w} y={54} textAnchor="end" fontSize={9.5} fill={PR.ink3} fontFamily="DM Mono, monospace">{mss} km/h</text>
+    </svg>
+  );
+}
+
+// buildFindings 의 문구는 코치용이다(「Nordic Curl (햄스트링 근력) 좌우 불균형」).
+// 계산은 그대로 쓰고 선수·학부모가 읽을 제목·설명만 바꿔 싣는다.
+function prRxText(fd: Finding): { title: string; why: string } {
+  const lrKey = VALD_LR_KEYS.find(k => fd.key === k);
+  if (lrKey) {
+    const weak = fd.metric && /좌 ([\d.]+)\S* · 우 ([\d.]+)/.exec(fd.metric);
+    const side = weak ? (Number(weak[1]) < Number(weak[2]) ? '왼쪽' : '오른쪽') : null;
+    return {
+      title: `${PR_LR_LABEL[lrKey] ?? lrKey} ${side ? `${side} 키우기` : '좌우 균형 맞추기'}`,
+      why: `좌우 차이가 모니터링 기준(10%)을 넘습니다. 한쪽이 약하면 빠르게 달릴 때 그쪽에 부담이 몰립니다.`
+        + (fd.metric ? ` (${fd.metric})` : ''),
+    };
+  }
+  if (fd.key.startsWith('axis-')) {
+    return {
+      title: `${fd.title.split(' ')[0]} 보강하기`,
+      why: '여섯 가지 능력 중 팀 평균과의 차이가 가장 큰 부분입니다. 지금 챙기면 가장 많이 올라갑니다.',
+    };
+  }
+  if (fd.key === 'fifa11') {
+    return { title: '훈련 전 준비운동', why: '매 훈련 전에 하는 기본 루틴입니다. 부상 예방 효과가 보고된 프로그램입니다.' };
+  }
+  return { title: fd.title, why: fd.why };
+}
+
+const PR_TOTAL_PAGES = 5;
+
+function PrPage({ no, secno, title, sub, player, measured, children }: {
+  no: number; secno: string; title: string; sub: string;
+  player: PlayerWithAcwr; measured: string; children: React.ReactNode;
+}) {
+  const pg = `${String(no).padStart(2, '0')} / ${String(PR_TOTAL_PAGES).padStart(2, '0')}`;
+  const who = `${player.position} · ${player.grade} · ${new Date().getFullYear()} 피지컬 리포트`;
+  return (
+    <div className="pr-page">
+      {no === 1 ? (
+        <>
+          <div className="pr-hero" />
+          <div className="pr-masthead">
+            <div className="pr-badge" style={{ width: 21, height: 21, fontSize: 9 }}>DH</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.2px' }}>대전하나시티즌</div>
+              <div style={{ fontSize: 9.5, color: PR.ink3, fontFamily: 'var(--font-data)' }}>
+                GPS Training Load Dashboard
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '-.2px' }}>
+                {player.name}{' '}
+                <span style={{ fontFamily: 'var(--font-data)', fontWeight: 500, color: PR.ink3 }}>
+                  #{player.jersey_number}
+                </span>
+              </div>
+              <div style={{ fontSize: 9.5, color: PR.ink2, marginTop: '.4mm' }}>{who}</div>
+            </div>
+            <div style={{
+              marginLeft: '5mm', alignSelf: 'flex-start', fontSize: 9.5, fontWeight: 700,
+              color: PR.ink3, fontFamily: 'var(--font-data)',
+            }}>{pg}</div>
+          </div>
+        </>
+      ) : (
+        <div className="pr-band">
+          <div className="pr-badge" style={{ width: 18, height: 18, fontSize: 8, borderWidth: 1.2 }}>DH</div>
+          <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '-.1px' }}>대전하나시티즌</div>
+          <div style={{ flex: 1, fontSize: 9.5, color: PR.ink2 }}>
+            {player.name} #{player.jersey_number} · {who}
+          </div>
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: PR.ink3, fontFamily: 'var(--font-data)' }}>{pg}</div>
+        </div>
+      )}
+      <div className="pr-secno">{secno}</div>
+      <h1 className="pr-h1">{title}<span className="pr-sub">{sub}</span></h1>
+      {children}
+      <div className="pr-foot">
+        <span>대전하나시티즌 · {player.name} 피지컬 리포트</span>
+        <span className="pr-num">
+          {measured} 측정 · {new Date().toISOString().slice(0, 10)} 발행 · {no} / {PR_TOTAL_PAGES}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PhysicalReport({ player, record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores }: {
+  player: PlayerWithAcwr; record: PhysicalTestRow | null; history: PhysicalTestRow[];
+  bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null;
+  speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
+  grade: string | null; thresholds: ValdThreshold[];
+  teamScores: Record<RadarAxisKey, number | null>[];
+}) {
+  const f = (v: number | null | undefined, n = 1) => v == null ? '—' : Number(v).toFixed(n);
+  // 임계는 '전체' 기준으로 고정한다 — 학년별 표본이 적어 학년 임계는 한두 명으로 흔들린다.
+  const thOf = (k: string): (number | null)[] => {
+    const t = thresholds.find(x => x.metric_key === k && x.grade === '전체');
+    return [t?.max_value ?? null, t?.avg_value ?? null, t?.min_value ?? null];
+  };
+  const sc = (k: string, v: number | null) => scoreForMetric(k, v, thresholds, null);
+  const avgOfNullable = (xs: (number | null)[]) => {
+    const t = xs.filter((x): x is number => x != null);
+    return t.length ? t.reduce((a, b) => a + b, 0) / t.length : null;
+  };
+
+  const L = record;
+  const PRV = history[1] ?? null;
+  // 측정 일정상 특정 항목만 빠진 회차가 흔하다. '지난 측정' 열에 직전 회차만 보면
+  // 그 회차에 그 항목이 없을 때 전부 '—' 가 된다 — 값이 있는 가장 최근 회차까지 거슬러 올라간다.
+  const prevValOf = (key: string): number | null => {
+    for (const r of history.slice(1)) {
+      const v = computeValdValue(key, r);
+      if (v != null) return v;
+    }
+    return null;
+  };
+  const chron = [...history].reverse();
+  const chronLabels = chron.map(r => r.test_round ?? r.test_date.slice(2, 7));
+  const measured = L?.test_date ?? '—';
+
+  // 6축 — 5축은 화면 레이더와 같은 계산(항목 빠진 회차는 이전 회차로 보완), 지구력은 MAS.
+  const { scores } = computeRadarScores(history, thresholds, grade);
+  const aerobic = speed ? Math.max(0, Math.min(100, (speed.mas - 12) / 8 * 100)) : null;
+  const axes = [
+    ...RADAR_AXES.map(a => ({ ko: a.ko, me: scores[a.key] })),
+    { ko: '지구력', me: aerobic },
+  ];
+  const teamAvgOf = (k: RadarAxisKey) => avgOfNullable(teamScores.map(s => s[k]));
+  const axesWithTeam = [
+    ...RADAR_AXES.map(a => ({ ko: a.ko, me: scores[a.key], team: teamAvgOf(a.key) ?? 50 })),
+    { ko: '지구력', me: aerobic, team: 50 },
+  ];
+  const now = avgOfNullable(axes.map(a => a.me));
+  const prevScores = PRV ? computeRadarScores(history.slice(1), thresholds, grade).scores : null;
+  const prev = prevScores ? avgOfNullable(RADAR_AXES.map(a => prevScores[a.key])) : null;
+  const delta = (now != null && prev != null) ? Math.round(now) - Math.round(prev) : null;
+
+  // 좌우 비대칭 10% 이상은 평균 등급보다 먼저 알려야 한다.
+  const lrRows = VALD_LR_KEYS.map(k => {
+    const acc = VALD_ACCESSORS[k];
+    const def = VALD_METRIC_DEFS.find(d => d.key === k);
+    const l = acc.left && L ? acc.left(L) : null;
+    const r = acc.right && L ? acc.right(L) : null;
+    const imb = (l != null && r != null) ? Math.abs(imbalancePercent(l, r)) : null;
+    return { k, label: PR_LR_LABEL[k] ?? def?.label ?? k, crit: PR_LR_CRIT[k] ?? '', l, r, imb };
+  });
+  const worstLr = lrRows.filter(x => x.imb != null).sort((a, b) => b.imb! - a.imb!)[0] ?? null;
+
+  const growth = [...bodyComp].sort((a, b) => a.year - b.year || a.month - b.month);
+  const gLast = growth[growth.length - 1] ?? null;
+  const gFirstOfYear = growth.find(g => gLast && g.year === gLast.year) ?? null;
+  const speedChron = [...speedHistory].sort((a, b) => a.test_date.localeCompare(b.test_date));
+
+  const findings = buildFindings({ record, history, grade, thresholds, teamScores, speed });
+  const rx = findings.filter(x => x.exercises.length > 0).slice(0, 3);
+
+  const improved = chron.length >= 2 ? PR_TREND_KEYS
+    .map(({ key, label, unit }) => {
+      const prevV = computeValdValue(key, chron[chron.length - 2]);
+      const nowV = computeValdValue(key, chron[chron.length - 1]);
+      if (prevV == null || nowV == null) return null;
+      const def = VALD_METRIC_DEFS.find(d => d.key === key);
+      const better = def?.invert ? nowV < prevV : nowV > prevV;
+      return better ? { label, unit, prevV, nowV } : null;
+    })
+    .filter((x): x is { label: string; unit: string; prevV: number; nowV: number } => x != null)
+    .slice(0, 3) : [];
+
+  const page = (no: number, secno: string, title: string, sub: string, body: React.ReactNode) => (
+    <PrPage key={no} no={no} secno={secno} title={title} sub={sub} player={player} measured={measured}>{body}</PrPage>
+  );
+
+  return (
+    <div className="pr-root">
+      {/* 01 종합 */}
+      {page(1, '01 · 종합', '피지컬 종합 프로필',
+        `${measured} 측정 기준 · 여섯 가지 능력을 팀 안에서의 위치로 나타냅니다`,
+        <>
+          <div className="pr-scores">
+            <div>
+              <div className="pr-sc-lb">지난 측정{PRV ? ` (${PRV.test_date})` : ''}</div>
+              <div className="pr-sc-v" style={{ color: PR.ink3 }}>{prev == null ? '—' : Math.round(prev)}<small> / 100</small></div>
+            </div>
+            <div>
+              <div className="pr-sc-lb">이번 측정 ({measured})</div>
+              <div className="pr-sc-v" style={{ color: PR.brand }}>{now == null ? '—' : Math.round(now)}<small> / 100</small></div>
+            </div>
+            <div>
+              <div className="pr-sc-lb">변화</div>
+              <div className="pr-sc-v" style={{ fontSize: 22, color: delta == null ? PR.ink3 : delta >= 0 ? PR.ok : PR.brand }}>
+                {delta == null ? '—' : `${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${Math.abs(delta)}`}
+              </div>
+            </div>
+            <div>
+              <div className="pr-sc-lb">종합 평가</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: PR.brand }}>
+                {prLevel(now) == null ? '측정 전' : PR_GRADE_LABEL[prLevel(now)! - 1]}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '352px 1fr', gap: '9mm', alignItems: 'start' }}>
+            <div>
+              <PrRadar axes={axes} />
+              <div className="pr-lg">
+                <span><i style={{ borderColor: PR.brand }} />{player.name}</span>
+                <span><i style={{ borderColor: PR.neutral }} />팀 평균</span>
+              </div>
+            </div>
+            <div>
+              <div className="pr-tt" style={{ marginTop: 0 }}>능력별 위치</div>
+              {axesWithTeam.map(a => (
+                <div className="pr-bar" key={a.ko}>
+                  <span className="pr-bar-l">{a.ko}</span>
+                  <span className="pr-bar-t">
+                    <span className="pr-bar-f" style={{ width: `${a.me == null ? 0 : a.me.toFixed(0)}%` }} />
+                    <span className="pr-bar-tick" style={{ left: `${a.team}%` }} />
+                  </span>
+                  <span className="pr-bar-v" style={{ color: a.me == null ? PR.ink3 : PR.ink }}>
+                    {prLevel(a.me) == null ? '측정 전' : PR_GRADE_LABEL[prLevel(a.me)! - 1]}
+                  </span>
+                </div>
+              ))}
+              <div className="pr-cap">
+                색 막대가 길수록 팀 안에서 앞선 위치입니다. 세로 눈금은 팀 평균입니다.
+                측정이 빠진 항목은 바로 이전 측정값으로 채워 계산합니다.
+              </div>
+            </div>
+          </div>
+          <div className="pr-tt">이번에 달라진 점</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5mm' }}>
+            <div className="pr-strip">
+              <div className="pr-strip-h">좋아진 것</div>
+              {improved.length === 0
+                ? <div style={{ fontSize: 11, color: PR.ink3 }}>비교할 지난 측정이 아직 없습니다</div>
+                : improved.map(it => (
+                  <div key={it.label} style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.8 }}>
+                    {it.label}{' '}
+                    <span className="pr-num" style={{ color: PR.ink3, fontWeight: 500 }}>
+                      {f(it.prevV, 1)} → {f(it.nowV, 1)} {it.unit}
+                    </span>
+                  </div>
+                ))}
+            </div>
+            <div className="pr-strip">
+              <div className="pr-strip-h">챙겨야 할 것</div>
+              {worstLr && worstLr.imb != null && worstLr.imb >= 10 ? (
+                <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.8 }}>
+                  {worstLr.label} 좌우 차이<br />
+                  <span style={{ color: PR.brand }}>
+                    {f(worstLr.imb)}% · {(worstLr.l ?? 0) < (worstLr.r ?? 0) ? '왼쪽' : '오른쪽'}이 약합니다
+                  </span>
+                </div>
+              ) : <div style={{ fontSize: 11, color: PR.ink3 }}>좌우 차이가 모두 기준 안에 있습니다</div>}
+            </div>
+          </div>
+          <div className="pr-tt">이 리포트 읽는 법</div>
+          <table>
+            <thead><tr><th style={{ width: '30%' }}>표시</th><th>뜻</th></tr></thead>
+            <tbody>
+              <tr><td><PrDots score={90} /></td><td>팀 안에서 가장 앞선 쪽에 있습니다</td></tr>
+              <tr><td><PrDots score={50} /></td><td>팀 평균 부근입니다. 학년과 성장 단계에 따라 자연스러운 위치입니다</td></tr>
+              <tr><td><PrDots score={20} /></td><td>지금 챙기면 좋은 부분입니다. 5페이지에 해당 운동이 있습니다</td></tr>
+              <tr><td><PrDots score={null} /></td><td>아직 측정하지 않은 항목입니다. 선수의 능력이 낮다는 뜻이 아닙니다</td></tr>
+            </tbody>
+          </table>
+        </>)}
+
+      {/* 02 신체 */}
+      {page(2, '02 · 신체', '키와 몸무게, 성장 단계',
+        '월별 기록 · 성장 단계는 또래 대비 성장 진행 정도입니다',
+        growth.length === 0 ? (
+          <PrPending title="키·몸무게 기록이 아직 없습니다"
+            body="월별 신체 측정이 쌓이면 이 페이지에 추이와 변화가 표시됩니다." />
+        ) : (
+          <>
+            <div className="pr-scores">
+              <div><div className="pr-sc-lb">키</div><div className="pr-sc-v">{f(gLast?.height)}<small> cm</small></div></div>
+              <div><div className="pr-sc-lb">몸무게</div><div className="pr-sc-v">{f(gLast?.weight)}<small> kg</small></div></div>
+              <div>
+                <div className="pr-sc-lb">{gFirstOfYear?.month ?? 1}월 대비</div>
+                <div className="pr-sc-v" style={{ fontSize: 22, color: PR.ok }}>
+                  {gLast && gFirstOfYear && gLast.height != null && gFirstOfYear.height != null
+                    ? `+${f(gLast.height - gFirstOfYear.height)}` : '—'}
+                  {' / '}
+                  {gLast && gFirstOfYear && gLast.weight != null && gFirstOfYear.weight != null
+                    ? `+${f(gLast.weight - gFirstOfYear.weight)}` : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="pr-sc-lb">성장 단계</div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: PR.brand }}>
+                  {maturity?.maturity_stage ?? '측정 전'}
+                </div>
+              </div>
+            </div>
+            <div className="pr-ch" style={{ marginBottom: '4mm' }}>
+              <div className="pr-cht">키</div>
+              <div className="pr-chs">{growth[0].year}년 {growth[0].month}월 ~ {gLast!.year}년 {gLast!.month}월 · cm</div>
+              <PrLine w={640} h={168} labels={growth.map(g => `${g.month}월`)}
+                series={[{ name: '키', color: PR.brand, vals: growth.map(g => g.height) }]} />
+            </div>
+            <div className="pr-ch">
+              <div className="pr-cht">몸무게</div>
+              <div className="pr-chs">{growth[0].year}년 {growth[0].month}월 ~ {gLast!.year}년 {gLast!.month}월 · kg</div>
+              <PrLine w={640} h={168} labels={growth.map(g => `${g.month}월`)}
+                series={[{ name: '몸무게', color: PR.alt, vals: growth.map(g => g.weight) }]} />
+            </div>
+            <div className="pr-cap">
+              기록이 없는 달은 점을 찍지 않고 앞뒤 달을 직선으로 이었습니다. 그 사이 선은 실제 측정값이 아닙니다.
+            </div>
+            <div className="pr-tt">성장 단계</div>
+            <table>
+              <thead><tr><th>항목</th><th>뜻</th><th className="n">현재</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>성장 단계</td>
+                  <td>키가 가장 빠르게 크는 시기를 지났는지
+                    <span className="pr-crit">이 시기를 지나면 근력 훈련 효과가 잘 나타납니다</span></td>
+                  <td className="n">{maturity?.maturity_stage ?? <span className="pr-soon">측정 전</span>}</td>
+                </tr>
+                <tr>
+                  <td>성장 진행률</td><td>예측 성인 키에 어느 정도 도달했는지</td>
+                  <td className="n">{maturity?.pah_percent != null
+                    ? <><span className="pr-num">{f(maturity.pah_percent)}</span> %</>
+                    : <span className="pr-soon">측정 전</span>}</td>
+                </tr>
+                <tr>
+                  <td>예측 성인 키</td>
+                  <td>부모님 키를 함께 고려한 추정값
+                    <span className="pr-crit">추정값이며 실제와 다를 수 있습니다</span></td>
+                  <td className="n">{maturity?.predicted_adult_height_cm != null
+                    ? <><span className="pr-num">{f(maturity.predicted_adult_height_cm)}</span> cm</>
+                    : <span className="pr-soon">측정 전</span>}</td>
+                </tr>
+              </tbody>
+            </table>
+          </>
+        ))}
+
+      {/* 03 근력과 점프 */}
+      {page(3, '03 · 근력과 점프', '힘과 점프 능력',
+        `${measured} 측정 · 다섯 단계로 나타낸 팀 안에서의 위치입니다`,
+        !L ? (
+          <PrPending title="VALD 측정 기록이 아직 없습니다"
+            body="점프와 근력 측정이 들어오면 이 페이지에 항목별 평가와 좌우 균형이 표시됩니다." />
+        ) : (
+          <>
+            <div className="pr-tt" style={{ marginTop: '3.6mm' }}>점프</div>
+            <table>
+              <thead><tr>
+                <th style={{ width: '38%' }}>항목</th><th className="n">측정값</th>
+                <th className="n">팀 평균</th><th style={{ width: '34%' }}>평가</th>
+              </tr></thead>
+              <tbody>
+                {PR_JUMP_ROWS.map(({ key, label, crit, unit, dec }) => {
+                  const v = computeValdValue(key, L);
+                  return (
+                    <tr key={key}>
+                      <td>{label}<span className="pr-crit">{crit}</span></td>
+                      <td className="n">{v == null ? <span className="pr-soon">측정 전</span>
+                        : <><span className="pr-num">{f(v, dec)}</span> {unit}</>}</td>
+                      <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>{f(thOf(key)[1], dec)}</span></td>
+                      <td><PrDots score={sc(key, v)} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="pr-tt">근력</div>
+            <table>
+              <thead><tr>
+                <th style={{ width: '38%' }}>항목</th><th className="n">왼쪽</th><th className="n">오른쪽</th>
+                <th className="n">좌우 차이</th><th style={{ width: '28%' }}>평가</th>
+              </tr></thead>
+              <tbody>
+                {lrRows.map(row => (
+                  <tr key={row.k}>
+                    <td>{row.label}<span className="pr-crit">{row.crit}</span></td>
+                    <td className="n"><span className="pr-num">{f(row.l)}</span></td>
+                    <td className="n"><span className="pr-num">{f(row.r)}</span></td>
+                    <td className="n">
+                      <span className="pr-num" style={{
+                        color: (row.imb ?? 0) >= 10 ? PR.brand : PR.ink2,
+                        fontWeight: (row.imb ?? 0) >= 10 ? 700 : 400,
+                      }}>{f(row.imb)}</span> %
+                    </td>
+                    <td>{(row.imb ?? 0) >= 10
+                      ? <span className="pr-gr" style={{ marginLeft: 0, color: PR.warn }}>좌우 차이 큼 · 먼저 챙기기</span>
+                      : <PrDots score={sc(row.k, avgOfNullable([row.l, row.r]))} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="pr-cap">
+              좌우 차이가 <strong>10% 를 넘으면</strong> 한쪽에 부담이 쏠리고 있다는 신호로 보고 챙깁니다.
+              {worstLr && worstLr.imb != null && worstLr.imb >= 10 && (
+                <> {player.name} 선수는 {worstLr.label}에서 {(worstLr.l ?? 0) < (worstLr.r ?? 0) ? '왼쪽' : '오른쪽'}이
+                  {' '}<strong style={{ color: PR.brand }}>{f(worstLr.imb)}%</strong> 약합니다.
+                  5페이지에 이 부분을 위한 운동이 있습니다.</>
+              )}
+            </div>
+            {chron.length >= 2 && (
+              <>
+                <div className="pr-tt">차수별 변화{' '}
+                  <span style={{ fontWeight: 500, color: PR.ink3 }}>· 점선은 팀의 최고 / 평균 / 최저</span>
+                </div>
+                <div className="pr-grid2">
+                  {PR_TREND_CHARTS.map(c => (
+                    <div className="pr-ch" key={c.key}>
+                      <div className="pr-cht">{c.label}{' '}
+                        <span style={{ color: PR.ink3, fontWeight: 500 }}>({c.unit})</span>
+                      </div>
+                      <div className="pr-chs">{c.lr ? '왼쪽 / 오른쪽 따로' : '전체'}</div>
+                      <PrLine h={78} labels={chronLabels} th={thOf(c.key)}
+                        series={c.lr
+                          ? [
+                            { name: '왼쪽', color: PR.brand, vals: chron.map(r => VALD_ACCESSORS[c.key].left!(r)) },
+                            { name: '오른쪽', color: PR.alt, vals: chron.map(r => VALD_ACCESSORS[c.key].right!(r)) },
+                          ]
+                          : [{ name: c.label, color: PR.brand, vals: chron.map(r => computeValdValue(c.key, r)) }]} />
+                      <div className="pr-lg">
+                        {(c.lr ? ['왼쪽', '오른쪽'] : [c.label]).map((nm, i) => (
+                          <span key={nm}><i style={{ borderColor: i === 0 ? PR.brand : PR.alt }} />{nm}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ))}
+
+      {/* 04 속도와 민첩성 */}
+      {page(4, '04 · 속도와 민첩성', '달리기와 방향 전환',
+        `${measured} 측정 · 시간은 짧을수록 좋습니다`,
+        <>
+          <div className="pr-tt" style={{ marginTop: '3.6mm' }}>달리기</div>
+          <table>
+            <thead><tr>
+              <th style={{ width: '34%' }}>항목</th><th className="n">이번</th><th className="n">지난 측정</th>
+              <th className="n">팀 평균</th><th style={{ width: '28%' }}>평가</th>
+            </tr></thead>
+            <tbody>
+              {PR_SPRINT_ROWS.map(({ key, label, crit }) => {
+                const v = L ? computeValdValue(key, L) : null;
+                const pv = prevValOf(key);
+                return (
+                  <tr key={key}>
+                    <td>{label}<span className="pr-crit">{crit}</span></td>
+                    <td className="n">{v == null ? <span className="pr-soon">측정 전</span>
+                      : <><span className="pr-num">{f(v, 3)}</span> 초</>}</td>
+                    <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>{f(pv, 3)}</span></td>
+                    <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>{f(thOf(key)[1], 2)}</span></td>
+                    <td><PrDots score={sc(key, v)} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="pr-cap">
+            측정 전으로 표시된 항목은 이번 측정에 포함되지 않았습니다. 그때까지 해당 평가는
+            측정된 항목만 반영된 참고값입니다.
+          </div>
+          {speedChron.length > 0 && (
+            <div className="pr-grid2" style={{ marginTop: '3.6mm' }}>
+              <div className="pr-ch">
+                <div className="pr-cht">오래 유지할 수 있는 속도{' '}
+                  <span style={{ color: PR.ink3, fontWeight: 500 }}>(km/h)</span></div>
+                <div className="pr-chs">속도 측정 차수별</div>
+                <PrLine h={100} labels={speedChron.map(x => x.test_round ?? x.test_date.slice(2, 7))}
+                  series={[{ name: 'MAS', color: PR.brand, vals: speedChron.map(x => x.mas) }]} />
+              </div>
+              <div className="pr-ch">
+                <div className="pr-cht">최고 속도{' '}
+                  <span style={{ color: PR.ink3, fontWeight: 500 }}>(km/h)</span></div>
+                <div className="pr-chs">속도 측정 차수별</div>
+                <PrLine h={100} labels={speedChron.map(x => x.test_round ?? x.test_date.slice(2, 7))}
+                  series={[{ name: 'MSS', color: PR.alt, vals: speedChron.map(x => x.mss) }]} />
+              </div>
+            </div>
+          )}
+          <div className="pr-tt">나에게 맞는 달리기 속도{' '}
+            <span style={{ fontWeight: 500, color: PR.ink3 }}>· 본인 측정값으로 계산한 개인 기준</span>
+          </div>
+          {!speed ? (
+            <PrPending title="속도 측정이 아직 없습니다"
+              body="MAS·MSS 측정이 들어오면 본인 기준의 훈련 속도 구간이 여기에 표시됩니다." />
+          ) : (() => {
+            const z = [speed.zone1_mas60, speed.zone2_mas80, speed.zone3_mas100, speed.zone4_asr20, speed.zone5_mss80];
+            const rows: [string, string, string][] = [
+              ['매우 가벼움', `0 ~ ${f(z[0])}`, '회복 · 가볍게 공을 다루는 훈련'],
+              ['가벼움', `${f(z[0])} ~ ${f(z[1])}`, '전술 훈련에서 가장 많이 머무는 구간'],
+              ['중간', `${f(z[1])} ~ ${f(z[2])}`, '경기에서 뛰는 강한 러닝 구간'],
+              ['빠름', `${f(z[2])} ~ ${f(z[3])}`, '짧게 여러 번 전력 질주할 때'],
+              ['최대', `${f(z[4])} ~ ${f(speed.mss)}`, '전력 질주 · 뒷허벅지를 지키기 위해 꼭 필요한 자극'],
+            ];
+            return (
+              <>
+                <PrZoneBar z={z} mss={speed.mss} />
+                <table style={{ marginTop: '3mm' }}>
+                  <thead><tr><th style={{ width: '20%' }}>구간</th><th className="n">속도</th><th>훈련에서 쓰이는 때</th></tr></thead>
+                  <tbody>
+                    {rows.map(([nm, rng, use]) => (
+                      <tr key={nm}><td>{nm}</td><td className="n"><span className="pr-num">{rng}</span></td><td>{use}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="pr-cap">
+                  이 구간은 역대 최고 기록(MAS {f(speed.mas)} · MSS {f(speed.mss)} km/h)으로 계산합니다.
+                  다음 측정에서 속도가 올라가면 구간도 함께 다시 계산됩니다.
+                </div>
+              </>
+            );
+          })()}
+        </>)}
+
+      {/* 05 운동 */}
+      {page(5, '05 · 운동', '지금 챙겨야 할 운동',
+        `${measured} 측정 결과에서 나온 내용입니다`,
+        rx.length === 0 ? (
+          <PrPending title="처방을 만들 측정 기록이 아직 없습니다"
+            body="측정이 들어오면 발견한 내용과 그에 맞는 운동이 여기에 표시됩니다." />
+        ) : (
+          <>
+            {rx.map((fd, i) => (
+              <div className="pr-rx" key={fd.key} style={i === 0 ? { marginTop: '3.6mm' } : undefined}>
+                <h3>{i + 1} · {prRxText(fd).title}</h3>
+                <div className="pr-rx-why">{prRxText(fd).why}</div>
+                <table>
+                  <thead><tr>
+                    <th style={{ width: '34%' }}>운동</th><th className="c">세트</th><th className="c">횟수</th>
+                    <th className="c">강도</th><th>무엇을 위해</th>
+                  </tr></thead>
+                  <tbody>
+                    {fd.exercises.map(ex => (
+                      <tr key={ex.name}>
+                        <td>{ex.name}{ex.note && <span className="pr-crit">{ex.note}</span>}</td>
+                        <td className="c"><span className="pr-num">{ex.sets}</span></td>
+                        <td className="c"><span className="pr-num">{ex.reps}</span></td>
+                        <td className="c">{ex.intensity}</td>
+                        <td>{ex.purpose}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            {chron.length >= 2 && (
+              <>
+                <div className="pr-tt">그동안의 변화</div>
+                <div className="pr-strip">
+                  <div className="pr-strip-h">처음 측정 → 이번 측정</div>
+                  {PR_TREND_KEYS.map(({ key, label, unit }) => {
+                    // chron[0] 은 체성분만 있는 행일 수 있다. 항목별로 값이 있는 회차를 찾는다.
+                    const withVal = chron.filter(r => computeValdValue(key, r) != null);
+                    if (withVal.length < 2) return null;
+                    const a = computeValdValue(key, withVal[0]);
+                    const b = computeValdValue(key, withVal[withVal.length - 1]);
+                    if (a == null || b == null) return null;
+                    const def = VALD_METRIC_DEFS.find(d => d.key === key);
+                    const better = def?.invert ? b < a : b > a;
+                    return (
+                      <div key={key} style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.9 }}>
+                        {label}{' '}
+                        <span className="pr-num" style={{ color: PR.ink3, fontWeight: 500 }}>
+                          {f(a, 1)} → {f(b, 1)} {unit}
+                        </span>{' '}
+                        <span style={{ color: better ? PR.ok : PR.warn, fontWeight: 700 }}>
+                          {better ? '좋아짐' : '지켜볼 것'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </>
+        ))}
+    </div>
+  );
+}
+
+function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
+  player: PlayerWithAcwr;
   record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[];
   maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
   grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
   return (
     <div className="space-y-4">
+      {/* 리포트는 document.body 아래에 붙인다. #root 안에 두면 인쇄할 때 #root 를 숨기는
+          규칙에 같이 걸려 아무것도 안 찍힌다. */}
+      {createPortal(
+        <PhysicalReport player={player} record={record} history={history} bodyComp={bodyComp}
+          maturity={maturity} speed={speed} speedHistory={speedHistory} grade={grade}
+          thresholds={thresholds} teamScores={teamScores} />,
+        document.body,
+      )}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="text-xs px-3 py-1.5 rounded border border-surface-secondary hover:border-brand hover:text-brand transition-colors"
+        >
+          리포트 PDF (A4 5장)
+        </button>
+      </div>
       {/* 이 탭은 6화면 분량이라 인페이지 길잡이가 없으면 맨 아래 운동 처방에 뭐가 있는지 모른 채
           스크롤해야 한다. 섹션 칩으로 목차와 이동을 함께 준다. */}
       <PhysicalSectionIndex />
@@ -1620,8 +2445,9 @@ export function PersonalDashboard() {
             새 선수가 뛴 적 없는 경기 타입이 그대로 걸려 "필터된 0경기"로 표시되는 경우가 있었다.
             key로 selectedId를 넘겨 선수 전환 시 컴포넌트를 새로 마운트해 필터를 초기화한다. */}
         {tab === 'match' && <PersonalMatchTab key={selectedId} matches={matches} />}
-        {tab === 'physical' && (
+        {player && tab === 'physical' && (
           <PhysicalTabPanel
+            player={player}
             record={physicalRecord}
             history={physicalHistory}
             bodyComp={bodyComp}
