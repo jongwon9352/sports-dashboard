@@ -868,20 +868,24 @@ function classifyMAS(v: number): string {
 // K리그 유소년 피지컬 측정 OT(2026.04.27) p.14 의 공식 컴포넌트 구성이다.
 // BODY PROFILE 은 축이 아니라 별도 섹션이고, 좌우 비대칭은 축이 아니라 신호등(정상/주의/
 // 위험)으로 부상 예방 섹션에서만 다룬다 — 같은 자료 p.37·38 의 운영 방식이다.
-// 지구력(MAS)은 공식 16개 프로토콜에 없는 우리 팀 자체 측정이라 참고 축으로 둔다.
-type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'endurance';
+// 공식 SPEED 컴포넌트(5·10·30m 스프린트)는 ACCELERATION 축으로 둔다 — OT p.33 이 같은
+// 테스트를 '초기 스피드·가속력·최대 속력'으로 나눠 보기 때문이다.
+// SPEED(MSS)와 ENDURANCE(MAS)는 공식 16개 프로토콜 밖의 우리 팀 자체 측정이라 참고 축이다.
+type RadarAxisKey = 'strength' | 'power' | 'acceleration' | 'speed' | 'agility' | 'endurance';
 const RADAR_AXES: { key: RadarAxisKey; ko: string; en: string }[] = [
   { key: 'strength', ko: '근력', en: 'Strength' },
   { key: 'power', ko: '순발력', en: 'Power' },
-  { key: 'speed', ko: '스피드', en: 'Speed' },
+  { key: 'acceleration', ko: '가속력', en: 'Acceleration' },
+  { key: 'speed', ko: '최고속도', en: 'Speed' },
   { key: 'agility', ko: '민첩성', en: 'Agility' },
   { key: 'endurance', ko: '지구력', en: 'Endurance' },
 ];
 const STRENGTH_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'];
 const POWER_METRIC_KEYS = ['cmj_height', 'squat_jump_height'];
-// 스피드 축 = 스프린트 3종(physical_report) + MSS(speed_custom_test). MSS 는 측정 테이블이
-// 달라 레코드에서 못 꺼내므로 항목 점수를 따로 합쳐 평균한다 — 항목당 같은 가중치다.
-const SPEED_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
+// 가속력 축 = 스프린트 3종(physical_report, 또래 규준 기준).
+// 최고속도 축 = MSS 단독(speed_custom_test, 팀 내부 기준). 측정 테이블이 달라
+// 레코드 루프 밖에서 더한다.
+const ACCEL_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
 const AGILITY_METRIC_KEYS = ['cod_run', 'cod_ball'];
 
 // speed_custom_test 에서 항목별로 값이 있는 가장 최근 차수를 쓴다 — 레이더의 다른 축이
@@ -964,7 +968,8 @@ function latestMetricScore(key: string, history: PhysicalTestRow[], thresholds: 
 const AXIS_METRIC_KEYS: Record<RadarAxisKey, string[]> = {
   strength: STRENGTH_METRIC_KEYS,
   power: POWER_METRIC_KEYS,
-  speed: SPEED_METRIC_KEYS,
+  acceleration: ACCEL_METRIC_KEYS,
+  speed: [],      // MSS 는 아래에서 따로 더한다
   agility: AGILITY_METRIC_KEYS,
   endurance: [],  // MAS 는 아래에서 따로 더한다
 };
@@ -1015,7 +1020,8 @@ function findWorstImbalance(record: PhysicalTestRow | null): { key: string; labe
 const RADAR_PRESCRIPTION: Record<RadarAxisKey, { title: string; text: string }> = {
   strength: { title: '근력 (Strength) 보완', text: '팀 평균 대비 근력(Nordic Curl·Hip Ab/Add·Ham Iso)이 낮습니다. 하체·고관절 근력 강화 훈련이 필요합니다.' },
   power: { title: '순발력 (Power) 보완', text: '팀 평균 대비 순발력(CMJ·Squat Jump)이 낮습니다. 플라이오메트릭·폭발적 근력 훈련이 필요합니다.' },
-  speed: { title: '스피드 (Speed) 보완', text: '팀 평균 대비 스피드(5·10·30m 스프린트 · 최고속도 MSS)가 낮습니다. 가속 구간 스프린트 기술 훈련이 필요합니다.' },
+  acceleration: { title: '가속력 (Acceleration) 보완', text: '또래 기준 대비 가속 구간(5·10·30m 스프린트)이 느립니다. 출발 자세와 초기 추진 기술 훈련이 필요합니다.' },
+  speed: { title: '최고속도 (Speed) 보완', text: '팀 평균 대비 최고속도(MSS)가 낮습니다. 최고 속도 구간 노출을 늘릴 필요가 있습니다.' },
   agility: { title: '민첩성 (Agility) 보완', text: '팀 평균 대비 민첩성(방향전환)이 낮습니다. 방향전환 기술과 감속 능력 훈련이 필요합니다.' },
   endurance: { title: '지구력 (Endurance) 보완', text: '팀 평균 대비 지구력(MAS, 최대 유산소 속도)이 낮습니다. MAS 기반 인터벌로 유산소 기저를 올릴 필요가 있습니다.' },
 };
@@ -1031,10 +1037,15 @@ const RADAR_REINFORCE_EXERCISES: Record<RadarAxisKey, { name: string; note: stri
     { name: 'Box Jump', note: '수직 파워', sets: '4세트', reps: '5회', intensity: '고강도', purpose: '수직 점프 파워 보강 목적' },
     { name: 'Squat Jump (부하)', note: '최대근력 기반 파워', sets: '3세트', reps: '6회', intensity: '중~고강도', purpose: 'EUR 개선 및 최대근력 훈련 목적' },
   ],
-  speed: [
-    { name: '가속 스프린트 드릴', note: '0~10m 가속력', sets: '5세트', reps: '10m × 5회', intensity: '고강도', purpose: '초기 가속 구간 스피드 보강 목적' },
+  acceleration: [
+    { name: '가속 스프린트 드릴', note: '0~10m 가속력', sets: '5세트', reps: '10m × 5회', intensity: '고강도', purpose: '초기 가속 구간 보강 목적' },
     { name: 'Resisted Sprint (썰매)', note: '가속 파워', sets: '4세트', reps: '20m × 4회', intensity: '고강도', purpose: '가속 구간 근력·스피드 보강 목적' },
-    { name: 'Flying Sprint', note: '최고 속도 구간', sets: '3세트', reps: '20m(가속 후) × 3회', intensity: '고강도', purpose: '최고 속도 구간 스피드 보강 목적' },
+    { name: 'Wall Drill / A-March', note: '출발 자세·추진 각도', sets: '3세트', reps: '10회 × 좌우', intensity: '중강도', purpose: '초기 추진 기술 보강 목적' },
+  ],
+  speed: [
+    { name: 'Flying Sprint', note: '최고 속도 구간', sets: '3세트', reps: '20m(가속 후) × 3회', intensity: '최대강도', purpose: '최고 속도 구간 노출 목적' },
+    { name: '다운힐 스프린트', note: '초최대 속도', sets: '3세트', reps: '30m × 3회', intensity: '최대강도', purpose: '최고 속도 신경계 자극 목적' },
+    { name: '롱 스프린트 (40~60m)', note: '속도 유지', sets: '4세트', reps: '40m × 4회', intensity: '최대강도', purpose: '최고 속도 유지 능력 보강 목적' },
   ],
   agility: [
     { name: '방향전환 래더 드릴', note: '민첩성·무게중심 제어', sets: '4세트', reps: '10초', intensity: '중강도', purpose: '방향전환 반응 속도 보강 목적' },
@@ -1120,8 +1131,9 @@ function PhysicalRadarSection({ record, history, thresholds, teamScores, playerN
     <div className="chart-card">
       <div className="chart-title">피지컬 프로필 ({RADAR_AXES.map(a => a.en.toUpperCase()).join(' · ')})</div>
       <p className="text-[11px] text-text-secondary mb-3">
-        STRENGTH·POWER·SPEED·AGILITY 는 K리그 유소년 측정 OT(2026.04.27) p.14 의 공식 컴포넌트입니다.
-        ENDURANCE(MAS)는 공식 16개 프로토콜 밖의 팀 자체 측정이라 참고 축입니다.
+        STRENGTH·POWER·AGILITY 와 ACCELERATION(5·10·30m 스프린트)은 K리그 유소년 측정
+        OT(2026.04.27) p.14 의 공식 컴포넌트입니다. SPEED(MSS)와 ENDURANCE(MAS)는 공식
+        16개 프로토콜 밖의 팀 자체 측정이라 참고 축이고, 팀 내부 기준으로 점수를 냅니다.
         좌우 비대칭은 축이 아니라 아래 부상 예방 항목에서 신호등으로 봅니다.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
