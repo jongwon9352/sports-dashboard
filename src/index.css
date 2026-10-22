@@ -380,7 +380,7 @@ section[id^="sec-"] {
 
 .pr-root {
   --pr-warn: #8A6B00;  /* load-moderate 원색은 흰 바탕 11px 에서 3.24:1 — AA 미달이라 어둡게 */
-  --pr-muted: #6B757C; /* text-disabled 원색은 3.59:1 — 9~11px 인쇄 텍스트라 4.71:1 로 내림 */
+  --pr-muted: #646E75; /* text-disabled 원색은 3.59:1 — 회색 띠(#F6F8F7) 위에서도 AA 를 넘기는 값 */
   --pr-line: var(--color-surface-secondary);
   --pr-line2: #F2F6F4;
   font-family: var(--font-sans);

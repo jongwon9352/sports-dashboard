@@ -1182,7 +1182,8 @@ function PhysicalRadarSection({ record, history, thresholds, teamScores, playerN
           )}
 
           <div className={`rounded-lg border p-3 ${worstImbalance && worstImbalance.imbalance >= 10 ? 'border-red-200 bg-red-50' : 'border-surface-secondary'}`}>
-            <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">부상 예방</div>
+            {/* 붉은 틴트 배경(#FDF4F6) 위라 text-secondary 는 2.98:1 로 AA 미달이다. */}
+            <div className="text-xs font-bold text-text-primary uppercase tracking-wide mb-1">부상 예방</div>
             {worstImbalance && worstImbalance.imbalance >= 10 ? (
               <p className="text-sm text-red-700">
                 {worstImbalance.label} 좌우 불균형이 {worstImbalance.imbalance.toFixed(1)}%로 부상 위험 기준(10%)을 넘습니다 —
@@ -1483,7 +1484,7 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
                   {m.delta > 0 ? '▲' : '▼'}{Math.abs(m.delta)}{m.unit}
                 </span>
               )}
-              {m.delta === 0 && <span className="text-xs text-text-disabled">변화 없음</span>}
+              {m.delta === 0 && <span className="text-xs text-text-secondary">변화 없음</span>}
             </div>
             <p className="text-[11px] text-text-secondary mt-0.5" style={{ fontFamily: 'var(--font-data)' }}>
               {m.from != null && m.to != null ? `${m.from} → ${m.to}${m.unit}` : '직전 월 기록 없음'}
@@ -1554,7 +1555,7 @@ function PhysicalSectionIndex() {
 // AA(4.5:1)에 못 미친다. 인쇄 전용으로 각각 4.71:1, 5.38:1 까지 어둡게 내린 값이다.
 const PR = {
   brand: '#A42843', alt: '#153E6F', ok: '#00786C', warn: '#8A6B00',
-  neutral: '#66717A', ink: '#101820', ink2: '#4F5B63', ink3: '#6B757C',
+  neutral: '#66717A', ink: '#101820', ink2: '#4F5B63', ink3: '#646E75',
   line: '#EEF3F1', bg: '#F6F8F7',
 };
 // 전달용 문서라 VALD 영문 지표명 대신 선수·학부모가 읽는 말로 바꿔 싣는다.
