@@ -710,7 +710,8 @@ function ValdTrendSection({ history, thresholds }: {
       <div className="chart-title">VALD 차수별 추이</div>
       <p className="text-[11px] text-text-secondary mb-3">
         2개 차수 이상 측정된 종목만 표시합니다. 좌우 측정 종목은 한 차트에 겹쳐 그려 불균형 변화를 함께 봅니다.
-        스프린트 3종의 최대·최저선은 팀 값이 아니라 {REFERENCE_NOTE} 입니다.
+        태그가 붙은 항목의 최대·최저선은 팀 값이 아닙니다 —
+        또래 = {THRESHOLD_SOURCE_NOTE['또래']}, K리그 = {THRESHOLD_SOURCE_NOTE['K리그']}.
       </p>
       <p className="text-[11px] text-text-secondary mb-3 flex gap-3 flex-wrap items-center">
         {([['최대', colors.green], ['평균', colors.navy], ['최저', colors.wine]] as const).map(([label, c]) => (
@@ -733,8 +734,10 @@ function ValdTrendSection({ history, thresholds }: {
             <div key={def.key} className="rounded-lg border border-surface-secondary p-2.5">
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-[11px] font-medium truncate">{def.label}</span>
-                {REFERENCE_METRIC_KEYS.includes(def.key) && (
-                  <span className="text-[9px] px-1 py-0.5 rounded bg-surface-secondary text-text-secondary flex-shrink-0">또래</span>
+                {THRESHOLD_SOURCE[def.key] && (
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-surface-secondary text-text-secondary flex-shrink-0">
+                    {THRESHOLD_SOURCE[def.key]}
+                  </span>
                 )}
                 <span className="text-sm font-bold ml-auto" style={{ fontFamily: 'var(--font-data)' }}>
                   {last != null ? `${last.toFixed(digits(def.unit, def.key))}${def.unit}` : '—'}
@@ -862,13 +865,16 @@ function classifyMAS(v: number): string {
 
 // ── 피지컬 프로필 레이더 차트 (Strength/Power/Speed/Agility/Balance) ──────
 // 데이터 관리에서 입력한 학년별 임계값(vald_thresholds)의 최저~최고 구간을 0~100점으로 환산해 사용한다.
-type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'balance' | 'endurance';
+// K리그 유소년 피지컬 측정 OT(2026.04.27) p.14 의 공식 컴포넌트 구성이다.
+// BODY PROFILE 은 축이 아니라 별도 섹션이고, 좌우 비대칭은 축이 아니라 신호등(정상/주의/
+// 위험)으로 부상 예방 섹션에서만 다룬다 — 같은 자료 p.37·38 의 운영 방식이다.
+// 지구력(MAS)은 공식 16개 프로토콜에 없는 우리 팀 자체 측정이라 참고 축으로 둔다.
+type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'endurance';
 const RADAR_AXES: { key: RadarAxisKey; ko: string; en: string }[] = [
   { key: 'strength', ko: '근력', en: 'Strength' },
   { key: 'power', ko: '순발력', en: 'Power' },
   { key: 'speed', ko: '스피드', en: 'Speed' },
   { key: 'agility', ko: '민첩성', en: 'Agility' },
-  { key: 'balance', ko: '밸런스', en: 'Balance' },
   { key: 'endurance', ko: '지구력', en: 'Endurance' },
 ];
 const STRENGTH_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'];
@@ -894,17 +900,42 @@ function latestSpeedVals(rows: SpeedCustomTestRow[]): SpeedAxisVals {
 // 참고용으로 남겨둔다.
 const SCORE_THRESHOLD_GRADE = '전체';
 
-// 이 항목들의 임계값은 팀 실측이 아니라 외부 규준(또래 아카데미 12~16세 백분위, 14세 P10~P90)
-// 이다. 출처: Raków 아카데미 495명 — PMC11751035 / PubMed 39844899.
-// MAS 는 한 번 적용했다가 되돌렸다. 원문은 30-15 IFT x 0.8 인데 우리 측정은 VAMEVAL 이라
-// 39명 중 17명이 100점에 몰렸다. 두 테스트를 같은 선수에게 함께 재보기 전에는 변환 계수를
-// 알 수 없어 MAS 는 팀 실측 기준을 쓴다.
-const REFERENCE_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
-const REFERENCE_NOTE = '또래 기준 (12~16세 아카데미 백분위 P10~P90)';
+// 임계값 출처. 기본은 팀 실측이고 아래 항목만 외부 기준을 쓴다.
+const THRESHOLD_SOURCE: Record<string, '또래' | 'K리그'> = {
+  sprint_5m: '또래', sprint_10m: '또래', sprint_30m: '또래',
+  nordic_curl: 'K리그', eur: 'K리그',
+};
+const THRESHOLD_SOURCE_NOTE: Record<'또래' | 'K리그', string> = {
+  '또래': '또래 기준 (12~16세 아카데미 백분위 P10~P90 · PMC11751035)',
+  'K리그': 'K리그 유소년 피지컬 측정 OT 공식 기준 (2026.04.27)',
+};
+
+// EUR 은 높을수록 좋은 지표가 아니다. K리그 OT 는 1.10~1.15 를 적정 구간으로 본다
+// (1.10 미만 = 폭발적 힘 훈련 필요 / 1.15 초과 = 최대근력 훈련 필요).
+// 선형 점수를 쓰면 1.55 가 100점, 적정값 1.12 가 14점이 되어 메시지가 거꾸로 나갔다.
+const EUR_BAND: readonly [number, number] = [1.10, 1.15];
+// 5단계 등급('매우 우수'~'보완 필요')은 밴드형 지표에 안 맞는다. 1.25 를 '우수'로 쓰면
+// OT 의 '1.15 이상 = 최대근력 훈련 필요'와 정반대 메시지가 된다. EUR 만 판정문으로 쓴다.
+function eurVerdict(v: number | null): { text: string; color: string } | null {
+  if (v == null) return null;
+  const [lo, hi] = EUR_BAND;
+  if (v < lo) return { text: '탄성 훈련 필요', color: '#8A6B00' };
+  if (v > hi) return { text: '최대근력 훈련 필요', color: '#8A6B00' };
+  return { text: '적정', color: '#008C7E' };
+}
+
 function scoreForMetric(metricKey: string, value: number | null, thresholds: ValdThreshold[]): number | null {
   if (value == null) return null;
   const t = thresholds.find(x => x.metric_key === metricKey && x.grade === SCORE_THRESHOLD_GRADE);
   if (!t || t.min_value == null || t.max_value == null || t.max_value === t.min_value) return null;
+  if (metricKey === 'eur') {
+    const [lo, hi] = EUR_BAND;
+    if (value >= lo && value <= hi) return 100;
+    const span = value < lo ? lo - t.min_value : t.max_value - hi;
+    if (span <= 0) return value < lo ? 0 : 0;
+    const ratio = value < lo ? (value - t.min_value) / span : (t.max_value - value) / span;
+    return Math.max(0, Math.min(100, ratio * 100));
+  }
   const def = VALD_METRIC_DEFS.find(d => d.key === metricKey);
   const ratio = def?.invert
     ? (t.max_value - value) / (t.max_value - t.min_value)
@@ -918,76 +949,49 @@ function avgOfScores(scores: (number | null)[]): number | null {
   return t.reduce((a, b) => a + b, 0) / t.length;
 }
 
-function avgScoreForGroup(keys: string[], record: PhysicalTestRow, thresholds: ValdThreshold[]): number | null {
-  return avgOfScores(keys.map(k => scoreForMetric(k, computeValdValue(k, record), thresholds)));
-}
-
-function balanceScore(record: PhysicalTestRow): number | null {
-  const imbalances: number[] = [];
-  for (const key of STRENGTH_METRIC_KEYS) {
-    const acc = VALD_ACCESSORS[key];
-    if (!acc.left || !acc.right) continue;
-    const l = acc.left(record);
-    const r = acc.right(record);
-    if (l == null || r == null) continue;
-    imbalances.push(Math.abs(imbalancePercent(l, r)));
+// 항목별로 값이 있는 가장 최근 회차를 쓴다. 예전에는 축 단위로 찾아서, 최신 회차에
+// cod_ball 만 있으면 축이 이미 계산 가능해져 이전 회차의 cod_run 이 영영 안 쓰였다(23명).
+type ScoredItem = { score: number | null; date: string | null };
+function latestMetricScore(key: string, history: PhysicalTestRow[], thresholds: ValdThreshold[]): ScoredItem {
+  for (const r of history) {
+    const v = computeValdValue(key, r);
+    if (v == null) continue;
+    return { score: scoreForMetric(key, v, thresholds), date: r.test_date };
   }
-  if (imbalances.length === 0) return null;
-  const avgImbalance = imbalances.reduce((a, b) => a + b, 0) / imbalances.length;
-  return Math.max(0, Math.min(100, 100 - avgImbalance * 5));
+  return { score: null, date: null };
 }
 
-function axisScore(
-  key: RadarAxisKey, record: PhysicalTestRow, thresholds: ValdThreshold[],
-  speedVals?: SpeedAxisVals,
-): number | null {
-  switch (key) {
-    case 'strength': return avgScoreForGroup(STRENGTH_METRIC_KEYS, record, thresholds);
-    case 'power':    return avgScoreForGroup(POWER_METRIC_KEYS, record, thresholds);
-    case 'speed':    return avgOfScores([
-      ...SPEED_METRIC_KEYS.map(k => scoreForMetric(k, computeValdValue(k, record), thresholds)),
-      scoreForMetric('mss', speedVals?.mss ?? null, thresholds),
-    ]);
-    case 'agility':  return avgScoreForGroup(AGILITY_METRIC_KEYS, record, thresholds);
-    case 'balance':  return balanceScore(record);
-    case 'endurance': return scoreForMetric('mas', speedVals?.mas ?? null, thresholds);
-  }
-}
+const AXIS_METRIC_KEYS: Record<RadarAxisKey, string[]> = {
+  strength: STRENGTH_METRIC_KEYS,
+  power: POWER_METRIC_KEYS,
+  speed: SPEED_METRIC_KEYS,
+  agility: AGILITY_METRIC_KEYS,
+  endurance: [],  // MAS 는 아래에서 따로 더한다
+};
 
-// history는 최신순 정렬을 전제로 한다.
-// 측정 일정·장비 사정으로 특정 항목만 빠진 회차가 흔한데, 예전에는 최신 회차 하나만 보고
-// 값이 없으면 차트에 0으로 그려 레이더가 실제보다 안쪽으로 찌그러졌다. 항목별로 값이 있는
-// 가장 최근 회차까지 거슬러 올라가 채우고, 어느 회차에서 가져왔는지 dates에 남긴다.
+// history 는 최신순 정렬을 전제로 한다. dates 에는 그 축에 기여한 항목 중 가장 오래된
+// 측정일을 남긴다 — 한 항목이라도 이전 회차에서 끌어왔으면 화면에 밝혀야 한다.
 function computeRadarScores(
   history: PhysicalTestRow[], thresholds: ValdThreshold[], speedVals?: SpeedAxisVals,
 ): {
   scores: Record<RadarAxisKey, number | null>;
   dates: Record<RadarAxisKey, string | null>;
 } {
-  const empty = () => ({ strength: null, power: null, speed: null, agility: null, balance: null, endurance: null });
-  const scores = empty() as Record<RadarAxisKey, number | null>;
-  const dates = empty() as Record<RadarAxisKey, string | null>;
+  const scores = {} as Record<RadarAxisKey, number | null>;
+  const dates = {} as Record<RadarAxisKey, string | null>;
   for (const a of RADAR_AXES) {
-    // 지구력(MAS)과 MSS 는 physical_report 가 아니라 speed_custom_test 에 있다.
-    // 지구력은 회차 루프를 돌 필요가 없고, VALD 기록이 아예 없는 선수도 계산돼야 한다.
+    const items: ScoredItem[] = AXIS_METRIC_KEYS[a.key].map(k => latestMetricScore(k, history, thresholds));
+    // MAS·MSS 는 physical_report 가 아니라 speed_custom_test 에 있어 회차 루프 밖에서 더한다.
+    if (a.key === 'speed') {
+      items.push({ score: scoreForMetric('mss', speedVals?.mss ?? null, thresholds), date: speedVals?.date ?? null });
+    }
     if (a.key === 'endurance') {
-      scores.endurance = scoreForMetric('mas', speedVals?.mas ?? null, thresholds);
-      dates.endurance = scores.endurance != null ? speedVals?.date ?? null : null;
-      continue;
+      items.push({ score: scoreForMetric('mas', speedVals?.mas ?? null, thresholds), date: speedVals?.date ?? null });
     }
-    for (const record of history) {
-      const v = axisScore(a.key, record, thresholds, speedVals);
-      if (v != null) {
-        scores[a.key] = v;
-        dates[a.key] = record.test_date;
-        break;
-      }
-    }
-  }
-  // 스프린트 기록이 한 회차도 없어도 MSS 만으로 스피드 축을 세운다.
-  if (scores.speed == null) {
-    const mss = scoreForMetric('mss', speedVals?.mss ?? null, thresholds);
-    if (mss != null) { scores.speed = mss; dates.speed = speedVals?.date ?? null; }
+    const used = items.filter(i => i.score != null);
+    scores[a.key] = avgOfScores(used.map(i => i.score));
+    const ds = used.map(i => i.date).filter((d): d is string => d != null).sort();
+    dates[a.key] = ds[0] ?? null;
   }
   return { scores, dates };
 }
@@ -1013,7 +1017,6 @@ const RADAR_PRESCRIPTION: Record<RadarAxisKey, { title: string; text: string }> 
   power: { title: '순발력 (Power) 보완', text: '팀 평균 대비 순발력(CMJ·Squat Jump)이 낮습니다. 플라이오메트릭·폭발적 근력 훈련이 필요합니다.' },
   speed: { title: '스피드 (Speed) 보완', text: '팀 평균 대비 스피드(5·10·30m 스프린트 · 최고속도 MSS)가 낮습니다. 가속 구간 스프린트 기술 훈련이 필요합니다.' },
   agility: { title: '민첩성 (Agility) 보완', text: '팀 평균 대비 민첩성(방향전환)이 낮습니다. 방향전환 기술과 감속 능력 훈련이 필요합니다.' },
-  balance: { title: '밸런스 (Balance) 보완', text: '팀 평균 대비 밸런스(좌우 균형)가 낮습니다. 편측 안정화·코어 훈련과 방향전환 기술 훈련이 필요합니다.' },
   endurance: { title: '지구력 (Endurance) 보완', text: '팀 평균 대비 지구력(MAS, 최대 유산소 속도)이 낮습니다. MAS 기반 인터벌로 유산소 기저를 올릴 필요가 있습니다.' },
 };
 
@@ -1037,11 +1040,6 @@ const RADAR_REINFORCE_EXERCISES: Record<RadarAxisKey, { name: string; note: stri
     { name: '방향전환 래더 드릴', note: '민첩성·무게중심 제어', sets: '4세트', reps: '10초', intensity: '중강도', purpose: '방향전환 반응 속도 보강 목적' },
     { name: '5-10-5 Pro Agility Drill', note: '급가속·급감속', sets: '4세트', reps: '1회 × 좌우', intensity: '고강도', purpose: '방향전환 민첩성 보강 목적' },
     { name: 'Reactive Cone Drill (볼 포함)', note: '경기 상황 민첩성', sets: '3세트', reps: '30초', intensity: '중~고강도', purpose: '볼 소유 상황 방향전환 보강 목적' },
-  ],
-  balance: [
-    { name: 'Single-leg RDL', note: '편측 밸런스·고관절', sets: '3세트', reps: '8회 × 좌우', intensity: '저~중강도, 덤벨 병행 가능', purpose: '밸런스 보강 목적' },
-    { name: 'Bosu 밸런스 스쿼트', note: '고유수용성감각', sets: '3세트', reps: '10회', intensity: '저강도', purpose: '밸런스 보강 목적' },
-    { name: '방향전환 래더 드릴', note: '민첩성·무게중심 제어', sets: '4세트', reps: '10초', intensity: '중강도', purpose: '밸런스 보강 목적' },
   ],
   endurance: [
     { name: 'MAS 인터벌 (30-15)', note: 'MAS 100~120% 구간', sets: '3세트', reps: '30초 달리기 / 15초 휴식 × 8회', intensity: '고강도', purpose: '최대 유산소 속도 보강 목적' },
@@ -1121,6 +1119,11 @@ function PhysicalRadarSection({ record, history, thresholds, teamScores, playerN
   return (
     <div className="chart-card">
       <div className="chart-title">피지컬 프로필 ({RADAR_AXES.map(a => a.en.toUpperCase()).join(' · ')})</div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        STRENGTH·POWER·SPEED·AGILITY 는 K리그 유소년 측정 OT(2026.04.27) p.14 의 공식 컴포넌트입니다.
+        ENDURANCE(MAS)는 공식 16개 프로토콜 밖의 팀 자체 측정이라 참고 축입니다.
+        좌우 비대칭은 축이 아니라 아래 부상 예방 항목에서 신호등으로 봅니다.
+      </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <ResponsiveContainer width="100%" height={280}>
@@ -1321,6 +1324,28 @@ function buildFindings({ record, history, thresholds, teamScores, speed, speedVa
         why: '6개 축 중 팀 평균과의 격차가 가장 큽니다 — 우선 보강 대상입니다.',
         metric: RADAR_AXES.map(a => `${a.ko} ${scores[a.key] != null ? Math.round(scores[a.key]!) : '—'}`).join(' · '),
         exercises: RADAR_REINFORCE_EXERCISES[worst.key],
+      });
+    }
+  }
+
+  // 3) ADD:ABD 비율 — K리그 OT p.38 '무릎 안정성: 내전근/외전근 비율 기반 ACL 리스크 관리'.
+  // OT 는 개념만 제시하고 수치 기준을 주지 않는다. 외부 아카데미(U17~U19) 보고값 0.9±0.2 를
+  // 참고 구간으로 쓰고, 벗어나면 관찰로만 올린다 — 처방을 걸 만한 근거는 아직 없다.
+  if (record) {
+    const ad = computeValdValue('hip_adduction', record);
+    const ab = computeValdValue('hip_abduction', record);
+    if (ad != null && ab != null && ab > 0) {
+      const ratio = ad / ab;
+      const off = ratio < 0.7 || ratio > 1.3;
+      findings.push({
+        key: 'add-abd', level: off ? 'warn' : 'ok', badge: off ? '관찰' : '참고',
+        title: `고관절 내전:외전 비율 ${ratio.toFixed(2)}`,
+        why: off
+          ? '참고 구간(0.7~1.3)을 벗어났습니다. 무릎 안정성과 관련된 비율이라 다음 차수까지 추이를 봅니다.'
+          : '참고 구간(0.7~1.3) 안입니다.',
+        metric: `내전 ${ad.toFixed(1)}N · 외전 ${ab.toFixed(1)}N`,
+        exercises: [],
+        ref: 'K리그 유소년 측정 OT p.38 무릎 안정성 · 외부 아카데미(U17~U19) 보고값 0.9±0.2. OT 에 수치 기준은 없음',
       });
     }
   }
@@ -2073,13 +2098,17 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
               <tbody>
                 {PR_JUMP_ROWS.map(({ key, label, crit, unit, dec }) => {
                   const v = computeValdValue(key, L);
+                  const ev = key === 'eur' ? eurVerdict(v) : null;
                   return (
                     <tr key={key}>
-                      <td>{label}<span className="pr-crit">{crit}</span></td>
+                      <td>{label}<span className="pr-crit">{crit}
+                        {key === 'eur' && ' · 적정 1.10~1.15 (K리그 기준)'}</span></td>
                       <td className="n">{v == null ? <span className="pr-soon">측정 전</span>
                         : <><span className="pr-num">{f(v, dec)}</span> {unit}</>}</td>
                       <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>{f(thOf(key)[1], dec)}</span></td>
-                      <td><PrDots score={sc(key, v)} /></td>
+                      <td>{ev
+                        ? <span className="pr-gr" style={{ marginLeft: 0, color: ev.color }}>{ev.text}</span>
+                        : <PrDots score={sc(key, v)} />}</td>
                     </tr>
                   );
                 })}
