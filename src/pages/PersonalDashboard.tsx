@@ -1546,9 +1546,12 @@ function PhysicalSectionIndex() {
 // 인쇄 CSS 로 뽑는다(jspdf 는 한글 폰트가 없어 html2canvas 래스터가 되고, 9.4pt 한글 표가
 // 인쇄물에서 뭉개진다). 화면 카드를 재사용하지 않고 전용 레이아웃을 쓴다.
 // 색은 전부 index.css @theme 값이다. SVG 속성에는 CSS 변수를 못 넣어 상수로 둔다.
+// 인쇄 리포트는 흰 종이에 9~11px 로 찍혀 학부모에게 간다. 화면용 토큰을 그대로 쓰면
+// --color-text-disabled(#7D8990)가 3.59:1, --color-load-optimal(#008C7E)이 4.16:1 로
+// AA(4.5:1)에 못 미친다. 인쇄 전용으로 각각 4.71:1, 5.38:1 까지 어둡게 내린 값이다.
 const PR = {
-  brand: '#A42843', alt: '#153E6F', ok: '#008C7E', warn: '#8A6B00',
-  neutral: '#66717A', ink: '#101820', ink2: '#4F5B63', ink3: '#7D8990',
+  brand: '#A42843', alt: '#153E6F', ok: '#00786C', warn: '#8A6B00',
+  neutral: '#66717A', ink: '#101820', ink2: '#4F5B63', ink3: '#6B757C',
   line: '#EEF3F1', bg: '#F6F8F7',
 };
 // 전달용 문서라 VALD 영문 지표명 대신 선수·학부모가 읽는 말로 바꿔 싣는다.
