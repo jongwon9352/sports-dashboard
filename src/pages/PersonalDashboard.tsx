@@ -858,23 +858,40 @@ function classifyMAS(v: number): string {
 
 // ── 피지컬 프로필 레이더 차트 (Strength/Power/Speed/Agility/Balance) ──────
 // 데이터 관리에서 입력한 학년별 임계값(vald_thresholds)의 최저~최고 구간을 0~100점으로 환산해 사용한다.
-type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'balance';
+type RadarAxisKey = 'strength' | 'power' | 'speed' | 'agility' | 'balance' | 'endurance';
 const RADAR_AXES: { key: RadarAxisKey; ko: string; en: string }[] = [
   { key: 'strength', ko: '근력', en: 'Strength' },
   { key: 'power', ko: '순발력', en: 'Power' },
   { key: 'speed', ko: '스피드', en: 'Speed' },
   { key: 'agility', ko: '민첩성', en: 'Agility' },
   { key: 'balance', ko: '밸런스', en: 'Balance' },
+  { key: 'endurance', ko: '지구력', en: 'Endurance' },
 ];
 const STRENGTH_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'];
 const POWER_METRIC_KEYS = ['cmj_height', 'squat_jump_height'];
+// 스피드 축 = 스프린트 3종(physical_report) + MSS(speed_custom_test). MSS 는 측정 테이블이
+// 달라 레코드에서 못 꺼내므로 항목 점수를 따로 합쳐 평균한다 — 항목당 같은 가중치다.
 const SPEED_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
 const AGILITY_METRIC_KEYS = ['cod_run', 'cod_ball'];
 
-function scoreForMetric(metricKey: string, value: number | null, thresholds: ValdThreshold[], grade: string | null): number | null {
+// speed_custom_test 에서 항목별로 값이 있는 가장 최근 차수를 쓴다 — 레이더의 다른 축이
+// '가장 최근 측정 가능한 회차'를 쓰는 것과 같은 규칙이다(역대 최고가 아니다).
+export interface SpeedAxisVals { mas: number | null; mss: number | null; date: string | null }
+function latestSpeedVals(rows: SpeedCustomTestRow[]): SpeedAxisVals {
+  const byDate = [...rows].sort((a, b) => b.test_date.localeCompare(a.test_date));
+  const mas = byDate.find(r => r.mas != null) ?? null;
+  const mss = byDate.find(r => r.mss != null) ?? null;
+  return { mas: mas?.mas ?? null, mss: mss?.mss ?? null, date: mas?.test_date ?? mss?.test_date ?? null };
+}
+
+// 점수는 팀 전체(`전체`) 임계값으로만 낸다. 학년별 임계는 표본이 6~16명이라
+// 최소~최대를 그 학년에서 뽑으면 학년 최하위가 자동으로 0점, 최상위가 100점이 되어
+// 점수가 '능력 수준'이 아니라 '학년 내 순위'가 된다. 학년 임계값은 데이터 관리 화면의
+// 참고용으로 남겨둔다.
+const SCORE_THRESHOLD_GRADE = '전체';
+function scoreForMetric(metricKey: string, value: number | null, thresholds: ValdThreshold[]): number | null {
   if (value == null) return null;
-  const t = thresholds.find(x => x.metric_key === metricKey && x.grade === grade)
-    ?? thresholds.find(x => x.metric_key === metricKey && x.grade === '전체');
+  const t = thresholds.find(x => x.metric_key === metricKey && x.grade === SCORE_THRESHOLD_GRADE);
   if (!t || t.min_value == null || t.max_value == null || t.max_value === t.min_value) return null;
   const def = VALD_METRIC_DEFS.find(d => d.key === metricKey);
   const ratio = def?.invert
@@ -883,12 +900,14 @@ function scoreForMetric(metricKey: string, value: number | null, thresholds: Val
   return Math.max(0, Math.min(100, ratio * 100));
 }
 
-function avgScoreForGroup(keys: string[], record: PhysicalTestRow, thresholds: ValdThreshold[], grade: string | null): number | null {
-  const scores = keys
-    .map(k => scoreForMetric(k, computeValdValue(k, record), thresholds, grade))
-    .filter((s): s is number => s != null);
-  if (scores.length === 0) return null;
-  return scores.reduce((a, b) => a + b, 0) / scores.length;
+function avgOfScores(scores: (number | null)[]): number | null {
+  const t = scores.filter((s): s is number => s != null);
+  if (t.length === 0) return null;
+  return t.reduce((a, b) => a + b, 0) / t.length;
+}
+
+function avgScoreForGroup(keys: string[], record: PhysicalTestRow, thresholds: ValdThreshold[]): number | null {
+  return avgOfScores(keys.map(k => scoreForMetric(k, computeValdValue(k, record), thresholds)));
 }
 
 function balanceScore(record: PhysicalTestRow): number | null {
@@ -906,13 +925,20 @@ function balanceScore(record: PhysicalTestRow): number | null {
   return Math.max(0, Math.min(100, 100 - avgImbalance * 5));
 }
 
-function axisScore(key: RadarAxisKey, record: PhysicalTestRow, thresholds: ValdThreshold[], grade: string | null): number | null {
+function axisScore(
+  key: RadarAxisKey, record: PhysicalTestRow, thresholds: ValdThreshold[],
+  speedVals?: SpeedAxisVals,
+): number | null {
   switch (key) {
-    case 'strength': return avgScoreForGroup(STRENGTH_METRIC_KEYS, record, thresholds, grade);
-    case 'power':    return avgScoreForGroup(POWER_METRIC_KEYS, record, thresholds, grade);
-    case 'speed':    return avgScoreForGroup(SPEED_METRIC_KEYS, record, thresholds, grade);
-    case 'agility':  return avgScoreForGroup(AGILITY_METRIC_KEYS, record, thresholds, grade);
+    case 'strength': return avgScoreForGroup(STRENGTH_METRIC_KEYS, record, thresholds);
+    case 'power':    return avgScoreForGroup(POWER_METRIC_KEYS, record, thresholds);
+    case 'speed':    return avgOfScores([
+      ...SPEED_METRIC_KEYS.map(k => scoreForMetric(k, computeValdValue(k, record), thresholds)),
+      scoreForMetric('mss', speedVals?.mss ?? null, thresholds),
+    ]);
+    case 'agility':  return avgScoreForGroup(AGILITY_METRIC_KEYS, record, thresholds);
     case 'balance':  return balanceScore(record);
+    case 'endurance': return scoreForMetric('mas', speedVals?.mas ?? null, thresholds);
   }
 }
 
@@ -920,21 +946,36 @@ function axisScore(key: RadarAxisKey, record: PhysicalTestRow, thresholds: ValdT
 // 측정 일정·장비 사정으로 특정 항목만 빠진 회차가 흔한데, 예전에는 최신 회차 하나만 보고
 // 값이 없으면 차트에 0으로 그려 레이더가 실제보다 안쪽으로 찌그러졌다. 항목별로 값이 있는
 // 가장 최근 회차까지 거슬러 올라가 채우고, 어느 회차에서 가져왔는지 dates에 남긴다.
-function computeRadarScores(history: PhysicalTestRow[], thresholds: ValdThreshold[], grade: string | null): {
+function computeRadarScores(
+  history: PhysicalTestRow[], thresholds: ValdThreshold[], speedVals?: SpeedAxisVals,
+): {
   scores: Record<RadarAxisKey, number | null>;
   dates: Record<RadarAxisKey, string | null>;
 } {
-  const scores = { strength: null, power: null, speed: null, agility: null, balance: null } as Record<RadarAxisKey, number | null>;
-  const dates = { strength: null, power: null, speed: null, agility: null, balance: null } as Record<RadarAxisKey, string | null>;
+  const empty = () => ({ strength: null, power: null, speed: null, agility: null, balance: null, endurance: null });
+  const scores = empty() as Record<RadarAxisKey, number | null>;
+  const dates = empty() as Record<RadarAxisKey, string | null>;
   for (const a of RADAR_AXES) {
+    // 지구력(MAS)과 MSS 는 physical_report 가 아니라 speed_custom_test 에 있다.
+    // 지구력은 회차 루프를 돌 필요가 없고, VALD 기록이 아예 없는 선수도 계산돼야 한다.
+    if (a.key === 'endurance') {
+      scores.endurance = scoreForMetric('mas', speedVals?.mas ?? null, thresholds);
+      dates.endurance = scores.endurance != null ? speedVals?.date ?? null : null;
+      continue;
+    }
     for (const record of history) {
-      const v = axisScore(a.key, record, thresholds, grade);
+      const v = axisScore(a.key, record, thresholds, speedVals);
       if (v != null) {
         scores[a.key] = v;
         dates[a.key] = record.test_date;
         break;
       }
     }
+  }
+  // 스프린트 기록이 한 회차도 없어도 MSS 만으로 스피드 축을 세운다.
+  if (scores.speed == null) {
+    const mss = scoreForMetric('mss', speedVals?.mss ?? null, thresholds);
+    if (mss != null) { scores.speed = mss; dates.speed = speedVals?.date ?? null; }
   }
   return { scores, dates };
 }
@@ -958,9 +999,10 @@ function findWorstImbalance(record: PhysicalTestRow | null): { key: string; labe
 const RADAR_PRESCRIPTION: Record<RadarAxisKey, { title: string; text: string }> = {
   strength: { title: '근력 (Strength) 보완', text: '팀 평균 대비 근력(Nordic Curl·Hip Ab/Add·Ham Iso)이 낮습니다. 하체·고관절 근력 강화 훈련이 필요합니다.' },
   power: { title: '순발력 (Power) 보완', text: '팀 평균 대비 순발력(CMJ·Squat Jump)이 낮습니다. 플라이오메트릭·폭발적 근력 훈련이 필요합니다.' },
-  speed: { title: '스피드 (Speed) 보완', text: '팀 평균 대비 스피드(5·10·30m 스프린트)가 낮습니다. 가속 구간 스프린트 기술 훈련이 필요합니다.' },
+  speed: { title: '스피드 (Speed) 보완', text: '팀 평균 대비 스피드(5·10·30m 스프린트 · 최고속도 MSS)가 낮습니다. 가속 구간 스프린트 기술 훈련이 필요합니다.' },
   agility: { title: '민첩성 (Agility) 보완', text: '팀 평균 대비 민첩성(방향전환)이 낮습니다. 방향전환 기술과 감속 능력 훈련이 필요합니다.' },
-  balance: { title: '밸런스 (Balance) 보완', text: '팀 평균 대비 밸런스(방향전환·좌우 균형)가 낮습니다. 편측 안정화·코어 훈련과 방향전환 기술 훈련이 필요합니다.' },
+  balance: { title: '밸런스 (Balance) 보완', text: '팀 평균 대비 밸런스(좌우 균형)가 낮습니다. 편측 안정화·코어 훈련과 방향전환 기술 훈련이 필요합니다.' },
+  endurance: { title: '지구력 (Endurance) 보완', text: '팀 평균 대비 지구력(MAS, 최대 유산소 속도)이 낮습니다. MAS 기반 인터벌로 유산소 기저를 올릴 필요가 있습니다.' },
 };
 
 const RADAR_REINFORCE_EXERCISES: Record<RadarAxisKey, { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string }[]> = {
@@ -989,6 +1031,11 @@ const RADAR_REINFORCE_EXERCISES: Record<RadarAxisKey, { name: string; note: stri
     { name: 'Bosu 밸런스 스쿼트', note: '고유수용성감각', sets: '3세트', reps: '10회', intensity: '저강도', purpose: '밸런스 보강 목적' },
     { name: '방향전환 래더 드릴', note: '민첩성·무게중심 제어', sets: '4세트', reps: '10초', intensity: '중강도', purpose: '밸런스 보강 목적' },
   ],
+  endurance: [
+    { name: 'MAS 인터벌 (30-15)', note: 'MAS 100~120% 구간', sets: '3세트', reps: '30초 달리기 / 15초 휴식 × 8회', intensity: '고강도', purpose: '최대 유산소 속도 보강 목적' },
+    { name: '4분 인터벌', note: 'MAS 90~95% 구간', sets: '4세트', reps: '4분 / 3분 휴식', intensity: '중~고강도', purpose: '유산소 기저 보강 목적' },
+    { name: '반복 스프린트 (RSA)', note: 'Zone4 이상 반복', sets: '3세트', reps: '20m × 6회 / 20초 휴식', intensity: '고강도', purpose: '반복 고강도 러닝 회복력 보강 목적' },
+  ],
 };
 
 const RADAR_INJURY_EXERCISES: Record<string, { name: string; note: string; sets: string; reps: string; intensity: string; purpose: string }[]> = {
@@ -1012,19 +1059,19 @@ const RADAR_INJURY_EXERCISES: Record<string, { name: string; note: string; sets:
 
 const FIFA11_EXERCISE = { name: 'FIFA 11+ 스타일 워밍업', note: '전신(하체 중심)', sets: '1세트', reps: '15~20분', intensity: '저강도, 훈련 전 필수 루틴', purpose: '전반적 부상 예방 목적' };
 
-function PhysicalRadarSection({ record, history, grade, thresholds, teamScores, playerName }: {
+function PhysicalRadarSection({ record, history, thresholds, teamScores, playerName, speedVals }: {
   record: PhysicalTestRow | null;
   history: PhysicalTestRow[];
-  grade: string | null;
   thresholds: ValdThreshold[];
   teamScores: Record<RadarAxisKey, number | null>[];
   playerName: string;
+  speedVals: SpeedAxisVals;
 }) {
   if (!record) {
     return <div className="chart-card text-center text-text-secondary py-8">피지컬 데이터가 없어 프로필을 표시할 수 없습니다.</div>;
   }
 
-  const { scores, dates } = computeRadarScores(history, thresholds, grade);
+  const { scores, dates } = computeRadarScores(history, thresholds, speedVals);
   const teamAvg = Object.fromEntries(
     RADAR_AXES.map(a => {
       const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
@@ -1061,7 +1108,7 @@ function PhysicalRadarSection({ record, history, grade, thresholds, teamScores, 
 
   return (
     <div className="chart-card">
-      <div className="chart-title">피지컬 프로필 (STRENGTH · POWER · SPEED · AGILITY · BALANCE)</div>
+      <div className="chart-title">피지컬 프로필 ({RADAR_AXES.map(a => a.en.toUpperCase()).join(' · ')})</div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <ResponsiveContainer width="100%" height={280}>
@@ -1095,7 +1142,7 @@ function PhysicalRadarSection({ record, history, grade, thresholds, teamScores, 
             <div className="text-xs font-bold text-text-secondary uppercase tracking-wide mb-1">차트 해석</div>
             {best && worst ? (
               <p className="text-sm">
-                {playerName} 선수는 5개 항목 중 {best.ko}({best.en})가 {Math.round(scores[best.key]!)}점으로 가장 강점이며({diffText(best)}),
+                {playerName} 선수는 {validAxes.length}개 항목 중 {best.ko}({best.en})가 {Math.round(scores[best.key]!)}점으로 가장 강점이며({diffText(best)}),
                 {' '}{worst.ko}({worst.en})가 {Math.round(scores[worst.key]!)}점으로 상대적으로 보완이 필요합니다({diffText(worst)}).
               </p>
             ) : (
@@ -1209,10 +1256,10 @@ function FindingCard({ f }: { f: Finding }) {
 
 // 처방 계산부. 화면(PrescriptionSection)과 인쇄 리포트(PhysicalReport)가 같은 결과를 써야
 // 해서 컴포넌트 밖으로 뺐다. 둘이 각자 계산하면 종이와 화면이 다른 말을 하게 된다.
-function buildFindings({ record, history, grade, thresholds, teamScores, speed }: {
-  record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null;
+function buildFindings({ record, history, thresholds, teamScores, speed, speedVals }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[];
   thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
-  speed: SpeedCustomRow | null;
+  speed: SpeedCustomRow | null; speedVals: SpeedAxisVals;
 }): Finding[] {
   const findings: Finding[] = [];
 
@@ -1246,7 +1293,7 @@ function buildFindings({ record, history, grade, thresholds, teamScores, speed }
 
   // 2) 레이더 약점 축 — 팀 평균 대비 격차가 가장 큰 축. 처방에 근거 점수를 같이 보인다.
   if (record) {
-    const { scores } = computeRadarScores(history, thresholds, grade);
+    const { scores } = computeRadarScores(history, thresholds, speedVals);
     const teamAvg = Object.fromEntries(RADAR_AXES.map(a => {
       const vals = teamScores.map(s => s[a.key]).filter((v): v is number => v != null);
       return [a.key, vals.length > 0 ? vals.reduce((x, y) => x + y, 0) / vals.length : null];
@@ -1303,12 +1350,12 @@ function buildFindings({ record, history, grade, thresholds, teamScores, speed }
   return findings;
 }
 
-function PrescriptionSection({ record, history, grade, thresholds, teamScores, maturity, speed }: {
-  record: PhysicalTestRow | null; history: PhysicalTestRow[]; grade: string | null;
+function PrescriptionSection({ record, history, thresholds, teamScores, maturity, speed, speedVals }: {
+  record: PhysicalTestRow | null; history: PhysicalTestRow[];
   thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[];
-  maturity: MaturityRow | null; speed: SpeedCustomRow | null;
+  maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedVals: SpeedAxisVals;
 }) {
-  const findings = buildFindings({ record, history, grade, thresholds, teamScores, speed });
+  const findings = buildFindings({ record, history, thresholds, teamScores, speed, speedVals });
 
   const stageNote: Record<string, string> = {
     '성장 급증기 전': '코디네이션·기초 체력 위주로, 고강도 근력 훈련은 신중히 접근합니다.',
@@ -1751,12 +1798,12 @@ function PrPage({ no, secno, title, sub, player, measured, children }: {
   );
 }
 
-function PhysicalReport({ player, record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores }: {
+function PhysicalReport({ player, record, history, bodyComp, maturity, speed, speedHistory, thresholds, teamScores, speedVals }: {
   player: PlayerWithAcwr; record: PhysicalTestRow | null; history: PhysicalTestRow[];
   bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null;
   speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
-  grade: string | null; thresholds: ValdThreshold[];
-  teamScores: Record<RadarAxisKey, number | null>[];
+  thresholds: ValdThreshold[];
+  teamScores: Record<RadarAxisKey, number | null>[]; speedVals: SpeedAxisVals;
 }) {
   const f = (v: number | null | undefined, n = 1) => v == null ? '—' : Number(v).toFixed(n);
   // 임계는 '전체' 기준으로 고정한다 — 학년별 표본이 적어 학년 임계는 한두 명으로 흔들린다.
@@ -1764,7 +1811,7 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
     const t = thresholds.find(x => x.metric_key === k && x.grade === '전체');
     return [t?.max_value ?? null, t?.avg_value ?? null, t?.min_value ?? null];
   };
-  const sc = (k: string, v: number | null) => scoreForMetric(k, v, thresholds, null);
+  const sc = (k: string, v: number | null) => scoreForMetric(k, v, thresholds);
   const avgOfNullable = (xs: (number | null)[]) => {
     const t = xs.filter((x): x is number => x != null);
     return t.length ? t.reduce((a, b) => a + b, 0) / t.length : null;
@@ -1785,20 +1832,13 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
   const chronLabels = chron.map(r => r.test_round ?? r.test_date.slice(2, 7));
   const measured = L?.test_date ?? '—';
 
-  // 6축 — 5축은 화면 레이더와 같은 계산(항목 빠진 회차는 이전 회차로 보완), 지구력은 MAS.
-  const { scores } = computeRadarScores(history, thresholds, grade);
-  const aerobic = speed ? Math.max(0, Math.min(100, (speed.mas - 12) / 8 * 100)) : null;
-  const axes = [
-    ...RADAR_AXES.map(a => ({ ko: a.ko, me: scores[a.key] })),
-    { ko: '지구력', me: aerobic },
-  ];
+  // 6축 전부 화면 레이더와 같은 계산을 쓴다(항목이 빠진 회차는 이전 회차로 보완).
+  const { scores } = computeRadarScores(history, thresholds, speedVals);
+  const axes = RADAR_AXES.map(a => ({ ko: a.ko, me: scores[a.key] }));
   const teamAvgOf = (k: RadarAxisKey) => avgOfNullable(teamScores.map(s => s[k]));
-  const axesWithTeam = [
-    ...RADAR_AXES.map(a => ({ ko: a.ko, me: scores[a.key], team: teamAvgOf(a.key) ?? 50 })),
-    { ko: '지구력', me: aerobic, team: 50 },
-  ];
+  const axesWithTeam = RADAR_AXES.map(a => ({ ko: a.ko, me: scores[a.key], team: teamAvgOf(a.key) ?? 50 }));
   const now = avgOfNullable(axes.map(a => a.me));
-  const prevScores = PRV ? computeRadarScores(history.slice(1), thresholds, grade).scores : null;
+  const prevScores = PRV ? computeRadarScores(history.slice(1), thresholds, speedVals).scores : null;
   const prev = prevScores ? avgOfNullable(RADAR_AXES.map(a => prevScores[a.key])) : null;
   const delta = (now != null && prev != null) ? Math.round(now) - Math.round(prev) : null;
 
@@ -1818,7 +1858,7 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
   const gFirstOfYear = growth.find(g => gLast && g.year === gLast.year) ?? null;
   const speedChron = [...speedHistory].sort((a, b) => a.test_date.localeCompare(b.test_date));
 
-  const findings = buildFindings({ record, history, grade, thresholds, teamScores, speed });
+  const findings = buildFindings({ record, history, thresholds, teamScores, speed, speedVals });
   const rx = findings.filter(x => x.exercises.length > 0).slice(0, 3);
 
   const improved = chron.length >= 2 ? PR_TREND_KEYS
@@ -2248,11 +2288,11 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
   );
 }
 
-function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, speedHistory, grade, thresholds, teamScores, playerName }: {
-  player: PlayerWithAcwr;
+function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, speedHistory, thresholds, teamScores, playerName, speedVals }: {
+  player: PlayerWithAcwr; speedVals: SpeedAxisVals;
   record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[];
   maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
-  grade: string | null; thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
+  thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
 }) {
   return (
     <div className="space-y-4">
@@ -2260,8 +2300,8 @@ function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, 
           규칙에 같이 걸려 아무것도 안 찍힌다. */}
       {createPortal(
         <PhysicalReport player={player} record={record} history={history} bodyComp={bodyComp}
-          maturity={maturity} speed={speed} speedHistory={speedHistory} grade={grade}
-          thresholds={thresholds} teamScores={teamScores} />,
+          maturity={maturity} speed={speed} speedHistory={speedHistory}
+          thresholds={thresholds} teamScores={teamScores} speedVals={speedVals} />,
         document.body,
       )}
       <div className="flex justify-end">
@@ -2276,15 +2316,15 @@ function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, 
       {/* 이 탭은 6화면 분량이라 인페이지 길잡이가 없으면 맨 아래 운동 처방에 뭐가 있는지 모른 채
           스크롤해야 한다. 섹션 칩으로 목차와 이동을 함께 준다. */}
       <PhysicalSectionIndex />
-      <section id="sec-radar"><PhysicalRadarSection record={record} history={history} grade={grade} thresholds={thresholds} teamScores={teamScores} playerName={playerName} /></section>
+      <section id="sec-radar"><PhysicalRadarSection record={record} history={history} thresholds={thresholds} teamScores={teamScores} playerName={playerName} speedVals={speedVals} /></section>
       <section id="sec-body"><BodyCompositionSection rows={bodyComp} /></section>
       <section id="sec-month"><MonthlyChangeCard bodyComp={bodyComp} maturity={maturity} /></section>
       <section id="sec-maturity"><MaturitySection row={maturity} /></section>
       <section id="sec-vald"><ValdSection record={record} /></section>
       <section id="sec-valdtrend"><ValdTrendSection history={history} thresholds={thresholds} /></section>
       <section id="sec-speed"><SpeedCustomSection row={speed} history={speedHistory} /></section>
-      <section id="sec-rx"><PrescriptionSection record={record} history={history} grade={grade} thresholds={thresholds}
-        teamScores={teamScores} maturity={maturity} speed={speed} /></section>
+      <section id="sec-rx"><PrescriptionSection record={record} history={history} thresholds={thresholds}
+        teamScores={teamScores} maturity={maturity} speed={speed} speedVals={speedVals} /></section>
     </div>
   );
 }
@@ -2303,6 +2343,8 @@ export function PersonalDashboard() {
   const [maturity, setMaturity] = useState<MaturityRow | null>(null);
   const [speed, setSpeed] = useState<SpeedCustomRow | null>(null);
   const [speedHistory, setSpeedHistory] = useState<SpeedCustomTestRow[]>([]);
+  // 팀 평균 축(스피드·지구력)을 내려면 선택 선수뿐 아니라 전원의 속도 기록이 필요하다.
+  const [allSpeedRows, setAllSpeedRows] = useState<SpeedCustomTestRow[]>([]);
   const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
   const [valdThresholds, setValdThresholds] = useState<ValdThreshold[]>([]);
@@ -2356,14 +2398,27 @@ export function PersonalDashboard() {
       setMaturity(maturityRows.find(r => r.player_id === selectedId) ?? null);
       setSpeed(speedRows.find(r => r.player_id === selectedId) ?? null);
       setSpeedHistory(speedTestRows.filter(r => r.player_id === selectedId));
+      setAllSpeedRows(speedTestRows);
     });
     return () => { active = false; };
   }, [selectedId]);
 
   const player = players.find(p => p.id === selectedId) ?? null;
+  const speedByPlayer = useMemo(() => {
+    const m = new Map<string, SpeedCustomTestRow[]>();
+    for (const r of allSpeedRows) {
+      const list = m.get(r.player_id);
+      if (list) list.push(r); else m.set(r.player_id, [r]);
+    }
+    return m;
+  }, [allSpeedRows]);
   const teamRadarScores = players.map(p =>
-    computeRadarScores(teamPhysicalHistory.get(p.id) ?? [], valdThresholds, p.grade ?? null).scores,
+    computeRadarScores(
+      teamPhysicalHistory.get(p.id) ?? [], valdThresholds,
+      latestSpeedVals(speedByPlayer.get(p.id) ?? []),
+    ).scores,
   );
+  const speedVals = useMemo(() => latestSpeedVals(speedHistory), [speedHistory]);
 
   if (loading) {
     return <div className="p-8 text-text-secondary text-center">로딩 중...</div>;
@@ -2454,9 +2509,9 @@ export function PersonalDashboard() {
             maturity={maturity}
             speed={speed}
             speedHistory={speedHistory}
-            grade={player?.grade ?? null}
             thresholds={valdThresholds}
             teamScores={teamRadarScores}
+            speedVals={speedVals}
             playerName={player?.name ?? ''}
           />
         )}
