@@ -533,9 +533,12 @@ function imbalancePercent(l: number, r: number): number {
   const base = Math.max(l, r);
   return base > 0 ? ((r - l) / base) * 100 : 0;
 }
+// 11px 보조 텍스트에 쓰이는 색이라 colors.warning(#B08A00) 원색은 흰 바탕에서
+// 3.24:1 로 AA 미달이다. 배지·존 색은 그대로 두고 이 텍스트만 5.02:1 로 내린다.
+const IMBALANCE_WARN_TEXT = '#8A6B00';
 function imbalanceColor(pct: number): string {
   const abs = Math.abs(pct);
-  return abs >= 10 ? colors.danger : abs >= 5 ? colors.warning : colors.safe;
+  return abs >= 10 ? colors.danger : abs >= 5 ? IMBALANCE_WARN_TEXT : colors.safe;
 }
 
 function StatMiniCard({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
