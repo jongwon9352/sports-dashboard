@@ -882,10 +882,13 @@ const RADAR_AXES: { key: RadarAxisKey; ko: string; en: string }[] = [
 ];
 const STRENGTH_METRIC_KEYS = ['nordic_curl', 'hip_abduction', 'hip_adduction', 'ham_iso'];
 const POWER_METRIC_KEYS = ['cmj_height', 'squat_jump_height'];
-// 가속력 축 = 스프린트 3종(physical_report, 또래 규준 기준).
-// 최고속도 축 = MSS 단독(speed_custom_test, 팀 내부 기준). 측정 테이블이 달라
-// 레코드 루프 밖에서 더한다.
-const ACCEL_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
+// 가속력 축 = 0~5m·0~10m 누적 기록(또래 규준 기준). 30m 는 뺐다 — OT p.33 이 0~30m 를
+// '최대스피드 확인'으로 분류하고, 실제로 10~30m 플라잉 속도는 이론 최고속도 V0 와 r=0.99 다.
+// 구간 속도(5~10m 등)로 바꾸지 않은 이유: 또래 규준표가 누적 시간이라 그대로 비교되는데,
+// 구간 백분위는 누적 백분위를 빼서 만들 수 없다(백분위는 가산적이지 않다).
+const ACCEL_METRIC_KEYS = ['sprint_5m', 'sprint_10m'];
+// 최고속도 축 = 10~30m 플라잉(physical_report 파생) + MSS(speed_custom_test). 둘 다 팀 내부
+// 기준이고 서로 r=0.93 이다. MSS 는 테이블이 달라 레코드 루프 밖에서 더한다.
 const AGILITY_METRIC_KEYS = ['cod_run', 'cod_ball'];
 
 // speed_custom_test 에서 항목별로 값이 있는 가장 최근 차수를 쓴다 — 레이더의 다른 축이
@@ -969,7 +972,7 @@ const AXIS_METRIC_KEYS: Record<RadarAxisKey, string[]> = {
   strength: STRENGTH_METRIC_KEYS,
   power: POWER_METRIC_KEYS,
   acceleration: ACCEL_METRIC_KEYS,
-  speed: [],      // MSS 는 아래에서 따로 더한다
+  speed: ['fly_10_30'],   // MSS 는 아래에서 따로 더한다
   agility: AGILITY_METRIC_KEYS,
   endurance: [],  // MAS 는 아래에서 따로 더한다
 };
@@ -1020,8 +1023,8 @@ function findWorstImbalance(record: PhysicalTestRow | null): { key: string; labe
 const RADAR_PRESCRIPTION: Record<RadarAxisKey, { title: string; text: string }> = {
   strength: { title: '근력 (Strength) 보완', text: '팀 평균 대비 근력(Nordic Curl·Hip Ab/Add·Ham Iso)이 낮습니다. 하체·고관절 근력 강화 훈련이 필요합니다.' },
   power: { title: '순발력 (Power) 보완', text: '팀 평균 대비 순발력(CMJ·Squat Jump)이 낮습니다. 플라이오메트릭·폭발적 근력 훈련이 필요합니다.' },
-  acceleration: { title: '가속력 (Acceleration) 보완', text: '또래 기준 대비 가속 구간(5·10·30m 스프린트)이 느립니다. 출발 자세와 초기 추진 기술 훈련이 필요합니다.' },
-  speed: { title: '최고속도 (Speed) 보완', text: '팀 평균 대비 최고속도(MSS)가 낮습니다. 최고 속도 구간 노출을 늘릴 필요가 있습니다.' },
+  acceleration: { title: '가속력 (Acceleration) 보완', text: '또래 기준 대비 가속 구간(0~5m·0~10m)이 느립니다. 출발 자세와 초기 추진 기술 훈련이 필요합니다.' },
+  speed: { title: '최고속도 (Speed) 보완', text: '팀 평균 대비 최고속도(10~30m 플라잉 · MSS)가 낮습니다. 최고 속도 구간 노출을 늘릴 필요가 있습니다.' },
   agility: { title: '민첩성 (Agility) 보완', text: '팀 평균 대비 민첩성(방향전환)이 낮습니다. 방향전환 기술과 감속 능력 훈련이 필요합니다.' },
   endurance: { title: '지구력 (Endurance) 보완', text: '팀 평균 대비 지구력(MAS, 최대 유산소 속도)이 낮습니다. MAS 기반 인터벌로 유산소 기저를 올릴 필요가 있습니다.' },
 };
@@ -1131,9 +1134,9 @@ function PhysicalRadarSection({ record, history, thresholds, teamScores, playerN
     <div className="chart-card">
       <div className="chart-title">피지컬 프로필 ({RADAR_AXES.map(a => a.en.toUpperCase()).join(' · ')})</div>
       <p className="text-[11px] text-text-secondary mb-3">
-        STRENGTH·POWER·AGILITY 와 ACCELERATION(5·10·30m 스프린트)은 K리그 유소년 측정
-        OT(2026.04.27) p.14 의 공식 컴포넌트입니다. SPEED(MSS)와 ENDURANCE(MAS)는 공식
-        16개 프로토콜 밖의 팀 자체 측정이라 참고 축이고, 팀 내부 기준으로 점수를 냅니다.
+        STRENGTH·POWER·AGILITY 와 ACCELERATION(0~5m·0~10m)은 K리그 유소년 측정
+        OT(2026.04.27) p.14 의 공식 컴포넌트입니다. SPEED(10~30m 플라잉 · MSS)와
+        ENDURANCE(MAS)는 공식 16개 프로토콜 밖이라 참고 축이고, 팀 내부 기준으로 점수를 냅니다.
         좌우 비대칭은 축이 아니라 아래 부상 예방 항목에서 신호등으로 봅니다.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1788,6 +1791,36 @@ function prRxText(fd: Finding): { title: string; why: string } {
   return { title: fd.title, why: fd.why };
 }
 
+// 누적 3점(5·10·30m)에 단일지수 모델 d(t)=V0(t+τe^(-t/τ)-τ) 을 맞춰
+// 최고속도와 분리된 가속 능력을 뽑는다 (Samozino/Morin). 우리 37명에서 a_max 와 V0 의
+// 상관은 -0.08 로 서로 독립이고, a_max 는 0~5m 속도와 r=0.92 다.
+// 절대값은 출발 게이트 위치에 좌우되므로(우리 τ 평균 0.57s vs 문헌 성인 1.1~1.2s)
+// 문헌값과 비교하지 않고 팀 내부 비교용으로만 쓴다.
+function sprintProfile(t5: number | null, t10: number | null, t30: number | null):
+  { v0: number; tau: number; amax: number } | null {
+  if (t5 == null || t10 == null || t30 == null) return null;
+  if (!(t5 > 0 && t10 > t5 && t30 > t10)) return null;
+  const pts: [number, number][] = [[t5, 5], [t10, 10], [t30, 30]];
+  const err = (V: number, tau: number) => pts.reduce((acc, [t, d]) => {
+    const m = V * (t + tau * Math.exp(-t / tau) - tau);
+    return acc + (m - d) * (m - d);
+  }, 0);
+  let best = { e: Infinity, v: 8, tau: 0.5 };
+  for (let V = 6; V <= 11.001; V += 0.05) {
+    for (let T = 0.2; T <= 0.9001; T += 0.005) {
+      const e = err(V, T);
+      if (e < best.e) best = { e, v: V, tau: T };
+    }
+  }
+  for (let V = best.v - 0.05; V <= best.v + 0.05; V += 0.005) {
+    for (let T = Math.max(0.05, best.tau - 0.005); T <= best.tau + 0.005; T += 0.0005) {
+      const e = err(V, T);
+      if (e < best.e) best = { e, v: V, tau: T };
+    }
+  }
+  return { v0: best.v, tau: best.tau, amax: best.v / best.tau };
+}
+
 const PR_TOTAL_PAGES = 5;
 
 function PrPage({ no, secno, title, sub, player, measured, children }: {
@@ -2216,31 +2249,41 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
                   </tr>
                 );
               })}
+              {(() => {
+                const fly = L ? computeValdValue('fly_10_30', L) : null;
+                const flyPrev = prevValOf('fly_10_30');
+                const prof = L ? sprintProfile(L.sprint_5m_time, L.sprint_10m_time, L.sprint_30m_time) : null;
+                return (
+                  <>
+                    <tr>
+                      <td>10~30m 최고 속도<span className="pr-crit">출발 가속 구간을 뺀 뒤의 속도</span></td>
+                      <td className="n">{fly == null ? <span className="pr-soon">측정 전</span>
+                        : <><span className="pr-num">{f(fly, 1)}</span> km/h</>}</td>
+                      <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>{f(flyPrev, 1)}</span></td>
+                      <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>{f(thOf('fly_10_30')[1], 1)}</span></td>
+                      <td><PrDots score={sc('fly_10_30', fly)} /></td>
+                    </tr>
+                    <tr>
+                      <td>가속도<span className="pr-crit">기록 전체에서 계산 · 최고속도와 별개인 가속 능력</span></td>
+                      <td className="n">{prof == null ? <span className="pr-soon">측정 전</span>
+                        : <><span className="pr-num">{f(prof.amax, 1)}</span> m/s²</>}</td>
+                      <td className="n">—</td>
+                      <td className="n"><span className="pr-num" style={{ color: PR.ink3 }}>13.9</span></td>
+                      <td><span className="pr-soon">참고값</span></td>
+                    </tr>
+                  </>
+                );
+              })()}
             </tbody>
           </table>
           <div className="pr-cap">
-            측정 전으로 표시된 항목은 이번 측정에 포함되지 않았습니다. 그때까지 해당 평가는
-            측정된 항목만 반영된 참고값입니다. 달리기 평가는 팀 안에서의 순위가 아니라
-            <strong> 같은 또래 아카데미 선수들의 기록</strong>을 기준으로 매깁니다.
+            측정 전으로 표시된 항목은 이번 측정에 포함되지 않았습니다. 0~5m·0~10m 평가는
+            팀 안에서의 순위가 아니라 <strong>같은 또래 아카데미 선수들의 기록</strong>을 기준으로,
+            10~30m 와 최고속도는 <strong>팀 기준</strong>으로 매깁니다. 가속도는 팀 안에서만
+            비교하는 참고값입니다 — 측정 장비의 출발 위치에 따라 숫자가 달라져 다른 팀이나
+            논문 값과는 비교할 수 없습니다.
           </div>
-          {speedChron.length > 0 && (
-            <div className="pr-grid2" style={{ marginTop: '3.6mm' }}>
-              <div className="pr-ch">
-                <div className="pr-cht">오래 유지할 수 있는 속도{' '}
-                  <span style={{ color: PR.ink3, fontWeight: 500 }}>(km/h)</span></div>
-                <div className="pr-chs">속도 측정 차수별</div>
-                <PrLine h={100} labels={speedChron.map(x => x.test_round ?? x.test_date.slice(2, 7))}
-                  series={[{ name: 'MAS', color: PR.brand, vals: speedChron.map(x => x.mas) }]} />
-              </div>
-              <div className="pr-ch">
-                <div className="pr-cht">최고 속도{' '}
-                  <span style={{ color: PR.ink3, fontWeight: 500 }}>(km/h)</span></div>
-                <div className="pr-chs">속도 측정 차수별</div>
-                <PrLine h={100} labels={speedChron.map(x => x.test_round ?? x.test_date.slice(2, 7))}
-                  series={[{ name: 'MSS', color: PR.alt, vals: speedChron.map(x => x.mss) }]} />
-              </div>
-            </div>
-          )}
+
           <div className="pr-tt">나에게 맞는 달리기 속도{' '}
             <span style={{ fontWeight: 500, color: PR.ink3 }}>· 본인 측정값으로 계산한 개인 기준</span>
           </div>
@@ -2268,8 +2311,12 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
                   </tbody>
                 </table>
                 <div className="pr-cap">
-                  이 구간은 역대 최고 기록(MAS {f(speed.mas)} · MSS {f(speed.mss)} km/h)으로 계산합니다.
-                  다음 측정에서 속도가 올라가면 구간도 함께 다시 계산됩니다.
+                  역대 최고 기록(MAS {f(speed.mas)} · MSS {f(speed.mss)} km/h)으로 계산합니다.
+                  {speedChron.length >= 2 && (
+                    <> 오래 유지할 수 있는 속도는 {speedChron[0].test_round ?? '처음'}{' '}
+                      <span className="pr-num">{f(speedChron[0].mas)}</span> → {speedChron[speedChron.length - 1].test_round ?? '최근'}{' '}
+                      <span className="pr-num">{f(speedChron[speedChron.length - 1].mas)}</span> km/h 입니다.</>
+                  )}
                 </div>
               </>
             );

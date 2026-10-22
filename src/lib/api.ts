@@ -3347,6 +3347,10 @@ export const VALD_METRIC_DEFS: {
   { key: 'sprint_5m', label: '5m 스프린트', unit: 'sec', invert: true, dotPlot: true },
   { key: 'sprint_10m', label: '10m 스프린트', unit: 'sec', invert: true, dotPlot: true },
   { key: 'sprint_30m', label: '30m 스프린트', unit: 'sec', invert: true, dotPlot: true },
+  {
+    key: 'fly_10_30', label: '10~30m 플라잉 속도', unit: 'km/h',
+    note: '누적 시간에서 파생한다 — 20m ÷ (30m 기록 − 10m 기록). 0~30m 누적은 가속 구간이 섞여 있어 최고속도 지표로 쓸 수 없다. GPS MSS 와 r=0.93.',
+  },
   { key: 'cod_run', label: '방향전환(볼 무)', unit: 'sec', invert: true, dotPlot: true },
   { key: 'cod_ball', label: '방향전환(볼 유)', unit: 'sec', invert: true, dotPlot: true },
 ];
@@ -3367,6 +3371,12 @@ export const VALD_ACCESSORS: Record<string, { left?: (r: PhysicalTestRow) => num
   sprint_5m: { value: r => r.sprint_5m_time },
   sprint_10m: { value: r => r.sprint_10m_time },
   sprint_30m: { value: r => r.sprint_30m_time },
+  // 10~30m 플라잉 = 가속 구간을 뺀 최고속도. 누적 기록에서 파생한다.
+  fly_10_30: {
+    value: r => (r.sprint_30m_time != null && r.sprint_10m_time != null && r.sprint_30m_time > r.sprint_10m_time)
+      ? 20 / (r.sprint_30m_time - r.sprint_10m_time) * 3.6
+      : null,
+  },
   cod_run: { value: r => r.cod_run },
   cod_ball: { value: r => r.cod_ball },
 };
