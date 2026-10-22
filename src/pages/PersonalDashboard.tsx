@@ -710,6 +710,7 @@ function ValdTrendSection({ history, thresholds }: {
       <div className="chart-title">VALD 차수별 추이</div>
       <p className="text-[11px] text-text-secondary mb-3">
         2개 차수 이상 측정된 종목만 표시합니다. 좌우 측정 종목은 한 차트에 겹쳐 그려 불균형 변화를 함께 봅니다.
+        스프린트 3종의 최대·최저선은 팀 값이 아니라 {REFERENCE_NOTE} 입니다.
       </p>
       <p className="text-[11px] text-text-secondary mb-3 flex gap-3 flex-wrap items-center">
         {([['최대', colors.green], ['평균', colors.navy], ['최저', colors.wine]] as const).map(([label, c]) => (
@@ -732,6 +733,9 @@ function ValdTrendSection({ history, thresholds }: {
             <div key={def.key} className="rounded-lg border border-surface-secondary p-2.5">
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-[11px] font-medium truncate">{def.label}</span>
+                {REFERENCE_METRIC_KEYS.includes(def.key) && (
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-surface-secondary text-text-secondary flex-shrink-0">또래</span>
+                )}
                 <span className="text-sm font-bold ml-auto" style={{ fontFamily: 'var(--font-data)' }}>
                   {last != null ? `${last.toFixed(digits(def.unit, def.key))}${def.unit}` : '—'}
                 </span>
@@ -889,6 +893,14 @@ function latestSpeedVals(rows: SpeedCustomTestRow[]): SpeedAxisVals {
 // 점수가 '능력 수준'이 아니라 '학년 내 순위'가 된다. 학년 임계값은 데이터 관리 화면의
 // 참고용으로 남겨둔다.
 const SCORE_THRESHOLD_GRADE = '전체';
+
+// 이 항목들의 임계값은 팀 실측이 아니라 외부 규준(또래 아카데미 12~16세 백분위, 14세 P10~P90)
+// 이다. 출처: Raków 아카데미 495명 — PMC11751035 / PubMed 39844899.
+// MAS 는 한 번 적용했다가 되돌렸다. 원문은 30-15 IFT x 0.8 인데 우리 측정은 VAMEVAL 이라
+// 39명 중 17명이 100점에 몰렸다. 두 테스트를 같은 선수에게 함께 재보기 전에는 변환 계수를
+// 알 수 없어 MAS 는 팀 실측 기준을 쓴다.
+const REFERENCE_METRIC_KEYS = ['sprint_5m', 'sprint_10m', 'sprint_30m'];
+const REFERENCE_NOTE = '또래 기준 (12~16세 아카데미 백분위 P10~P90)';
 function scoreForMetric(metricKey: string, value: number | null, thresholds: ValdThreshold[]): number | null {
   if (value == null) return null;
   const t = thresholds.find(x => x.metric_key === metricKey && x.grade === SCORE_THRESHOLD_GRADE);
@@ -1306,7 +1318,7 @@ function buildFindings({ record, history, thresholds, teamScores, speed, speedVa
       findings.push({
         key: `axis-${worst.key}`, level: 'warn', badge: '보강',
         title: `${worst.ko} ${Math.round(scores[worst.key]!)}점 · 팀 평균보다 ${Math.abs(gap)}점 ${gap < 0 ? '낮음' : '높음'}`,
-        why: '5개 축 중 팀 평균과의 격차가 가장 큽니다 — 우선 보강 대상입니다.',
+        why: '6개 축 중 팀 평균과의 격차가 가장 큽니다 — 우선 보강 대상입니다.',
         metric: RADAR_AXES.map(a => `${a.ko} ${scores[a.key] != null ? Math.round(scores[a.key]!) : '—'}`).join(' · '),
         exercises: RADAR_REINFORCE_EXERCISES[worst.key],
       });
@@ -2167,7 +2179,8 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
           </table>
           <div className="pr-cap">
             측정 전으로 표시된 항목은 이번 측정에 포함되지 않았습니다. 그때까지 해당 평가는
-            측정된 항목만 반영된 참고값입니다.
+            측정된 항목만 반영된 참고값입니다. 달리기 평가는 팀 안에서의 순위가 아니라
+            <strong> 같은 또래 아카데미 선수들의 기록</strong>을 기준으로 매깁니다.
           </div>
           {speedChron.length > 0 && (
             <div className="pr-grid2" style={{ marginTop: '3.6mm' }}>
