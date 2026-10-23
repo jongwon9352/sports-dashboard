@@ -13,6 +13,7 @@ import {
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
   fetchPlayerAcwrMultiMetric, fetchTeamAcwrData, fetchValdThresholds,
   fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchSpeedCustomTestRows,
+  THRESHOLD_SOURCE, THRESHOLD_SOURCE_NOTE,
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
@@ -905,16 +906,6 @@ function latestSpeedVals(rows: SpeedCustomTestRow[]): SpeedAxisVals {
 // 점수가 '능력 수준'이 아니라 '학년 내 순위'가 된다. 학년 임계값은 데이터 관리 화면의
 // 참고용으로 남겨둔다.
 const SCORE_THRESHOLD_GRADE = '전체';
-
-// 임계값 출처. 기본은 팀 실측이고 아래 항목만 외부 기준을 쓴다.
-const THRESHOLD_SOURCE: Record<string, '또래' | 'K리그'> = {
-  sprint_5m: '또래', sprint_10m: '또래', sprint_30m: '또래',
-  nordic_curl: 'K리그', eur: 'K리그',
-};
-const THRESHOLD_SOURCE_NOTE: Record<'또래' | 'K리그', string> = {
-  '또래': '또래 기준 (12~16세 아카데미 백분위 P10~P90 · PMC11751035)',
-  'K리그': 'K리그 유소년 피지컬 측정 OT 공식 기준 (2026.04.27)',
-};
 
 // EUR 은 높을수록 좋은 지표가 아니다. K리그 OT 는 1.10~1.15 를 적정 구간으로 본다
 // (1.10 미만 = 폭발적 힘 훈련 필요 / 1.15 초과 = 최대근력 훈련 필요).

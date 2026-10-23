@@ -7,7 +7,7 @@ import {
   fetchBodyCompositionRecords, syncBodyCompositionFromGoogleSheet, fetchSpeedCustomTestRows, updateSpeedCustomTestRow, speedZones,
   fetchMaturityRecords, syncMaturityFromGoogleSheet, clearMaturityData,
   fetchKhamisRocheCoefficients, fetchValdThresholds, upsertValdThresholds, computeValdValue,
-  VALD_METRIC_DEFS, VALD_GRADES,
+  VALD_METRIC_DEFS, VALD_GRADES, THRESHOLD_SOURCE, THRESHOLD_SOURCE_NOTE,
   type PhysicalTestRow, type BodyCompositionRow, type SpeedCustomTestRow, type MaturityRow,
   type KhamisRocheCoefficient, type ValdThreshold,
 } from '../lib/api';
@@ -237,22 +237,34 @@ function ValdThresholdEditor({ records, players }: { records: PhysicalTestRow[];
     }
   };
 
-  // 팀 실측 데이터(선수별 최신 측정 기록)의 최대/평균/최저를 학년별로 계산해 자동 채우기
+  // 팀 실측 데이터의 최대/평균/최저를 학년별로 계산해 자동 채우기.
+  // 선수마다 '이 항목에 값이 있는 가장 최근 회차'를 하나 고른다 — PersonalDashboard 의 점수 계산과
+  // 같은 규칙이어야 한다. '선수의 최신 행'으로 잡으면 그 행에 해당 항목이 없는 선수가 통째로 빠져
+  // (노드보드만 잰 보강 측정이 최신인 경우 등) 대상 인원이 줄고 임계값이 화면 점수와 어긋난다.
   const handleAutofill = async () => {
     setAutofilling(true);
     try {
-      const latestByPlayer = new Map<string, PhysicalTestRow>();
+      const latestValue = new Map<string, number>();
+      const latestDate = new Map<string, string>();
       for (const r of records) {
-        const prev = latestByPlayer.get(r.player_id);
-        if (!prev || r.test_date > prev.test_date) latestByPlayer.set(r.player_id, r);
+        const v = computeValdValue(metricKey, r);
+        if (v == null) continue;
+        const prev = latestDate.get(r.player_id);
+        if (!prev || r.test_date > prev) {
+          latestDate.set(r.player_id, r.test_date);
+          latestValue.set(r.player_id, v);
+        }
       }
       const gradeMap = new Map(players.map(p => [p.id, p.grade as string]));
-      const rows: ValdThreshold[] = VALD_GRADES.map(grade => {
+      // 외부 기준(또래 백분위·K리그 OT) 항목은 '전체' 행이 그 기준값이다. 팀 실측으로 덮으면
+      // 레퍼런스가 사라지고 점수가 '팀 내 순위'로 바뀐다. 학년별 행만 채운다.
+      const grades = THRESHOLD_SOURCE[metricKey]
+        ? VALD_GRADES.filter(g => g !== '전체')
+        : VALD_GRADES;
+      const rows: ValdThreshold[] = grades.map(grade => {
         const values = players
           .filter(p => grade === '전체' || gradeMap.get(p.id) === grade)
-          .map(p => latestByPlayer.get(p.id))
-          .filter((r): r is PhysicalTestRow => r != null)
-          .map(r => computeValdValue(metricKey, r))
+          .map(p => latestValue.get(p.id))
           .filter((v): v is number => v != null);
         if (values.length === 0) return { metric_key: metricKey, grade, max_value: null, avg_value: null, min_value: null };
         return {
@@ -285,6 +297,12 @@ function ValdThresholdEditor({ records, players }: { records: PhysicalTestRow[];
           {autofilling ? '계산 중...' : '팀 데이터로 자동 채우기'}
         </button>
       </div>
+      {THRESHOLD_SOURCE[metricKey] && (
+        <p className="text-xs text-text-secondary mb-3">
+          전체 행은 {THRESHOLD_SOURCE_NOTE[THRESHOLD_SOURCE[metricKey]]} 입니다 —
+          자동 채우기가 덮어쓰지 않습니다. 점수 계산은 이 전체 행을 씁니다.
+        </p>
+      )}
       {loading ? (
         <p className="text-sm text-text-secondary text-center py-8">로딩 중...</p>
       ) : (

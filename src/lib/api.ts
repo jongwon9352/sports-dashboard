@@ -3356,6 +3356,19 @@ export const VALD_METRIC_DEFS: {
 ];
 export const VALD_GRADES = ['전체', '1학년', '2학년', '3학년'] as const;
 
+// 임계값 출처. 기본은 팀 실측이고 아래 항목만 외부 기준을 쓴다.
+// 외부 기준은 '전체' 행에만 들어가 있다 — 학년별 행은 표본이 8~16명이라 외부 백분위를
+// 쪼개 넣을 근거가 없어서 팀 실측 그대로다. 그래서 자동 채우기는 이 항목들의 '전체' 행을
+// 건드리면 안 된다(PhysicalDataPage). 점수 계산은 '전체'만 쓴다(PersonalDashboard).
+export const THRESHOLD_SOURCE: Record<string, '또래' | 'K리그'> = {
+  sprint_5m: '또래', sprint_10m: '또래', sprint_30m: '또래',
+  nordic_curl: 'K리그', eur: 'K리그',
+};
+export const THRESHOLD_SOURCE_NOTE: Record<'또래' | 'K리그', string> = {
+  '또래': '또래 기준 (12~16세 아카데미 백분위 P10~P90 · PMC11751035)',
+  'K리그': 'K리그 유소년 피지컬 측정 OT 공식 기준 (2026.04.27)',
+};
+
 // VALD 항목별 좌/우/단일값 접근자 (PhysicalTestRow → 항목 값). 팀 비교 차트와
 // 임계값 자동 채우기(데이터 관리 페이지)가 동일한 정의를 공유한다.
 export const VALD_ACCESSORS: Record<string, { left?: (r: PhysicalTestRow) => number | null; right?: (r: PhysicalTestRow) => number | null; value?: (r: PhysicalTestRow) => number | null }> = {
