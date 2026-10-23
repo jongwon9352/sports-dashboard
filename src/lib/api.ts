@@ -1329,7 +1329,7 @@ export async function deleteCsvUpload(id: string) {
   }
 
   if (training_date && csv_content) {
-    const playerNames = extractPlayerNamesFromCsv(csv_content, file_type);
+    const playerNames = extractPlayerNamesFromCsv(csv_content);
     if (playerNames.length > 0) {
       const playerIds = await resolvePlayerIds(playerNames);
       if (playerIds.length > 0) {
@@ -1384,14 +1384,18 @@ export async function deleteCsvUpload(id: string) {
   if (error) throw error;
 }
 
-function extractPlayerNamesFromCsv(csv: string, fileType: string): string[] {
+// 이름 열의 위치는 형식마다 다르다 (daily·match = 1, match_session = 2. 0번은 등번호 또는
+// 세션 이름이다). 자리를 박아두면 등번호를 이름으로 읽어 선수를 한 명도 못 찾고, 그러면
+// 삭제가 조용히 아무 행도 지우지 않는다 — 파일만 사라지고 기록은 남아 재업로드 때 합산된다.
+// 그래서 파서들과 같은 방식으로 머리글에서 찾는다.
+function extractPlayerNamesFromCsv(csv: string): string[] {
   const lines = csv.split('\n').filter(l => l.trim());
   if (lines.length < 2) return [];
-  const nameCol = (fileType === 'match_session') ? 1 : 0;
-  return lines.slice(1).map(line => {
-    const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-    return normalizeName(cols[nameCol] || '');
-  }).filter(Boolean);
+  const cells = (line: string) => line.split(',').map(c => c.trim().replace(/^"|"$/g, '').replace(/^\uFEFF/, ''));
+  const header = cells(lines[0]);
+  const nameCol = header.findIndex(h => h === '선수 이름' || h === '이름');
+  if (nameCol < 0) return [];
+  return lines.slice(1).map(line => normalizeName(cells(line)[nameCol] || '')).filter(Boolean);
 }
 
 async function resolvePlayerIds(names: string[]): Promise<string[]> {
