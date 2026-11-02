@@ -2414,6 +2414,13 @@ function matchVerdict(a: MatchAnnual): string {
     + `올해 최고 속도 ${peak.v.toFixed(1)}km/h는 ${peak.date} ${peak.opp} 전에서 나왔습니다.`;
 }
 
+// 리포트가 다루는 시즌. 머리글의 '{연도} 피지컬 리포트' 와 같은 값이어야
+// '올해 최고 속도'가 작년 기록을 가리키는 일이 없다.
+const PR_SEASON = new Date().getFullYear();
+// 대회가 많은 선수는 7쪽이 A4 를 넘겨 아래가 잘린다(.pr-page 는 overflow:hidden).
+// 상위 6개만 싣고 나머지는 한 줄로 접는다.
+const EVENT_ROW_LIMIT = 6;
+
 // 대회별 표는 좁아서 대표 지표 셋만 싣는다(분당 거리는 월별 표에 이미 있다).
 const EVENT_TABLE_AXES = MATCH_AXES.filter(ax => ['td', 'hsr', 'sprd'].includes(ax.key));
 
@@ -2438,7 +2445,7 @@ function MatchReportPages({ a, page }: {
               <div className="pr-sc-v">{hours(a.minutes)}<small> 시간</small></div></div>
             <div><div className="pr-sc-lb">경기당 평균</div>
               <div className="pr-sc-v">{Math.round(a.avgMin)}<small> 분</small></div></div>
-            <div><div className="pr-sc-lb">최고 속도</div>
+            <div><div className="pr-sc-lb">시즌 최고 속도</div>
               <div className="pr-sc-v">{n(a.peaks[0].v, 1)}<small> km/h</small></div></div>
           </div>
           <p className="pr-cap" style={{ marginTop: '-1.4mm' }}>
@@ -2457,7 +2464,10 @@ function MatchReportPages({ a, page }: {
             </div>
             <div className="pr-ch">
               <div className="pr-cht">항목별 경기당 평균</div>
-              <div className="pr-chs">옅은 막대 = {posLabel} 의 흔한 범위 · 세로선 = 한가운데 · 점 = 내 평균</div>
+              <div className="pr-chs">
+                옅은 막대 = {posLabel} 의 흔한 범위 · 세로선 = 한가운데 · 점 = 내 평균
+                <br />최고 속도만 경기별 최고치의 평균입니다 (위 시즌 최고 속도와 다릅니다)
+              </div>
               <div style={{ marginTop: '2.6mm' }}>
                 {a.axes.map(ax => {
                   const [p10, p50, p90] = ax.p;
@@ -2495,6 +2505,8 @@ function MatchReportPages({ a, page }: {
             <PrShareBars title="연령별 출전 시간" rows={a.ageShare} />
           </div>
 
+          {/* 뺀 경기가 없으면 0 만 세 개 늘어놓게 되니 블록째 뺀다 */}
+          {a.cutGames > 0 && <>
           <div className="pr-tt">평균에서 뺀 경기</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0 6mm', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: '7mm' }}>
@@ -2513,6 +2525,7 @@ function MatchReportPages({ a, page }: {
               따로 확인하실 수 있습니다.
             </div>
           </div>
+          </>}
 
           <div className="pr-rx" style={{ marginTop: '4.2mm' }}>
             <h3>한 해를 한 문장으로</h3>
@@ -2553,7 +2566,7 @@ function MatchReportPages({ a, page }: {
               {EVENT_TABLE_AXES.map(ax => <th className="n" key={ax.key}>{ax.ko}</th>)}
             </tr></thead>
             <tbody>
-              {a.events.map(e => (
+              {a.events.slice(0, EVENT_ROW_LIMIT).map(e => (
                 <tr key={e.name}>
                   <td>{e.name}</td>
                   <td className="c pr-num">{e.games}</td>
@@ -2564,17 +2577,23 @@ function MatchReportPages({ a, page }: {
                   })}
                 </tr>
               ))}
+              {a.events.length > EVENT_ROW_LIMIT && (
+                <tr><td colSpan={3 + EVENT_TABLE_AXES.length} style={{ fontSize: 9.5, color: PR.ink3 }}>
+                  그 외 {a.events.length - EVENT_ROW_LIMIT}개 대회 ·{' '}
+                  {a.events.slice(EVENT_ROW_LIMIT).reduce((x, e) => x + e.games, 0)}경기
+                </td></tr>
+              )}
             </tbody>
           </table>
 
-          <div className="pr-tt">올해 가장 좋았던 기록</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.6mm 6mm' }}>
+          <div className="pr-tt">{PR_SEASON} 가장 좋았던 기록</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '3mm' }}>
             {a.peaks.map(p => (
               <div key={p.label} style={{
                 border: `.5px solid ${PR.line}`, borderRadius: 3, padding: '2.6mm 3mm', background: PR.bg,
               }}>
                 <div style={{ fontSize: 9.5, color: PR.ink3, fontWeight: 600 }}>{p.label}</div>
-                <div className="pr-num" style={{ fontSize: 18, lineHeight: 1.1, margin: '.6mm 0' }}>
+                <div className="pr-num" style={{ fontSize: 16, lineHeight: 1.1, margin: '.6mm 0' }}>
                   {n(p.v, p.dec)}
                   <span style={{ fontSize: 10, color: PR.ink3, fontFamily: 'var(--font-sans)', fontWeight: 600 }}> {p.unit}</span>
                 </div>
@@ -2774,7 +2793,7 @@ export function PersonalDashboard() {
   const player = players.find(p => p.id === selectedId) ?? null;
   // 리포트 6·7쪽. 화면(Match 탭)과 같은 함수를 써서 인쇄물과 숫자가 어긋나지 않게 한다.
   const matchAnnual = useMemo(
-    () => buildMatchAnnual(matches, allMatches),
+    () => buildMatchAnnual(matches, allMatches, PR_SEASON),
     [matches, allMatches],
   );
   const speedByPlayer = useMemo(() => {

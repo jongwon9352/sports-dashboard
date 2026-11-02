@@ -22,7 +22,11 @@ export const MATCH_AXES: {
   key: string; ko: string; unit: string; dec: number; peak?: true; of: (m: MatchLike) => number;
 }[] = [
   { key: 'td', ko: '달린 거리', unit: 'm', dec: 0, of: m => m.total_distance },
-  { key: 'mpm', ko: '분당 거리', unit: 'm/분', dec: 1, of: m => m.m_per_min },
+  // 2025-11-12 이전 기록 15건은 m_per_min 이 0으로 저장돼 있다(거리·출전시간은 정상).
+  // 그대로 평균내면 0이 섞여 월 평균이 1/6 로 주저앉는다(김동현 25.11: 23.7 m/분).
+  // 같은 양이므로 거리÷시간으로 메운다.
+  { key: 'mpm', ko: '분당 거리', unit: 'm/분', dec: 1,
+    of: m => m.m_per_min > 0 ? m.m_per_min : (m.play_time_min > 0 ? m.total_distance / m.play_time_min : 0) },
   { key: 'hsr', ko: '빠르게', unit: 'm', dec: 0, of: m => m.hsr_distance },
   { key: 'sprd', ko: '전력질주 거리', unit: 'm', dec: 0, of: m => m.sprint_distance },
   { key: 'sprc', ko: '전력질주 횟수', unit: '회', dec: 1, of: m => m.sprint_count },
@@ -51,8 +55,11 @@ export interface MatchAnnual {
 }
 
 // own = 이 선수 전 경기, team = 전원 전 경기(팀 비교군 산출용).
-export function buildMatchAnnual(own: MatchLike[], team: MatchLike[]): MatchAnnual | null {
-  const played = own.filter(m => m.play_time_min > 0);
+// year 를 주면 그 해 경기만 센다. 리포트 머리글이 '{연도} 피지컬 리포트' 라
+// 작년 경기가 섞이면 '올해 최고 속도'가 작년 기록이 된다.
+export function buildMatchAnnual(own: MatchLike[], team: MatchLike[], year?: number): MatchAnnual | null {
+  const inYear = (m: MatchLike) => year == null || m.match_date.slice(0, 4) === String(year);
+  const played = own.filter(m => m.play_time_min > 0 && inYear(m));
   const kept = played.filter(longEnough);
   if (kept.length === 0) return null;
 
@@ -61,7 +68,7 @@ export function buildMatchAnnual(own: MatchLike[], team: MatchLike[]): MatchAnnu
   for (const m of kept) if (m.position_played) byPos.set(m.position_played, (byPos.get(m.position_played) ?? 0) + 1);
   const pos = [...byPos.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const mine = pos ? kept.filter(m => m.position_played === pos) : kept;
-  const cohort = team.filter(m => m.play_time_min > 0 && longEnough(m) && (!pos || m.position_played === pos));
+  const cohort = team.filter(m => m.play_time_min > 0 && inYear(m) && longEnough(m) && (!pos || m.position_played === pos));
 
   // 주 포지션 경기 중 짧아서 빠진 것만 센다. played 전체로 세면 포지션이 달라 빠진 경기까지
   // 섞여 "30분보다 짧게 뛴 경기입니다" 라는 설명과 숫자가 어긋난다.

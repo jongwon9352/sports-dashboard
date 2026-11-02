@@ -68,7 +68,33 @@ assert.equal(buildMatchAnnual([m({ play_time_min: 5 })], []), null);
   const by = (k: string) => a.axes.find(x => x.key === k)!.me;
   assert.equal(by('sprd'), 120, '전력질주는 경기당 전체 m');
   assert.equal(by('sprc'), 8, '전력질주 횟수는 경기당 회');
-  assert.equal(by('mpm'), 118, '분당 거리는 DB 의 m_per_min 을 그대로 쓴다');
+  assert.equal(by('mpm'), 118, '분당 거리는 0 이 아니면 DB 의 m_per_min 을 그대로 쓴다');
+}
+
+// m_per_min 이 0 으로 저장된 경기(2025-11 이전 15건)는 거리÷시간으로 메운다.
+// 0 을 그대로 평균내면 월 평균이 주저앉는다(실제로 김동현 25.11 이 23.7 로 찍혔다).
+{
+  const own = [
+    m({ play_time_min: 76.4, total_distance: 3617.1, m_per_min: 47.4 }),
+    m({ play_time_min: 69.3, total_distance: 10786.7, m_per_min: 0 }),
+  ];
+  const a = buildMatchAnnual(own, own)!;
+  const mpm = a.axes.find(x => x.key === 'mpm')!.me;
+  assert.ok(Math.abs(mpm - 101.5) < 0.5, `분당 거리 ${mpm.toFixed(1)} — 0 을 메우면 101.5 근처, 안 메우면 23.7`);
+}
+
+// 연도를 주면 그 해 경기만 센다 — '올해 최고 속도'가 작년 기록이 되면 안 된다
+{
+  const own = [
+    m({ match_date: '2025-11-12', play_time_min: 60, max_speed: 31 }),
+    m({ match_date: '2026-04-25', play_time_min: 60, max_speed: 29 }),
+  ];
+  const all = buildMatchAnnual(own, own)!;
+  assert.equal(all.peaks[0].v, 31, '연도를 안 주면 전부 센다');
+  const y = buildMatchAnnual(own, own, 2026)!;
+  assert.equal(y.games, 1);
+  assert.equal(y.peaks[0].v, 29, '2026 만 세면 작년 31 은 빠진다');
+  assert.equal(y.peaks[0].date, '2026-04-25');
 }
 
 console.log('matchAnnual.check: 통과');
