@@ -1424,6 +1424,7 @@ export interface MatchRow {
   m_per_min: number;
   hsr_distance: number;
   sprint_distance: number;
+  sprint_count: number;
   acc_count: number;
   dec_count: number;
   acd_load: number;
@@ -1436,7 +1437,7 @@ export async function fetchMatchData(): Promise<MatchRow[]> {
   const client = requireSupabase();
   const data = await selectAllPaged((from, to) => client
     .from('match_data')
-    .select('match_date, opponent, event_type, player_group, position_played, play_time_min, total_distance, m_per_min, hsr_distance, sprint_distance, acc_count, dec_count, acd_load, max_speed, action_count, players(name)')
+    .select('match_date, opponent, event_type, player_group, position_played, play_time_min, total_distance, m_per_min, hsr_distance, sprint_distance, sprint_count, acc_count, dec_count, acd_load, max_speed, action_count, players(name)')
     .order('match_date', { ascending: true })
     .range(from, to));
   return (data as R[]).map(row => ({
@@ -1450,6 +1451,7 @@ export async function fetchMatchData(): Promise<MatchRow[]> {
     m_per_min: Number(row.m_per_min) || 0,
     hsr_distance: Number(row.hsr_distance) || 0,
     sprint_distance: Number(row.sprint_distance) || 0,
+    sprint_count: Number(row.sprint_count) || 0,
     acc_count: Number(row.acc_count) || 0,
     dec_count: Number(row.dec_count) || 0,
     acd_load: Number(row.acd_load) || 0,

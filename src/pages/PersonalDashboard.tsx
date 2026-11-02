@@ -9,12 +9,15 @@ import {
 } from 'recharts';
 import type { RenderableText } from 'recharts/types/component/Text';
 import {
-  fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory,
+  fetchPlayersWithAcwr, fetchPlayerDailyData, fetchPlayerMatchHistory, fetchMatchData,
   fetchPhysicalTestRecords, computeValdValue, VALD_METRIC_DEFS, VALD_ACCESSORS,
   fetchPlayerAcwrMultiMetric, fetchTeamAcwrData, fetchValdThresholds,
   fetchBodyCompositionRecords, fetchMaturityRecords, fetchSpeedCustomRecords, fetchSpeedCustomTestRows,
   THRESHOLD_SOURCE, THRESHOLD_SOURCE_NOTE,
 } from '../lib/api';
+import {
+  MATCH_MIN_MINUTES, MATCH_AXES, buildMatchAnnual, type MatchAnnual,
+} from '../lib/matchAnnual';
 import { StatCard } from '../components/StatCard';
 import { getZoneColor, getZoneLabel } from '../utils/calculations';
 import { chartColors, colors } from '../styles/colors';
@@ -22,7 +25,7 @@ import {
   AcwrComboChart, computeTeamLoadRange, METRIC_KEYS, getAcwrZone, ZONE_COLOR, ZONE_LABEL,
 } from './TeamDashboard';
 import type { PlayerWithAcwr, TrainingDaily, MatchData } from '../types';
-import type { PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, SpeedCustomTestRow, ValdThreshold } from '../lib/api';
+import type { MatchRow, PhysicalTestRow, TeamAcwrSeries, BodyCompositionRow, MaturityRow, SpeedCustomRow, SpeedCustomTestRow, ValdThreshold } from '../lib/api';
 
 type Tab = 'load' | 'match' | 'physical';
 const TABS: { id: Tab; label: string }[] = [
@@ -1809,7 +1812,7 @@ function sprintProfile(t5: number | null, t10: number | null, t30: number | null
   return { v0: best.v, tau: best.tau, amax: best.v / best.tau };
 }
 
-const PR_TOTAL_PAGES = 5;
+const PR_TOTAL_PAGES = 7;
 
 function PrPage({ no, secno, title, sub, player, measured, children }: {
   no: number; secno: string; title: string; sub: string;
@@ -1868,12 +1871,13 @@ function PrPage({ no, secno, title, sub, player, measured, children }: {
   );
 }
 
-function PhysicalReport({ player, record, history, bodyComp, maturity, speed, speedHistory, thresholds, teamScores, speedVals }: {
+function PhysicalReport({ player, record, history, bodyComp, maturity, speed, speedHistory, thresholds, teamScores, speedVals, matchAnnual }: {
   player: PlayerWithAcwr; record: PhysicalTestRow | null; history: PhysicalTestRow[];
   bodyComp: BodyCompositionRow[]; maturity: MaturityRow | null;
   speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
   thresholds: ValdThreshold[];
   teamScores: Record<RadarAxisKey, number | null>[]; speedVals: SpeedAxisVals;
+  matchAnnual: MatchAnnual | null;
 }) {
   const f = (v: number | null | undefined, n = 1) => v == null ? '—' : Number(v).toFixed(n);
   // 임계는 '전체' 기준으로 고정한다 — 학년별 표본이 적어 학년 임계는 한두 명으로 흔들린다.
@@ -2373,12 +2377,282 @@ function PhysicalReport({ player, record, history, bodyComp, maturity, speed, sp
             )}
           </>
         ))}
+
+      {/* 06·07 경기 — 측정(VALD)이 아니라 실제 경기에서 어떻게 뛰었는지. 경기 기록이
+          없는 선수는 두 쪽을 통째로 뺀다(빈 쪽을 찍지 않는다). */}
+      {matchAnnual && <MatchReportPages a={matchAnnual} page={page} />}
     </div>
   );
 }
 
-function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, speedHistory, thresholds, teamScores, playerName, speedVals }: {
-  player: PlayerWithAcwr; speedVals: SpeedAxisVals;
+// 받침 유무로 조사를 고른다. 한글 음절은 (코드-0xAC00)%28 이 0이면 받침이 없다.
+// "달린 거리은(는)" 처럼 찍히면 학부모가 읽는 문서에서 바로 눈에 띈다.
+function josa(word: string, withBatchim: string, without: string): string {
+  const c = word.charCodeAt(word.length - 1);
+  if (c < 0xAC00 || c > 0xD7A3) return without;
+  return (c - 0xAC00) % 28 !== 0 ? withBatchim : without;
+}
+
+// 6쪽 총평. 백분위에서 제일 높은 항목과 제일 낮은 항목을 뽑아 말로 푼다.
+// 비교 대상은 '또래'가 아니라 같은 포지션 팀 동료다 — 피지컬 리포트의 또래 기준(외부 백분위)과
+// 섞이지 않게 문구를 구분한다.
+function matchVerdict(a: MatchAnnual): string {
+  const sorted = [...a.axes].sort((x, y) => y.pct - x.pct);
+  const top = sorted[0], low = sorted[sorted.length - 1];
+  // 조사까지 포함해서 돌려준다 — '보다 비슷하고' 처럼 깨지지 않게.
+  const band = (p: number) => p >= 70 ? '보다 뚜렷이 많고' : p >= 55 ? '보다 조금 많고'
+    : p >= 45 ? '과 비슷하고' : p >= 30 ? '보다 조금 적고' : '보다 뚜렷이 적고';
+  const peak = a.peaks[0];
+  const flat = top.pct - low.pct < 12;
+  const body = flat
+    ? `${a.axes.length}개 항목이 백분위 ${low.pct}~${top.pct} 안에 모여 있어 특별히 치우친 데 없이 고른 편입니다.`
+    : `가장 앞선 항목은 ${top.ko}(백분위 ${top.pct})로 같은 포지션 선수들${band(top.pct)}, `
+      + `가장 처지는 항목은 ${low.ko}(백분위 ${low.pct})입니다. `
+      + `${low.ko}${josa(low.ko, '은', '는')} 같은 포지션 선수들보다 적게 나오고 있으니 `
+      + `이 부분을 겨냥한 훈련이 도움이 됩니다.`;
+  return `${a.games}경기 ${(a.minutes / 60).toFixed(1)}시간을 뛰었습니다. ${body} `
+    + `올해 최고 속도 ${peak.v.toFixed(1)}km/h는 ${peak.date} ${peak.opp} 전에서 나왔습니다.`;
+}
+
+// 대회별 표는 좁아서 대표 지표 셋만 싣는다(분당 거리는 월별 표에 이미 있다).
+const EVENT_TABLE_AXES = MATCH_AXES.filter(ax => ['td', 'hsr', 'sprd'].includes(ax.key));
+
+// 6·7쪽 — 경기 연간 요약. 숫자는 DB 저장 단위 그대로의 경기당 평균이고,
+// 30분 이상 출전 경기만 쓴다(단위·기준은 lib/matchAnnual.ts 주석 참고).
+function MatchReportPages({ a, page }: {
+  a: MatchAnnual;
+  page: (no: number, secno: string, title: string, sub: string, body: React.ReactNode) => React.ReactNode;
+}) {
+  const n = (v: number, d: number) => v.toFixed(d);
+  const hours = (min: number) => (min / 60).toFixed(1);
+  const posLabel = a.pos ? `팀 ${a.pos}` : '같은 포지션';
+  return (
+    <>
+      {page(6, '06 · 경기', '경기에서는 어떻게 뛰었나',
+        '1년 동안의 경기 기록을 모았습니다. 숫자는 측정 장비가 기록한 그대로이고, 모두 경기 하나당 평균입니다',
+        <>
+          <div className="pr-scores">
+            <div><div className="pr-sc-lb">치른 경기</div>
+              <div className="pr-sc-v">{a.games}<small> 경기</small></div></div>
+            <div><div className="pr-sc-lb">총 출전</div>
+              <div className="pr-sc-v">{hours(a.minutes)}<small> 시간</small></div></div>
+            <div><div className="pr-sc-lb">경기당 평균</div>
+              <div className="pr-sc-v">{Math.round(a.avgMin)}<small> 분</small></div></div>
+            <div><div className="pr-sc-lb">최고 속도</div>
+              <div className="pr-sc-v">{n(a.peaks[0].v, 1)}<small> km/h</small></div></div>
+          </div>
+          <p className="pr-cap" style={{ marginTop: '-1.4mm' }}>
+            {MATCH_MIN_MINUTES}분 넘게 뛴 경기만 셌습니다 (아래 「평균에서 뺀 경기」 참고).
+          </p>
+
+          <div className="pr-grid2" style={{ marginTop: '4.2mm' }}>
+            <div className="pr-ch">
+              <div className="pr-cht">같은 포지션 선수들과 견주면</div>
+              <div className="pr-chs">{posLabel} 경기 {a.cohortN}건 가운데 내 평균의 자리 (가운데 = 50)</div>
+              <PrPctRadar axes={a.axes} />
+              <div className="pr-lg">
+                <span><i style={{ borderColor: PR.brand }} />내 평균</span>
+                <span><i style={{ borderColor: PR.neutral }} />{posLabel} 한가운데</span>
+              </div>
+            </div>
+            <div className="pr-ch">
+              <div className="pr-cht">항목별 경기당 평균</div>
+              <div className="pr-chs">옅은 막대 = {posLabel} 의 흔한 범위 · 세로선 = 한가운데 · 점 = 내 평균</div>
+              <div style={{ marginTop: '2.6mm' }}>
+                {a.axes.map(ax => {
+                  const [p10, p50, p90] = ax.p;
+                  const lo = Math.min(p10, ax.me) * 0.94, hi = Math.max(p90, ax.me) * 1.06;
+                  const span = hi - lo || 1;
+                  const at = (v: number) => `${((v - lo) / span) * 100}%`;
+                  return (
+                    <div className="pr-bar" key={ax.key}>
+                      <span className="pr-bar-l">{ax.ko}</span>
+                      <span className="pr-bar-t">
+                        <span className="pr-bar-f" style={{ left: at(p10), width: `${((p90 - p10) / span) * 100}%` }} />
+                        <span className="pr-bar-tick" style={{ left: at(p50) }} />
+                        <span className="pr-bar-dot" style={{ left: at(ax.me) }} />
+                      </span>
+                      <span className="pr-bar-v pr-num">{n(ax.me, ax.dec)}
+                        <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 600, color: PR.ink3, fontSize: 9 }}> {ax.unit}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="pr-strip" style={{ marginTop: '1mm' }}>
+                <div className="pr-strip-h">읽는 법</div>
+                <div style={{ fontSize: 9.5, color: PR.ink2, lineHeight: 1.6 }}>
+                  점이 세로선보다 <b>오른쪽</b>이면 같은 포지션 평균보다 많이,
+                  <b> 왼쪽</b>이면 적게 했다는 뜻입니다.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pr-tt">어디서 뛰었나</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1mm 8mm' }}>
+            <PrShareBars title="대회별 출전 시간" rows={a.events.map(e => [e.name, e.minutes])} />
+            <PrShareBars title="연령별 출전 시간" rows={a.ageShare} />
+          </div>
+
+          <div className="pr-tt">평균에서 뺀 경기</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0 6mm', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '7mm' }}>
+              <div><div className="pr-sc-lb">뺀 경기</div>
+                <div className="pr-sc-v" style={{ fontSize: 22 }}>{a.cutGames}<small> 경기</small></div></div>
+              <div><div className="pr-sc-lb">합친 출전</div>
+                <div className="pr-sc-v" style={{ fontSize: 22 }}>{hours(a.cutMinutes)}<small> 시간</small></div></div>
+              <div><div className="pr-sc-lb">경기당</div>
+                <div className="pr-sc-v" style={{ fontSize: 22 }}>
+                  {a.cutGames ? Math.round(a.cutMinutes / a.cutGames) : 0}<small> 분</small></div></div>
+            </div>
+            <div style={{ fontSize: 9.5, color: PR.ink2, lineHeight: 1.65 }}>
+              {MATCH_MIN_MINUTES}분보다 짧게 뛴 경기입니다. 뛴 기록이 없는 게 아니라, 거리와 횟수는
+              <b> 뛴 시간만큼 쌓이는 값</b>이라 10분 교체 출전을 풀타임과 같이 평균내면 숫자가
+              실제보다 낮게 잡힙니다. 짧게 뛴 경기의 기록은 화면의 경기 기록 목록에서
+              따로 확인하실 수 있습니다.
+            </div>
+          </div>
+
+          <div className="pr-rx" style={{ marginTop: '4.2mm' }}>
+            <h3>한 해를 한 문장으로</h3>
+            <p className="pr-rx-why" style={{ marginBottom: 0 }}>{matchVerdict(a)}</p>
+          </div>
+        </>)}
+
+      {page(7, '07 · 경기', '달마다 어떻게 달라졌나',
+        '경기 하나당 평균입니다. 경기 수가 적은 달은 숫자가 흔들릴 수 있으니 경기 수를 같이 보세요',
+        <>
+          <div className="pr-tt">월별 요약</div>
+          <table>
+            <thead><tr>
+              <th>월</th><th className="c">경기</th><th className="n">출전(분)</th>
+              {MATCH_AXES.map(ax => <th className="n" key={ax.key}>{ax.ko}</th>)}
+            </tr></thead>
+            <tbody>
+              {a.months.map(mo => (
+                <tr key={mo.ym}>
+                  <td className="pr-num">{mo.ym.slice(2).replace('-', '. ')}</td>
+                  <td className="c pr-num">{mo.games}{mo.games <= 1 && <span style={{ color: PR.ink3 }}> *</span>}</td>
+                  <td className="n pr-num">{Math.round(mo.minutes).toLocaleString()}</td>
+                  {mo.vals.map((v, i) => <td className="n pr-num" key={i}>{n(v, MATCH_AXES[i].dec)}</td>)}
+                </tr>
+              ))}
+              {a.months.some(mo => mo.games <= 1) && (
+                <tr><td colSpan={3 + MATCH_AXES.length} style={{ borderBottom: 0, paddingTop: '1.6mm', fontSize: 9, color: PR.ink3 }}>
+                  * 경기가 1건뿐인 달입니다. 그 달 숫자는 경기 하나에 좌우되니 참고만 하세요.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="pr-tt">대회별로 나눠 보면</div>
+          <table>
+            <thead><tr>
+              <th>대회</th><th className="c">경기</th><th className="n">출전(분)</th>
+              {EVENT_TABLE_AXES.map(ax => <th className="n" key={ax.key}>{ax.ko}</th>)}
+            </tr></thead>
+            <tbody>
+              {a.events.map(e => (
+                <tr key={e.name}>
+                  <td>{e.name}</td>
+                  <td className="c pr-num">{e.games}</td>
+                  <td className="n pr-num">{Math.round(e.minutes).toLocaleString()}</td>
+                  {EVENT_TABLE_AXES.map(ax => {
+                    const i = MATCH_AXES.indexOf(ax);
+                    return <td className="n pr-num" key={ax.key}>{n(e.vals[i], ax.dec)}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="pr-tt">올해 가장 좋았던 기록</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.6mm 6mm' }}>
+            {a.peaks.map(p => (
+              <div key={p.label} style={{
+                border: `.5px solid ${PR.line}`, borderRadius: 3, padding: '2.6mm 3mm', background: PR.bg,
+              }}>
+                <div style={{ fontSize: 9.5, color: PR.ink3, fontWeight: 600 }}>{p.label}</div>
+                <div className="pr-num" style={{ fontSize: 18, lineHeight: 1.1, margin: '.6mm 0' }}>
+                  {n(p.v, p.dec)}
+                  <span style={{ fontSize: 10, color: PR.ink3, fontFamily: 'var(--font-sans)', fontWeight: 600 }}> {p.unit}</span>
+                </div>
+                <div style={{ fontSize: 9.5, color: PR.ink2 }}>{p.date} {p.opp}</div>
+              </div>
+            ))}
+          </div>
+        </>)}
+    </>
+  );
+}
+
+// 백분위 레이더. PrRadar 와 같은 치수지만 축 라벨에 백분위 숫자를 찍는다 —
+// 피지컬의 5단계 등급을 쓰면 '50이 한가운데'라는 뜻이 사라진다.
+function PrPctRadar({ axes }: { axes: MatchAnnual['axes'] }) {
+  const w = 352, h = 362, cx = w / 2, cy = h / 2 + 2, R = 126, n = axes.length;
+  const pt = (i: number, r: number): [number, number] => {
+    const ang = -Math.PI / 2 + i * 2 * Math.PI / n;
+    return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)];
+  };
+  const poly = (r: (a: MatchAnnual['axes'][number]) => number) =>
+    axes.map((a, i) => pt(i, r(a)).map(v => v.toFixed(1)).join(',')).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} height={h}>
+      {[0.25, 0.5, 0.75, 1].map(k => (
+        <polygon key={k} points={axes.map((_, i) => pt(i, R * k).map(v => v.toFixed(1)).join(',')).join(' ')}
+          fill="none" stroke={PR.line} strokeWidth={0.7} />
+      ))}
+      {axes.map((_, i) => {
+        const [x, y] = pt(i, R);
+        return <line key={i} x1={cx} y1={cy} x2={x.toFixed(1)} y2={y.toFixed(1)} stroke={PR.line} strokeWidth={0.7} />;
+      })}
+      <polygon points={poly(() => R * 0.5)} fill="rgba(102,113,122,.08)" stroke={PR.neutral} strokeWidth={1.3} />
+      <polygon points={poly(a => R * a.pct / 100)} fill="rgba(164,40,67,.14)" stroke={PR.brand} strokeWidth={1.8} />
+      {axes.map((a, i) => {
+        const [x, y] = pt(i, R + 16);
+        return (
+          <g key={a.key}>
+            <text x={x.toFixed(1)} y={y.toFixed(1)} textAnchor="middle" fontSize={8.4} fontWeight={700} fill={PR.ink}>{a.ko}</text>
+            <text x={x.toFixed(1)} y={(y + 10).toFixed(1)} textAnchor="middle" fontSize={8} fill={PR.brand} fontWeight={700}
+              fontFamily="var(--font-data)">백분위 {a.pct}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// 출전 시간 비중 가로 막대. 합이 0이면 그리지 않는다.
+function PrShareBars({ title, rows }: { title: string; rows: [string, number][] }) {
+  const tot = rows.reduce((s, [, v]) => s + v, 0);
+  if (tot <= 0) return null;
+  return (
+    <div>
+      <div className="pr-chs" style={{ marginBottom: '1.4mm' }}>{title}</div>
+      {rows.map(([nm, v]) => (
+        <div key={nm} style={{ display: 'flex', alignItems: 'center', gap: '2mm', fontSize: 10, marginBottom: '1.6mm' }}>
+          <span style={{ width: '30mm', flex: 'none', color: PR.ink2, fontWeight: 600 }}>{nm}</span>
+          <span style={{ flex: 1, height: 8, background: '#F2F6F4', borderRadius: 2, position: 'relative' }}>
+            <span style={{
+              position: 'absolute', top: 0, bottom: 0, left: 0, width: `${(v / tot) * 100}%`,
+              background: PR.alt, opacity: 0.72, borderRadius: 2,
+            }} />
+          </span>
+          <span className="pr-num" style={{ width: '17mm', flex: 'none', textAlign: 'right', fontWeight: 700 }}>
+            {(v / 60).toFixed(1)}시간
+          </span>
+          <span className="pr-num" style={{ width: '10mm', flex: 'none', textAlign: 'right', color: PR.ink3 }}>
+            {Math.round((v / tot) * 100)}%
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, speedHistory, thresholds, teamScores, playerName, speedVals, matchAnnual }: {
+  player: PlayerWithAcwr; speedVals: SpeedAxisVals; matchAnnual: MatchAnnual | null;
   record: PhysicalTestRow | null; history: PhysicalTestRow[]; bodyComp: BodyCompositionRow[];
   maturity: MaturityRow | null; speed: SpeedCustomRow | null; speedHistory: SpeedCustomTestRow[];
   thresholds: ValdThreshold[]; teamScores: Record<RadarAxisKey, number | null>[]; playerName: string;
@@ -2390,7 +2664,8 @@ function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, 
       {createPortal(
         <PhysicalReport player={player} record={record} history={history} bodyComp={bodyComp}
           maturity={maturity} speed={speed} speedHistory={speedHistory}
-          thresholds={thresholds} teamScores={teamScores} speedVals={speedVals} />,
+          thresholds={thresholds} teamScores={teamScores} speedVals={speedVals}
+          matchAnnual={matchAnnual} />,
         document.body,
       )}
       <div className="flex justify-end">
@@ -2399,7 +2674,7 @@ function PhysicalTabPanel({ player, record, history, bodyComp, maturity, speed, 
           onClick={() => window.print()}
           className="text-xs px-3 py-1.5 rounded border border-surface-secondary hover:border-brand hover:text-brand transition-colors"
         >
-          리포트 PDF (A4 5장)
+          리포트 PDF (A4 {matchAnnual ? PR_TOTAL_PAGES : PR_TOTAL_PAGES - 2}장)
         </button>
       </div>
       {/* 이 탭은 6화면 분량이라 인페이지 길잡이가 없으면 맨 아래 운동 처방에 뭐가 있는지 모른 채
@@ -2434,6 +2709,9 @@ export function PersonalDashboard() {
   const [speedHistory, setSpeedHistory] = useState<SpeedCustomTestRow[]>([]);
   // 팀 평균 축(스피드·지구력)을 내려면 선택 선수뿐 아니라 전원의 속도 기록이 필요하다.
   const [allSpeedRows, setAllSpeedRows] = useState<SpeedCustomTestRow[]>([]);
+  // 경기 리포트의 포지션 백분위는 전원 경기 기록이 있어야 낼 수 있다. 선수가 바뀌어도
+  // 같은 값이라 최초 1회만 받는다.
+  const [allMatches, setAllMatches] = useState<MatchRow[]>([]);
   const [multiMetric, setMultiMetric] = useState<Record<string, TeamAcwrSeries[]>>({});
   const [teamLoadRange, setTeamLoadRange] = useState<Record<string, { min: number; avg: number; max: number } | null>>({});
   const [valdThresholds, setValdThresholds] = useState<ValdThreshold[]>([]);
@@ -2455,6 +2733,7 @@ export function PersonalDashboard() {
       setTeamLoadRange(range);
     });
     fetchValdThresholds().then(setValdThresholds);
+    fetchMatchData().then(setAllMatches);
   }, []);
 
   useEffect(() => {
@@ -2493,6 +2772,11 @@ export function PersonalDashboard() {
   }, [selectedId]);
 
   const player = players.find(p => p.id === selectedId) ?? null;
+  // 리포트 6·7쪽. 화면(Match 탭)과 같은 함수를 써서 인쇄물과 숫자가 어긋나지 않게 한다.
+  const matchAnnual = useMemo(
+    () => buildMatchAnnual(matches, allMatches),
+    [matches, allMatches],
+  );
   const speedByPlayer = useMemo(() => {
     const m = new Map<string, SpeedCustomTestRow[]>();
     for (const r of allSpeedRows) {
@@ -2591,6 +2875,7 @@ export function PersonalDashboard() {
         {tab === 'match' && <PersonalMatchTab key={selectedId} matches={matches} />}
         {player && tab === 'physical' && (
           <PhysicalTabPanel
+            matchAnnual={matchAnnual}
             player={player}
             record={physicalRecord}
             history={physicalHistory}
