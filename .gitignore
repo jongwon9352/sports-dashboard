@@ -4,3 +4,6 @@ dist/
 
 # impeccable: config.json 은 팀 공유 설정이라 커밋하고, 캐시는 세션 ID·절대경로가 박힌 로컬 파일이다
 .impeccable/hook.cache.json
+
+# .claude: launch.json 은 팀이 같이 쓰는 dev 서버 설정, settings.local.json 은 내 기계의 권한 허용 목록이다
+.claude/settings.local.json
