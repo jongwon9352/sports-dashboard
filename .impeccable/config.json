@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          "public/_mockup-match-report.html"
+        ],
+        "createdAt": "2026-11-02T11:41:46.339Z",
+        "reason": "A4 인쇄 리포트 시안: 9~11px 은 src/index.css 의 .pr-* 운영 값 그대로. 210mm 지면에서 9.5px=2.5mm 이고 참조 PDF 본문도 9.38pt. 값을 올리면 실제 인쇄물과 어긋남"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "public/_mockup-match-report.html"
+        ],
+        "createdAt": "2026-11-02T11:41:46.355Z",
+        "reason": "시안이 복제한 .pr-tt/.pr-rx 좌측 브랜드 보더는 운영 중인 피지컬 리포트가 이미 쓰는 기존 스타일(src/index.css). 시안은 실물과 같아야 하므로 여기서 바꾸지 않음"
+      }
+    ]
+  }
+}

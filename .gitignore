@@ -1,3 +1,6 @@
 .vercel
 .gstack/
 dist/
+
+# impeccable: config.json 은 팀 공유 설정이라 커밋하고, 캐시는 세션 ID·절대경로가 박힌 로컬 파일이다
+.impeccable/hook.cache.json
