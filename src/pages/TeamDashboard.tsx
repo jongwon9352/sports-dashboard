@@ -212,7 +212,7 @@ function StrainBarShape({ x, y, width, height, value, payload }: any) {
     <g>
       <rect x={x} y={y} width={width} height={height || 0} fill={fill} rx={3} />
       {value > 0 && (
-        <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={10} fontFamily="DM Mono"
+        <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={11} fontFamily="DM Mono"
           fill={isOver ? '#dc2626' : '#374151'} fontWeight={isOver ? '700' : '400'}>
           {value.toLocaleString()}
         </text>
@@ -374,7 +374,7 @@ export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWid
               <Line type="monotone" dataKey="acwr" stroke={ACWR_COLOR} strokeWidth={2.5}
                 dot={<AcwrDot />} activeDot={{ r: 5 }} connectNulls={false}
                 label={({ x, y, value }: any) => value != null // eslint-disable-line @typescript-eslint/no-explicit-any
-                  ? <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fontFamily="DM Mono" fontWeight="700" fill={ACWR_COLOR}>{value}</text>
+                  ? <text x={x} y={y - 8} textAnchor="middle" fontSize={11} fontFamily="DM Mono" fontWeight="700" fill={ACWR_COLOR}>{value}</text>
                   : null} />
             </LineChart>
           </ResponsiveContainer>
