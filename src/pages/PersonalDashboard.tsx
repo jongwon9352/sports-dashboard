@@ -299,8 +299,10 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
     ['시즌 최고 속도', `${a.peaks[0].v.toFixed(1)} km/h`],
   ];
 
+  // 사이드바 둘(메뉴·선수 목록)이 폭을 가져가서 창이 819px 여도 이 카드 안은 340px 뿐이다.
+  // 화면 폭(md:)으로 칸을 나누면 좁은 카드에서 줄이 뭉개지므로 카드 폭(@container)으로 판단한다.
   return (
-    <div className="chart-card mb-4">
+    <div className="chart-card mb-4 @container">
       {/* 이 블록은 탭 전체를 여는 머리글이라 카드 제목(.chart-title, 11px 회색)보다 무게가 필요하다.
           DESIGN.md H3 = 18px / 600. */}
       <h3 className="text-[18px] font-semibold text-text-primary mb-1">{season} 연간 요약</h3>
@@ -320,7 +322,7 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
 
       {/* 두 칸짜리 줄이라 한 줄에 짝을 맞춰 넣는다. 저장 차례(MATCH_AXES)대로 흘리면
           전력질주 거리와 횟수가 다른 줄·다른 칸으로 흩어져 서로 견줄 수 없다. */}
-      <div className="grid gap-x-8 gap-y-2.5 md:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-2.5 @3xl:grid-cols-2">
         {[...a.axes].sort((x, y) => AXIS_ROW_ORDER.indexOf(x.key) - AXIS_ROW_ORDER.indexOf(y.key)).map(ax => {
           const [p10, p50, p90] = ax.p;
           const lo = Math.min(p10, ax.me) * 0.94, hi = Math.max(p90, ax.me) * 1.06;
@@ -328,7 +330,7 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
           const at = (v: number) => `${((v - lo) / span) * 100}%`;
           return (
             <div key={ax.key} className="flex items-center gap-2">
-              <span className="text-[11px] text-text-secondary w-16 sm:w-20 shrink-0">{ax.ko}</span>
+              <span className="text-[11px] text-text-secondary w-16 @sm:w-20 shrink-0">{ax.ko}</span>
               {/* 막대가 이 줄의 뜻을 담는다. 폭이 모자랄 때 먼저 줄어드는 쪽이 되면
                   좁은 화면에서 점 위치를 읽을 수 없다(375px 에서 40px 까지 눌렸다). */}
               <span className="relative h-2 flex-1 min-w-[72px] rounded-full bg-gray-100">
@@ -338,7 +340,7 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
                 <span className="absolute -top-1 w-2.5 h-2.5 rounded-full border-2 border-white"
                   style={{ left: `calc(${at(ax.me)} - 5px)`, background: '#A42843' }} title="내 평균" />
               </span>
-              <span className="text-[11px] font-semibold w-16 sm:w-20 text-right shrink-0" style={{ fontFamily: 'var(--font-data)' }}>
+              <span className="text-[11px] font-semibold w-16 @sm:w-20 text-right shrink-0" style={{ fontFamily: 'var(--font-data)' }}>
                 {num(ax.me, ax.dec)}
                 <span className="text-text-secondary font-normal"> {ax.unit}</span>
               </span>
@@ -360,7 +362,7 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
       {/* 위 시즌 합계 타일과 같은 네모를 또 쓰면 뜻이 다른 두 줄이 같은 무게로 읽힌다.
           여기는 테두리 없이 줄로만 가르고, 머리글로 무엇인지 말한다. */}
       <p className="text-[11px] font-semibold text-text-primary mt-4 mb-1">{season} 가장 좋았던 기록</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 divide-y divide-surface-secondary md:divide-y-0">
+      <div className="grid grid-cols-2 @2xl:grid-cols-4 gap-x-6 divide-y divide-surface-secondary @2xl:divide-y-0">
         {a.peaks.map(pk => (
           <div key={pk.label} className="py-1.5">
             <p className="text-[11px] text-text-secondary mb-0.5">{pk.label}</p>
