@@ -114,7 +114,7 @@ function aggregateByPlayer(rows: MatchRow[]): AggRow[] {
 }
 
 // ── 공통 차트 설정 ──────────────────────────────────────────────────────────
-const AXIS_STYLE = { fontSize: 10, fill: '#6b7280' };
+const AXIS_STYLE = { fontSize: 11, fill: '#6b7280' };
 const CHART_MARGIN = { top: 24, right: 8, left: 0, bottom: 48 };
 
 function XTick({ x, y, payload }: any) {
@@ -231,15 +231,15 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
     <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-col">
       <div className="flex items-center justify-between mb-1">
         <span className="text-base font-bold" style={{ color: POS_COLORS[pos] }}>{pos}</span>
-        <span className="text-[10px] text-gray-400">{stats.count}경기</span>
+        <span className="text-[11px] text-gray-400">{stats.count}경기</span>
       </div>
       {stats.lastLabel && (
-        <p className="text-[10px] text-gray-400 mb-2 truncate">선택: {stats.lastLabel}</p>
+        <p className="text-[11px] text-gray-400 mb-2 truncate">선택: {stats.lastLabel}</p>
       )}
       <div className="flex justify-center">
         <RadarChart width={180} height={160} data={radarData} margin={{ top: 4, right: 16, bottom: 4, left: 16 }}>
           <PolarGrid />
-          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9 }} />
+          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
           <Radar dataKey="누적평균" stroke={POS_COLORS[pos]} fill={POS_COLORS[pos]} fillOpacity={0.35} name="누적 평균" />
           {stats.lastMatch && (
             <Radar dataKey="최근경기" stroke="#374151" fill="#374151" fillOpacity={0.08} strokeDasharray="4 2" name="최근 경기" />
@@ -254,7 +254,7 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
           const last = stats.lastMatch?.[key] ?? null;
           const diff = last != null ? round1(last - cum) : null;
           return (
-            <div key={key} className="flex items-center text-[10px] gap-1">
+            <div key={key} className="flex items-center text-[11px] gap-1">
               <span className="text-gray-400 w-10 shrink-0">{m.label}</span>
               <span className="font-semibold text-gray-700 w-14 text-right">{cum.toLocaleString()}</span>
               {diff != null && (
@@ -265,7 +265,7 @@ function PosRadarCard({ pos, stats, maxVals }: { pos: Pos; stats: PosStats; maxV
             </div>
           );
         })}
-        <div className="text-[9px] text-gray-300 mt-1">누적평균 | 최근경기 차이</div>
+        <div className="text-[11px] text-gray-300 mt-1">누적평균 | 최근경기 차이</div>
       </div>
     </div>
   );
@@ -344,12 +344,12 @@ function PosTypeCompareCard({ pos, stats, maxVals }: { pos: Pos; stats: PosTypeC
     <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-col">
       <div className="flex items-center justify-between mb-1">
         <span className="text-base font-bold" style={{ color: POS_COLORS[pos] }}>{pos}</span>
-        <span className="text-[10px] text-gray-400">{stats.count}경기</span>
+        <span className="text-[11px] text-gray-400">{stats.count}경기</span>
       </div>
       <div className="flex justify-center">
         <RadarChart width={180} height={160} data={radarData} margin={{ top: 4, right: 16, bottom: 4, left: 16 }}>
           <PolarGrid />
-          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9 }} />
+          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
           <Radar dataKey="누적평균" stroke="#9ca3af" fill="#9ca3af" fillOpacity={0.12} strokeDasharray="3 3" name="누적 평균" />
           {stats.byType.map((t, i) => (
             <Radar key={t.type} dataKey={t.type} stroke={TYPE_COMPARE_COLORS[i % TYPE_COMPARE_COLORS.length]}
@@ -364,7 +364,7 @@ function PosTypeCompareCard({ pos, stats, maxVals }: { pos: Pos; stats: PosTypeC
           const key = m.key as BenchKey;
           const base = stats.cumAvg[key];
           return (
-            <div key={key} className="flex items-center text-[10px] gap-1 flex-wrap">
+            <div key={key} className="flex items-center text-[11px] gap-1 flex-wrap">
               <span className="text-gray-400 w-10 shrink-0">{m.label}</span>
               <span className="font-semibold text-gray-700 w-14 text-right">{base.toLocaleString()}</span>
               {stats.byType.map((t, i) => {
@@ -384,7 +384,7 @@ function PosTypeCompareCard({ pos, stats, maxVals }: { pos: Pos; stats: PosTypeC
             </div>
           );
         })}
-        <div className="text-[9px] text-gray-300 mt-1 truncate">
+        <div className="text-[11px] text-gray-300 mt-1 truncate">
           상단 기준 | {stats.byType.map(t => t.type).join(' | ')} 대비 %
         </div>
       </div>
@@ -433,14 +433,14 @@ function OverallCompareChart({ filtered, selectedMatchKey }: {
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={data} margin={{ top: 20, right: 4, left: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 9 }} />
-                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 8 }} width={36} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 11 }} width={36} />
                   <Tooltip formatter={((v: any) => [v, m.label]) as any} />
                   <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                     {data.map((_, i) => (
                       <Cell key={i} fill={i === 0 ? '#9ca3af' : '#3b82f6'} />
                     ))}
-                    <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={((v: number) => v.toLocaleString()) as any} />
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: '#374151' }} formatter={((v: number) => v.toLocaleString()) as any} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -481,14 +481,14 @@ function OverallTypeCompareChart({ baseRows, poolRows, series, compareLabel }: {
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={data} margin={{ top: 20, right: 4, left: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 8 }} interval={0} angle={-30} textAnchor="end" height={40} />
-                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 8 }} width={36} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" height={40} />
+                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 11 }} width={36} />
                   <Tooltip />
                   <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                     {data.map((_, i) => (
                       <Cell key={i} fill={i === 0 ? '#9ca3af' : TYPE_COMPARE_COLORS[(i - 1) % TYPE_COMPARE_COLORS.length]} />
                     ))}
-                    <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={(v: RenderableText) => Number(v).toLocaleString()} />
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: '#374151' }} formatter={(v: RenderableText) => Number(v).toLocaleString()} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -507,14 +507,14 @@ function TdChart({ data, height }: { data: AggRow[]; height: number }) {
       <ComposedChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
-        <YAxis yAxisId="td" width={48} unit="m" tick={{ fontSize: 10 }} />
-        <YAxis yAxisId="mm" orientation="right" width={40} unit="" tick={{ fontSize: 10 }} />
+        <YAxis yAxisId="td" width={48} unit="m" tick={{ fontSize: 11 }} />
+        <YAxis yAxisId="mm" orientation="right" width={40} unit="" tick={{ fontSize: 11 }} />
         <Tooltip formatter={((v: any, name: any) => [v, name === 'td' ? 'TD (m)' : 'm/min']) as any} />
         <Bar yAxisId="td" dataKey="td" fill="#22c55e" name="TD" radius={[2, 2, 0, 0]} isAnimationActive={false}>
-          <LabelList dataKey="td" position="center" style={{ fontSize: 9, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+          <LabelList dataKey="td" position="center" style={{ fontSize: 11, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
         </Bar>
         <Line yAxisId="mm" dataKey="mPerMin" stroke="#f97316" dot={{ r: 3 }} strokeWidth={2} name="m/min" isAnimationActive={false}>
-          <LabelList dataKey="mPerMin" position="top" style={{ fontSize: 9, fill: '#c2410c', fontWeight: 600 }} formatter={(v: RenderableText) => Number(v).toFixed(1)} />
+          <LabelList dataKey="mPerMin" position="top" style={{ fontSize: 11, fill: '#c2410c', fontWeight: 600 }} formatter={(v: RenderableText) => Number(v).toFixed(1)} />
         </Line>
       </ComposedChart>
     </ResponsiveContainer>
@@ -527,13 +527,13 @@ function HirChart({ data, height }: { data: AggRow[]; height: number }) {
       <BarChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
-        <YAxis width={48} unit="m" tick={{ fontSize: 10 }} />
+        <YAxis width={48} unit="m" tick={{ fontSize: 11 }} />
         <Tooltip formatter={((v: any, name: any) => [v, name === 'hsr' ? 'HSR (m)' : 'Sprint (m)']) as any} />
         <Bar dataKey="hsr" stackId="hir" fill="#f9a8d4" name="hsr" radius={[0, 0, 0, 0]} isAnimationActive={false}>
-          <LabelList dataKey="hsr" position="center" style={{ fontSize: 8, fill: '#831843', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+          <LabelList dataKey="hsr" position="center" style={{ fontSize: 11, fill: '#831843', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
         </Bar>
         <Bar dataKey="sprint" stackId="hir" fill="#ef4444" name="sprint" radius={[2, 2, 0, 0]} isAnimationActive={false}>
-          <LabelList dataKey="sprint" position="center" style={{ fontSize: 8, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+          <LabelList dataKey="sprint" position="center" style={{ fontSize: 11, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -546,13 +546,13 @@ function ActionChart({ data, height }: { data: AggRow[]; height: number }) {
       <BarChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
-        <YAxis width={48} tick={{ fontSize: 10 }} />
+        <YAxis width={48} tick={{ fontSize: 11 }} />
         <Tooltip formatter={((v: any, name: any) => [v, name === 'acc' ? 'ACC' : 'DEC']) as any} />
         <Bar dataKey="dec" stackId="act" fill="#3b82f6" name="dec" isAnimationActive={false}>
-          <LabelList dataKey="dec" position="center" style={{ fontSize: 9, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v))} />
+          <LabelList dataKey="dec" position="center" style={{ fontSize: 11, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v))} />
         </Bar>
         <Bar dataKey="acc" stackId="act" fill="#f97316" name="acc" radius={[2, 2, 0, 0]} isAnimationActive={false}>
-          <LabelList dataKey="acc" position="center" style={{ fontSize: 9, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v))} />
+          <LabelList dataKey="acc" position="center" style={{ fontSize: 11, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v))} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -565,10 +565,10 @@ function IntensityChart({ data, height }: { data: AggRow[]; height: number }) {
       <BarChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
-        <YAxis width={48} tick={{ fontSize: 10 }} />
+        <YAxis width={48} tick={{ fontSize: 11 }} />
         <Tooltip formatter={((v: any) => [v, 'ACD Load']) as any} />
         <Bar dataKey="acdLoad" fill="#b91c1c" name="acdLoad" radius={[2, 2, 0, 0]} isAnimationActive={false}>
-          <LabelList dataKey="acdLoad" position="center" style={{ fontSize: 9, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
+          <LabelList dataKey="acdLoad" position="center" style={{ fontSize: 11, fill: '#fff', fontWeight: 700 }} formatter={(v: RenderableText) => Math.round(Number(v)).toLocaleString()} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -581,10 +581,10 @@ function SpeedChart({ data, height }: { data: AggRow[]; height: number }) {
       <ComposedChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="label" tick={<XTick />} interval={0} height={52} />
-        <YAxis width={48} unit="km/h" tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
+        <YAxis width={48} unit="km/h" tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
         <Tooltip formatter={((v: any) => [v, 'Max Speed (km/h)']) as any} />
         <Line dataKey="maxSpeed" stroke="#60a5fa" dot={{ r: 4, fill: '#60a5fa' }} strokeWidth={2} name="maxSpeed" isAnimationActive={false}>
-          <LabelList dataKey="maxSpeed" position="top" style={{ fontSize: 9, fill: '#2563eb', fontWeight: 600 }} formatter={(v: RenderableText) => Number(v).toFixed(1)} />
+          <LabelList dataKey="maxSpeed" position="top" style={{ fontSize: 11, fill: '#2563eb', fontWeight: 600 }} formatter={(v: RenderableText) => Number(v).toFixed(1)} />
         </Line>
       </ComposedChart>
     </ResponsiveContainer>
@@ -783,7 +783,7 @@ export default function MatchTab() {
               <div key={i}>
                 <div className="flex items-baseline gap-1 mb-1">
                   <span className="text-xs font-semibold text-gray-600">{row.label}</span>
-                  <span className="text-[10px] text-gray-400">{row.sub}</span>
+                  <span className="text-[11px] text-gray-400">{row.sub}</span>
                 </div>
                 {/* 경기 수가 많으면 가로 스크롤 */}
                 <div style={{ overflowX: 'auto' }}>
@@ -805,7 +805,7 @@ export default function MatchTab() {
               <div key={i}>
                 <div className="flex items-baseline gap-1 mb-1">
                   <span className="text-xs font-semibold text-gray-600">{row.label}</span>
-                  <span className="text-[10px] text-gray-400">{row.sub}</span>
+                  <span className="text-[11px] text-gray-400">{row.sub}</span>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <div style={{ minWidth: Math.max(400, playerData.length * 44) }}>

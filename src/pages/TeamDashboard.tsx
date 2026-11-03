@@ -318,11 +318,11 @@ export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWid
             <ComposedChart data={chartData} margin={{ top: 12, right: 20, bottom: 0, left: 54 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="date" tickFormatter={fmt} tick={false} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={44} />
+              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={44} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Tooltip formatter={(v: any, name: any) => [`${Math.round(Number(v)).toLocaleString()}${unit || ''}`, loadNames[name] ?? name]}
                 labelFormatter={(d: any) => fmt(String(d))} contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
                 formatter={(val: string) => loadNames[val] ?? val} />
               {teamRange && (
                 <ReferenceArea y1={teamRange.min} y2={teamRange.max} fill="#97C459" fillOpacity={0.18}
@@ -330,17 +330,17 @@ export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWid
               )}
               {teamRange && (
                 <ReferenceLine y={teamRange.avg} stroke="#3B6D11" strokeDasharray="3 2" strokeWidth={1}
-                  label={{ value: `팀 평균 ${Math.round(teamRange.avg).toLocaleString()}`, position: 'insideBottomLeft', fontSize: 8, fill: '#3B6D11' }} />
+                  label={{ value: `팀 평균 ${Math.round(teamRange.avg).toLocaleString()}`, position: 'insideBottomLeft', fontSize: 11, fill: '#3B6D11' }} />
               )}
               <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3"
-                label={{ value: '오늘', position: 'insideTopLeft', fontSize: 9, fill: '#374151' }} />
+                label={{ value: '오늘', position: 'insideTopLeft', fontSize: 11, fill: '#374151' }} />
               <Bar dataKey="daily" name="daily" fill="rgba(100,149,237,0.55)" barSize={14} radius={[2, 2, 0, 0]} />
               <Line type="monotone" dataKey="chronic" name="chronic" stroke="#008c7e" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="acute"   name="acute"   stroke="#e85d3a" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
           {teamRange && (
-            <div className="text-center" style={{ fontSize: 9, color: '#3B6D11', marginTop: -4 }}>
+            <div className="text-center" style={{ fontSize: 11, color: '#3B6D11', marginTop: -4 }}>
               녹색 밴드 = 우리 팀 장기 부하(Chronic) 정상범위 {Math.round(teamRange.min).toLocaleString()}~{Math.round(teamRange.max).toLocaleString()}{unit}
             </div>
           )}
@@ -349,8 +349,8 @@ export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWid
           <ResponsiveContainer width="100%" height={140}>
             <LineChart data={chartData} margin={{ top: 4, right: 20, bottom: 24, left: 54 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} domain={[0, 2.5]} width={44}
+              <XAxis dataKey="date" tickFormatter={fmt} tick={{ fontSize: 11 }} interval={0} />
+              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, 2.5]} width={44}
                 ticks={[0, 0.8, 1.3, 1.5, 2.0, 2.5]} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Tooltip formatter={(v: any) => [v != null ? v : '-', 'ACWR']}
@@ -362,14 +362,14 @@ export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWid
               <ReferenceArea y1={2.0} y2={2.5} fill="#fecaca" fillOpacity={0.7} />
               {warmupRanges.map(r => (
                 <ReferenceArea key={r.x1} x1={r.x1} x2={r.x2} fill="#7c3aed" fillOpacity={0.12}
-                  label={{ value: '웜업 구간', position: 'insideTop', fontSize: 8, fill: '#7c3aed', fontWeight: 700 }} />
+                  label={{ value: '웜업 구간', position: 'insideTop', fontSize: 11, fill: '#7c3aed', fontWeight: 700 }} />
               ))}
               <ReferenceLine y={1.5} stroke="#dc2626" strokeDasharray="4 2" strokeWidth={1}
-                label={{ value: '1.5 위험', position: 'insideTopRight', fontSize: 8, fill: '#dc2626' }} />
+                label={{ value: '1.5 위험', position: 'insideTopRight', fontSize: 11, fill: '#dc2626' }} />
               <ReferenceLine y={1.3} stroke="#d97706" strokeDasharray="4 2" strokeWidth={1}
-                label={{ value: '1.3 주의', position: 'insideTopRight', fontSize: 8, fill: '#d97706' }} />
+                label={{ value: '1.3 주의', position: 'insideTopRight', fontSize: 11, fill: '#d97706' }} />
               <ReferenceLine y={0.8} stroke="#2563eb" strokeDasharray="4 2" strokeWidth={1}
-                label={{ value: '0.8 최저', position: 'insideBottomRight', fontSize: 8, fill: '#2563eb' }} />
+                label={{ value: '0.8 최저', position: 'insideBottomRight', fontSize: 11, fill: '#2563eb' }} />
               <ReferenceLine x={todayStr} stroke="#374151" strokeWidth={1.5} strokeDasharray="3 3" />
               <Line type="monotone" dataKey="acwr" stroke={ACWR_COLOR} strokeWidth={2.5}
                 dot={<AcwrDot />} activeDot={{ r: 5 }} connectNulls={false}
@@ -416,7 +416,7 @@ function MonotonyChart({ title, series, metricKey }: { title: string; series: Te
       {compareText && (
         <div className="text-center text-xs text-text-secondary mb-2">{compareText}</div>
       )}
-      <div className="flex items-center justify-center gap-3 flex-wrap mb-1" style={{ fontSize: 9 }}>
+      <div className="flex items-center justify-center gap-3 flex-wrap mb-1" style={{ fontSize: 11 }}>
         <span style={{ color: '#dc2626' }}>■ 문헌 위험 {t.danger}~{t.highDanger}</span>
         <span style={{ color: '#7f1d1d' }}>■ 문헌 고위험 &gt;{t.highDanger}</span>
         {teamRange && <span style={{ color: '#3B6D11' }}>┅ 팀 정상범위 {teamRange.min}~{teamRange.max}</span>}
@@ -424,7 +424,7 @@ function MonotonyChart({ title, series, metricKey }: { title: string; series: Te
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={weeks} margin={{ top: 20, right: 20, bottom: 4, left: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={40} />
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Tooltip formatter={(v: any) => [v != null ? v : '-', 'Monotony']} contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
@@ -453,24 +453,24 @@ function StrainBarChart({ weeklyData, teamP85 }: { weeklyData: ReturnType<typeof
   return (
     <div className="chart-card">
       <div className="chart-title text-center mb-0.5">TL Strain — 주별 추이</div>
-      <div className="text-center mb-2" style={{ fontSize: 10, color: '#6b7280' }}>
+      <div className="text-center mb-2" style={{ fontSize: 11, color: '#6b7280' }}>
         Strain = 주간 합산 × Monotony · 위험 기준 6,000 AU (Alexiou &amp; Coutts, 2008)
         {teamP85 != null && <> · 팀 자체 상위 15% 기준선 {teamP85.toLocaleString()} AU</>}
       </div>
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={weeklyData} margin={{ top: 28, right: 16, bottom: 20, left: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} domain={[0, yMax]} width={50}
             tickFormatter={v => v.toLocaleString()} />
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Tooltip formatter={(v: any) => [Number(v).toLocaleString() + ' AU', 'TL Strain']}
             contentStyle={{ fontFamily: 'DM Mono', fontSize: 12 }} />
           <ReferenceLine y={DANGER_LINE} stroke="#dc2626" strokeDasharray="5 3" strokeWidth={1.5}
-            label={{ value: '위험 6,000', position: 'insideTopRight', fontSize: 9, fill: '#dc2626' }} />
+            label={{ value: '위험 6,000', position: 'insideTopRight', fontSize: 11, fill: '#dc2626' }} />
           {teamP85 != null && (
             <ReferenceLine y={teamP85} stroke="#7c3aed" strokeDasharray="4 2" strokeWidth={1.5}
-              label={{ value: `팀 P85 ${teamP85.toLocaleString()}`, position: 'insideBottomRight', fontSize: 9, fill: '#7c3aed' }} />
+              label={{ value: `팀 P85 ${teamP85.toLocaleString()}`, position: 'insideBottomRight', fontSize: 11, fill: '#7c3aed' }} />
           )}
           <Bar dataKey="strain" name="TL Strain" barSize={32} shape={<StrainBarShape />} />
         </ComposedChart>
@@ -495,7 +495,7 @@ function StrainTable({ metrics }: { metrics: { key: string; label: string; monot
         <thead>
           <tr style={{ borderBottom: '1px solid #e8eaf0' }}>
             {['지표', '주간 합산', 'Monotony', 'Strain', '상태'].map(h => (
-              <th key={h} className="py-1.5 px-2 text-left text-text-secondary font-semibold" style={{ fontSize: 10 }}>{h}</th>
+              <th key={h} className="py-1.5 px-2 text-left text-text-secondary font-semibold" style={{ fontSize: 11 }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -515,7 +515,7 @@ function StrainTable({ metrics }: { metrics: { key: string; label: string; monot
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-xs text-text-secondary" style={{ fontSize: 10 }}>
+      <p className="mt-2 text-xs text-text-secondary" style={{ fontSize: 11 }}>
         * TD·HSR·Sprint·ACD의 Strain 수치는 단위가 달라 절대값보다 Monotony 상태를 주로 참고하세요.
       </p>
     </div>
@@ -588,9 +588,9 @@ function StatusCards({ items, subtitle }: { items: StatusItem[]; subtitle: strin
       {items.map(({ label, val, zone, n, missing }) => (
         <div key={label} className="chart-card !mb-0 !p-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-text-secondary" style={{ fontSize: 10 }}>{label} {subtitle}</span>
+            <span className="text-text-secondary" style={{ fontSize: 11 }}>{label} {subtitle}</span>
             {n != null && (
-              <span className="font-mono" style={{ fontSize: 9, color: '#9ca3af', background: 'rgba(120,120,130,0.14)', padding: '1px 5px', borderRadius: 4 }}>
+              <span className="font-mono" style={{ fontSize: 11, color: '#9ca3af', background: 'rgba(120,120,130,0.14)', padding: '1px 5px', borderRadius: 4 }}>
                 n={n}명
               </span>
             )}
@@ -622,7 +622,7 @@ function ThresholdTable({ show, onToggle }: { show: boolean; onToggle: () => voi
             <thead>
               <tr style={{ borderBottom: '1px solid #e8eaf0' }}>
                 {['지표', '안전', '주의', '위험', '고위험', '근거'].map(h => (
-                  <th key={h} className="py-1.5 px-2 text-left text-text-secondary font-semibold" style={{ fontSize: 10 }}>{h}</th>
+                  <th key={h} className="py-1.5 px-2 text-left text-text-secondary font-semibold" style={{ fontSize: 11 }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -636,7 +636,7 @@ function ThresholdTable({ show, onToggle }: { show: boolean; onToggle: () => voi
                     <td className="py-1.5 px-2 font-mono" style={{ color: '#d97706' }}>{t.caution}~{t.danger}</td>
                     <td className="py-1.5 px-2 font-mono" style={{ color: '#dc2626' }}>{t.danger}~{t.highDanger}</td>
                     <td className="py-1.5 px-2 font-mono" style={{ color: '#7f1d1d' }}>{'>'}{t.highDanger}</td>
-                    <td className="py-1.5 px-2 text-text-secondary" style={{ fontSize: 10 }}>{t.basis}</td>
+                    <td className="py-1.5 px-2 text-text-secondary" style={{ fontSize: 11 }}>{t.basis}</td>
                   </tr>
                 );
               })}

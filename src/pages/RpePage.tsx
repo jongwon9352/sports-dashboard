@@ -58,8 +58,8 @@ export function RpePage() {
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={trendChart}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis domain={[0, 10]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
+              <YAxis domain={[0, 10]} tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
               <Area type="monotone" dataKey="rpe" stroke={chartColors.warning} fill="rgba(255, 217, 0, 0.18)" strokeWidth={2} name="평균 RPE" />
             </AreaChart>
@@ -70,8 +70,8 @@ export function RpePage() {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={distChart}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
+              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
               <Tooltip
                 formatter={(v) => [`${v}건`, 'RPE']}
                 contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }}
@@ -93,13 +93,13 @@ export function RpePage() {
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 9 }}
+              tick={{ fontSize: 11 }}
               interval={0}
               angle={-45}
               textAnchor="end"
               height={60}
             />
-            <YAxis domain={[0, 10]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
+            <YAxis domain={[0, 10]} tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
             <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
             <Bar dataKey="avg_rpe" radius={[3, 3, 0, 0]} name="평균 RPE">
               {playerChart.map((entry, i) => (

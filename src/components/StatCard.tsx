@@ -16,7 +16,7 @@ export function StatCard({ label, value, sub, accent = colors.navy, valueColor }
         style={{ background: accent }}
       />
       <p
-        className="text-[10px] tracking-[1.5px] uppercase mb-2 text-text-disabled"
+        className="text-[11px] tracking-[1.5px] uppercase mb-2 text-text-disabled"
         style={{ fontFamily: 'var(--font-data)' }}
       >
         {label}

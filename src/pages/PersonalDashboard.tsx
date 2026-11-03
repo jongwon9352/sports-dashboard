@@ -96,8 +96,8 @@ function LoadTab({ dailyData, multiMetric, teamLoadRange }: {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={dailyChart}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
-              <YAxis tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
+              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
               <Bar dataKey="td" fill="rgba(21, 62, 111, 0.26)" radius={[3, 3, 0, 0]} name="TD(m)" />
               <Bar dataKey="hsr" fill="rgba(0, 140, 126, 0.30)" radius={[3, 3, 0, 0]} name="HSR(m)" />
@@ -112,19 +112,19 @@ function LoadTab({ dailyData, multiMetric, teamLoadRange }: {
           <div className="chart-title">최근 훈련 데이터 ({latestDaily.training_date})</div>
           <div className="grid grid-cols-4 gap-4 stat-grid-4">
             <div>
-              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>총 뛴 거리</p>
+              <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>총 뛴 거리</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.total_distance).toLocaleString()} m</p>
             </div>
             <div>
-              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>HSR</p>
+              <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>HSR</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.hsr_distance).toFixed(1)} m</p>
             </div>
             <div>
-              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>Sprint</p>
+              <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>Sprint</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.sprint_distance).toFixed(1)} m</p>
             </div>
             <div>
-              <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>최고 속도</p>
+              <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>최고 속도</p>
               <p className="text-lg font-bold mt-1">{Number(latestDaily.max_speed).toFixed(1)} km/h</p>
             </div>
           </div>
@@ -171,7 +171,7 @@ function DeltaText({ last, ref, refLabel }: { last: number; ref: number; refLabe
   const pct = (diff / ref) * 100;
   const color = diff === 0 ? 'text-text-secondary' : diff > 0 ? 'text-green-600' : 'text-red-500';
   return (
-    <span className={`text-[10px] font-medium ${color}`}>
+    <span className={`text-[11px] font-medium ${color}`}>
       {refLabel} 대비 {diff === 0 ? '동일' : `${diff > 0 ? '+' : ''}${pct.toFixed(0)}%`}
     </span>
   );
@@ -196,7 +196,7 @@ function MetricCompareCard({ label, unit, avgVal, lastVal, peakVal }: {
         <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>{headline.toLocaleString()}{unit}</span>
         {lastVal != null
           ? <DeltaText last={lastVal} ref={avgVal} refLabel="평균" />
-          : <span className="text-[10px] text-text-secondary">평균값</span>}
+          : <span className="text-[11px] text-text-secondary">평균값</span>}
       </div>
 
       <div className="relative h-2 rounded-full bg-gray-100 mb-1">
@@ -205,7 +205,7 @@ function MetricCompareCard({ label, unit, avgVal, lastVal, peakVal }: {
           <div className="absolute -top-0.5 w-0.5 h-3 bg-gray-400" style={{ left: `${pct(avgVal)}%` }} title="평균" />
         )}
       </div>
-      <div className="flex justify-between text-[9px] text-text-secondary">
+      <div className="flex justify-between text-[11px] text-text-secondary">
         <span>평균 {fmt(avgVal)}{unit}</span>
         <span>Peak {fmt(peakVal)}{unit}</span>
       </div>
@@ -267,14 +267,14 @@ function PersonalCompareChart({ baseMatches, poolMatches, series, compareLabel }
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={data} margin={{ top: 20, right: 4, left: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 8 }} interval={0} angle={-30} textAnchor="end" height={40} />
-                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 8 }} width={36} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" height={40} />
+                  <YAxis domain={[0, Math.ceil(maxVal * 1.2)]} tick={{ fontSize: 11 }} width={36} />
                   <Tooltip />
                   <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                     {data.map((_, i) => (
                       <Cell key={i} fill={i === 0 ? '#9ca3af' : COMPARE_COLORS[(i - 1) % COMPARE_COLORS.length]} />
                     ))}
-                    <LabelList dataKey="value" position="top" style={{ fontSize: 9, fill: '#374151' }} formatter={(v: RenderableText) => Number(v).toLocaleString()} />
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: '#374151' }} formatter={(v: RenderableText) => Number(v).toLocaleString()} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -314,7 +314,7 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
       <div className="grid grid-cols-4 gap-3 mb-4 stat-grid-4">
         {heads.map(([k, v]) => (
           <div key={k} className="rounded-lg bg-gray-50 px-3 py-2">
-            <p className="text-[10px] text-text-secondary mb-0.5">{k}</p>
+            <p className="text-[11px] text-text-secondary mb-0.5">{k}</p>
             <p className="text-base font-bold" style={{ fontFamily: 'var(--font-data)' }}>{v}</p>
           </div>
         ))}
@@ -354,7 +354,7 @@ function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
         })}
       </div>
 
-      <p className="text-[10px] text-text-secondary mt-3">
+      <p className="text-[11px] text-text-secondary mt-3">
         옅은 막대 = {posLabel}의 흔한 범위(하위 10~90%) · 세로선 = 한가운데 · 점 = 내 경기당 평균.
         최고 속도만 경기별 최고치의 평균입니다(위 시즌 최고 속도와 다릅니다).
       </p>
@@ -571,7 +571,7 @@ function PersonalMatchTab({ matches, annual, season }: { matches: MatchData[]; a
           <BarChart data={zoneData}>
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
             <XAxis dataKey="zone" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 10 }} unit="%" />
+            <YAxis tick={{ fontSize: 11 }} unit="%" />
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any) => `${v}%`} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -641,7 +641,7 @@ function imbalanceColor(pct: number): string {
 function StatMiniCard({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
   return (
     <div className="rounded-lg border border-surface-secondary p-3">
-      <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
       <p className="text-lg font-bold mt-1">{value}</p>
       {sub && <p className="text-[11px] mt-0.5" style={{ color: subColor ?? undefined }}>{sub}</p>}
     </div>
@@ -682,8 +682,8 @@ function BodyCompositionSection({ rows }: { rows: BodyCompositionRow[] }) {
             <ResponsiveContainer width="100%" height={140}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 9 }} />
-                <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={34} />
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any) => [`${v}${unit}`, label]} />
                 <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={{ r: 3 }} connectNulls />
@@ -716,7 +716,7 @@ function MaturitySection({ row }: { row: MaturityRow | null }) {
         <StatMiniCard label="성장 도달률 (PAH%)" value={row.pah_percent != null ? `${row.pah_percent}%` : '—'} />
         <StatMiniCard label="APHV 도달 나이" value={row.mirwald_aphv_age != null ? `${row.mirwald_aphv_age}세` : '—'} />
         <div className="rounded-lg border border-surface-secondary p-3">
-          <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙 단계</p>
+          <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙 단계</p>
           {stage ? (
             <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stage.bg, color: stage.text }}>
               {stage.label}
@@ -835,7 +835,7 @@ function ValdTrendSection({ history, thresholds }: {
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-[11px] font-medium truncate">{def.label}</span>
                 {THRESHOLD_SOURCE[def.key] && (
-                  <span className="text-[9px] px-1 py-0.5 rounded bg-surface-secondary text-text-secondary flex-shrink-0">
+                  <span className="text-[11px] px-1 py-0.5 rounded bg-surface-secondary text-text-secondary flex-shrink-0">
                     {THRESHOLD_SOURCE[def.key]}
                   </span>
                 )}
@@ -846,8 +846,8 @@ function ValdTrendSection({ history, thresholds }: {
               <ResponsiveContainer width="100%" height={120}>
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 9 }} />
-                  <YAxis tick={{ fontSize: 9 }} domain={domain ?? ['auto', 'auto']} allowDataOverflow={false} width={38} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} domain={domain ?? ['auto', 'auto']} allowDataOverflow={false} width={38} />
                   <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
                   {th?.max_value != null && (
                     <ReferenceLine y={th.max_value} stroke={colors.green} strokeWidth={1} strokeDasharray="4 3" />
@@ -860,7 +860,7 @@ function ValdTrendSection({ history, thresholds }: {
                   )}
                   {isLR ? (
                     <>
-                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Line type="monotone" dataKey="left" name="좌" stroke={colors.navy} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
                       <Line type="monotone" dataKey="right" name="우" stroke={colors.danger} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
                     </>
@@ -935,8 +935,8 @@ function SpeedCustomSection({ row, history }: { row: SpeedCustomRow | null; hist
                 <ResponsiveContainer width="100%" height={140}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 9 }} />
-                    <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} width={34} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={34} />
                     <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
                     <Line type="monotone" dataKey={key} name={label} stroke={color} strokeWidth={2} dot={{ r: 3 }} connectNulls />
                   </LineChart>
@@ -1225,7 +1225,7 @@ function PhysicalRadarSection({ record, history, thresholds, teamScores, playerN
             <RadarChart data={chartData}>
               <PolarGrid stroke={chartColors.grid} />
               <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
-              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} />
+              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 11 }} />
               <Radar name="개인" dataKey="개인" stroke={colors.danger} fill={colors.danger} fillOpacity={0.35} />
               <Radar name="팀 평균" dataKey="팀평균" stroke={colors.navy} fill={colors.navy} fillOpacity={0.08} strokeDasharray="4 3" />
               <Legend />
@@ -1234,13 +1234,13 @@ function PhysicalRadarSection({ record, history, thresholds, teamScores, playerN
           <div className="grid grid-cols-5 gap-2 stat-grid-4 mt-1">
             {RADAR_AXES.map(a => (
               <div key={a.key} className="text-center">
-                <p className="text-[10px] text-text-secondary" style={{ fontFamily: 'var(--font-data)' }}>{a.en}</p>
+                <p className="text-[11px] text-text-secondary" style={{ fontFamily: 'var(--font-data)' }}>{a.en}</p>
                 <p className="text-lg font-bold" style={{ color: colors.danger }}>{scores[a.key] != null ? Math.round(scores[a.key]!) : '—'}</p>
               </div>
             ))}
           </div>
           {carriedOver.length > 0 && (
-            <p className="text-[10px] text-text-secondary mt-2 text-center">
+            <p className="text-[11px] text-text-secondary mt-2 text-center">
               최신 측정({record.test_date})에 값이 없어 이전 측정값 사용:{' '}
               {carriedOver.map(a => `${a.en} ${dates[a.key]}`).join(' · ')}
             </p>
@@ -1344,11 +1344,11 @@ function FindingCard({ f }: { f: Finding }) {
   return (
     <div className="rounded-lg overflow-hidden mb-2.5" style={{ border: `1px solid ${st.border}` }}>
       <div className="flex gap-2.5 items-start p-3" style={{ background: st.bg }}>
-        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded whitespace-nowrap mt-0.5"
+        <span className="text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap mt-0.5"
           style={{ background: st.badge, color: f.level === 'ok' ? '#fff' : '#fff' }}>{f.badge}</span>
         <div className="flex-1 min-w-0">
           <p className="text-[13px] font-bold mb-0.5">{f.title}</p>
-          <p className="text-[11.5px] text-text-secondary">{f.why}</p>
+          <p className="text-[11px] text-text-secondary">{f.why}</p>
           {f.metric && (
             <p className="text-[11px] text-text-secondary mt-0.5" style={{ fontFamily: 'var(--font-data)' }}>{f.metric}</p>
           )}
@@ -1356,11 +1356,11 @@ function FindingCard({ f }: { f: Finding }) {
       </div>
       {f.exercises.length > 0 && (
         <div className="px-3 pt-2.5 pb-3 border-t border-dashed border-surface-secondary">
-          <p className="text-[10.5px] text-text-secondary font-semibold tracking-[1px] mb-2">처방</p>
+          <p className="text-[11px] text-text-secondary font-semibold tracking-[1px] mb-2">처방</p>
           {f.exercises.map((ex, i) => <ExerciseItem key={i} ex={ex} />)}
         </div>
       )}
-      {f.ref && <p className="px-3 pb-2 text-[10px] text-text-secondary">근거 · {f.ref}</p>}
+      {f.ref && <p className="px-3 pb-2 text-[11px] text-text-secondary">근거 · {f.ref}</p>}
     </div>
   );
 }
@@ -1517,10 +1517,10 @@ function PrescriptionSection({ record, history, thresholds, teamScores, maturity
             background: MATURITY_STAGE_LABEL[stage]?.bg ?? '#eee',
             color: MATURITY_STAGE_LABEL[stage]?.text ?? '#666',
           }}>{MATURITY_STAGE_LABEL[stage]?.label ?? stage}</span>
-          <span className="text-[11.5px] text-text-secondary">
+          <span className="text-[11px] text-text-secondary">
             · {stageNote[stage] ?? ''} 아래 처방 강도의 전제입니다.
           </span>
-          <span className="text-[10px] text-text-secondary w-full">근거 · Lloyd &amp; Oliver 2012 Youth Physical Development 모델</span>
+          <span className="text-[11px] text-text-secondary w-full">근거 · Lloyd &amp; Oliver 2012 Youth Physical Development 모델</span>
         </div>
       )}
 
@@ -1561,7 +1561,7 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
       <div className="grid grid-cols-3 gap-3 stat-grid-4">
         {metrics.map(m => (
           <div key={m.key} className="rounded-lg border border-surface-secondary p-3">
-            <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{m.label}</p>
+            <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{m.label}</p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-data)' }}>
                 {m.to != null ? `${m.to}${m.unit}` : '—'}
@@ -1580,7 +1580,7 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
         ))}
 
         <div className="rounded-lg border border-surface-secondary p-3">
-          <p className="text-[10px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙도</p>
+          <p className="text-[11px] text-text-secondary uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>성숙도</p>
           {maturity?.maturity_stage ? (
             <>
               <span className="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full font-medium"
@@ -1597,10 +1597,10 @@ function MonthlyChangeCard({ bodyComp, maturity }: { bodyComp: BodyCompositionRo
           ) : (
             <p className="text-lg font-bold mt-1">—</p>
           )}
-          <p className="text-[10px] text-text-secondary mt-1">기준 측정일 기준 · 월별 비교 없음</p>
+          <p className="text-[11px] text-text-secondary mt-1">기준 측정일 기준 · 월별 비교 없음</p>
         </div>
       </div>
-      <p className="text-[10px] text-text-secondary mt-2">
+      <p className="text-[11px] text-text-secondary mt-2">
         성숙 단계는 앉은키가 필요해 월별로 계산하지 않습니다(앉은키는 기준 측정 1회만 수집).
       </p>
     </div>
@@ -2915,7 +2915,7 @@ export function PersonalDashboard() {
       <aside className="w-[200px] min-h-[calc(100vh-72px)] border-r border-surface-secondary bg-surface flex-shrink-0 overflow-y-auto max-h-[calc(100vh-72px)] hide-mobile">
         <div className="py-3">
           <p
-            className="px-4 mb-2 text-[10px] text-text-disabled tracking-[2px] uppercase"
+            className="px-4 mb-2 text-[11px] text-text-disabled tracking-[2px] uppercase"
             style={{ fontFamily: 'var(--font-data)' }}
           >
             선수 목록

@@ -97,7 +97,7 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
             const isToday = dateStr === toDateStr(new Date());
             return (
               <div key={dateStr} className="min-h-[140px] rounded-lg border border-surface-secondary p-2">
-                <div className="text-[10px] text-text-disabled">{DOW[d.getDay()]}</div>
+                <div className="text-[11px] text-text-disabled">{DOW[d.getDay()]}</div>
                 <div className={`text-sm font-bold mb-1 ${isToday ? 'text-brand' : ''}`}>{d.getDate()}</div>
                 {(eventsByDate.get(dateStr) ?? []).map((e, i) => <EventBlock key={i} e={e} />)}
               </div>
@@ -108,7 +108,7 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
 
       {tab === 'month' && (
         <div className="grid grid-cols-7 gap-2">
-          {DOW.map(d => <div key={d} className="text-[10px] text-text-disabled text-center">{d}</div>)}
+          {DOW.map(d => <div key={d} className="text-[11px] text-text-disabled text-center">{d}</div>)}
           {Array.from({ length: 42 }, (_, i) => addDays(startOfWeek(startOfMonth(cursor)), i)).map(d => {
             const dateStr = toDateStr(d);
             const inMonth = d.getMonth() === cursor.getMonth();
@@ -118,7 +118,7 @@ function CalendarSection({ events }: { events: CalendarEvent[] }) {
               <div key={dateStr} className={`min-h-[80px] rounded-lg border border-surface-secondary p-1.5 ${inMonth ? '' : 'opacity-40'}`}>
                 <div className={`text-xs font-bold mb-0.5 ${isToday ? 'text-brand' : ''}`}>{d.getDate()}</div>
                 {dayEvents.slice(0, 2).map((e, i) => <EventBlock key={i} e={e} />)}
-                {dayEvents.length > 2 && <div className="text-[10px] text-text-disabled">+{dayEvents.length - 2}건 더</div>}
+                {dayEvents.length > 2 && <div className="text-[11px] text-text-disabled">+{dayEvents.length - 2}건 더</div>}
               </div>
             );
           })}
@@ -193,7 +193,7 @@ function PlayerStatusBar({ players, acwrMap }: {
                   <tr onClick={() => navigate(`/player/${p.id}`)} style={{ cursor: 'pointer' }}>
                     <td className="name">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: colors.navy }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: colors.navy }}>
                           {p.jersey_number ?? '–'}
                         </div>
                         {p.name} <span className="text-text-secondary text-xs ml-1">{p.position}</span>

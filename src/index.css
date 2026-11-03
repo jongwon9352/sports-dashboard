@@ -109,7 +109,7 @@ body {
 }
 .data-table th {
   font-family: var(--font-data);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--color-text-disabled);
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -186,7 +186,7 @@ body {
 /* Zone Badge */
 .zone-badge {
   font-family: var(--font-data);
-  font-size: 10px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
   font-weight: 500;

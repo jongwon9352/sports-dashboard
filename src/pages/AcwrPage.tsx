@@ -53,7 +53,7 @@ export function AcwrPage() {
           <div style={{ flex: '0 0 8%', background: 'rgba(255, 217, 0, 0.45)' }} />
           <div style={{ flex: 1, background: 'rgba(164, 40, 67, 0.24)' }} />
         </div>
-        <div className="flex text-[9px] mb-4" style={{ fontFamily: 'var(--font-data)' }}>
+        <div className="flex text-[11px] mb-4" style={{ fontFamily: 'var(--font-data)' }}>
           <span style={{ width: '26%', color: colors.navy }}>과소훈련 {'<'}0.8</span>
           <span style={{ width: '20%', color: colors.safe }}>안전 0.8–1.3</span>
           <span style={{ width: '8%', color: colors.warning }}>주의</span>
@@ -63,7 +63,7 @@ export function AcwrPage() {
           {zones.map(z => (
             <div key={z.label} className="bg-surface-secondary rounded-lg p-3 border border-surface-secondary">
               <div
-                className="text-[10px] tracking-[1px] uppercase"
+                className="text-[11px] tracking-[1px] uppercase"
                 style={{ fontFamily: 'var(--font-data)', color: z.color }}
               >
                 {z.label}
@@ -82,17 +82,17 @@ export function AcwrPage() {
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 9 }}
+              tick={{ fontSize: 11 }}
               interval={0}
               angle={-45}
               textAnchor="end"
               height={70}
             />
-            <YAxis domain={[0, 2.5]} tick={{ fontSize: 10, fontFamily: 'DM Mono' }} />
+            <YAxis domain={[0, 2.5]} tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
             <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-            <ReferenceLine y={0.8} stroke={colors.navy} strokeDasharray="4 4" strokeWidth={1} label={{ value: '0.8', position: 'right', fontSize: 9 }} />
-            <ReferenceLine y={1.3} stroke={colors.safe} strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.3', position: 'right', fontSize: 9 }} />
-            <ReferenceLine y={1.5} stroke={colors.danger} strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.5', position: 'right', fontSize: 9 }} />
+            <ReferenceLine y={0.8} stroke={colors.navy} strokeDasharray="4 4" strokeWidth={1} label={{ value: '0.8', position: 'right', fontSize: 11 }} />
+            <ReferenceLine y={1.3} stroke={colors.safe} strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.3', position: 'right', fontSize: 11 }} />
+            <ReferenceLine y={1.5} stroke={colors.danger} strokeDasharray="4 4" strokeWidth={1} label={{ value: '1.5', position: 'right', fontSize: 11 }} />
             <Bar dataKey="acwr" radius={[3, 3, 0, 0]} name="ACWR">
               {chartData.map((entry, i) => (
                 <Cell key={i} fill={`${getZoneColor(entry.zone)}60`} />

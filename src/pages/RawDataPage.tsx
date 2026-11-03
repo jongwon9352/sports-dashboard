@@ -262,7 +262,7 @@ export function RawDataPage() {
         <select
           value={row.group_type || ''}
           onChange={e => handleGroupChange(row, e.target.value)}
-          className="w-[52px] px-1 py-0.5 text-[10px] rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
+          className="w-[52px] px-1 py-0.5 text-[11px] rounded border border-surface-secondary bg-[var(--bg)] focus:outline-none focus:border-cyan-400"
           style={{ fontFamily: 'var(--font-data)' }}
         >
           <option value="">—</option>

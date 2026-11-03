@@ -21,7 +21,7 @@ export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
     >
       <div className="py-3 border-b border-surface-secondary">
         <p
-          className="px-4 mb-2 text-[10px] text-text-disabled tracking-[2px] uppercase"
+          className="px-4 mb-2 text-[11px] text-text-disabled tracking-[2px] uppercase"
           style={{ fontFamily: 'var(--font-data)' }}
         >
           메뉴
@@ -39,7 +39,7 @@ export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
           >
             <span className="w-[18px] text-center text-[13px]">📊</span>
             대시보드
-            <span className={`ml-auto text-[10px] text-text-disabled transition-transform ${dashboardOpen ? 'rotate-180' : ''}`}>
+            <span className={`ml-auto text-[11px] text-text-disabled transition-transform ${dashboardOpen ? 'rotate-180' : ''}`}>
               ▼
             </span>
           </button>
@@ -64,7 +64,7 @@ export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
           >
             <span className="w-[18px] text-center text-[13px]">📝</span>
             리포트
-            <span className={`ml-auto text-[10px] text-text-disabled transition-transform ${reportOpen ? 'rotate-180' : ''}`}>
+            <span className={`ml-auto text-[11px] text-text-disabled transition-transform ${reportOpen ? 'rotate-180' : ''}`}>
               ▼
             </span>
           </button>
@@ -97,7 +97,7 @@ export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
             데이터 관리
             <span
               onClick={e => { e.preventDefault(); e.stopPropagation(); setDataOpen(!dataOpen); }}
-              className={`ml-auto text-[10px] text-text-disabled transition-transform cursor-pointer ${dataOpen ? 'rotate-180' : ''}`}
+              className={`ml-auto text-[11px] text-text-disabled transition-transform cursor-pointer ${dataOpen ? 'rotate-180' : ''}`}
             >
               ▼
             </span>
@@ -120,12 +120,12 @@ export function Sidebar({ inDrawer = false }: { inDrawer?: boolean }) {
           className="w-full px-4 py-2.5 mb-2 min-h-[44px] flex items-center justify-between"
         >
           <p
-            className="text-[10px] text-text-disabled tracking-[2px] uppercase"
+            className="text-[11px] text-text-disabled tracking-[2px] uppercase"
             style={{ fontFamily: 'var(--font-data)' }}
           >
             설정
           </p>
-          <span className={`text-[10px] text-text-disabled transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>
+          <span className={`text-[11px] text-text-disabled transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>
             ▼
           </span>
         </button>

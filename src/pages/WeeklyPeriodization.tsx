@@ -557,7 +557,7 @@ export function WeeklyPeriodization() {
               <th className={`${C} w-28 bg-surface-secondary/50 font-medium text-text-secondary`}></th>
               {weekDates.map((d, i) => (
                 <th key={i} className={`${C} bg-surface-secondary/50 font-medium min-w-[120px]`}>
-                  <div className="text-text-secondary text-[10px]">{d.dayLabel}</div>
+                  <div className="text-text-secondary text-[11px]">{d.dayLabel}</div>
                   <div>{d.label}</div>
                 </th>
               ))}

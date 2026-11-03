@@ -524,7 +524,7 @@ function BodyStat({ label, unit, digits, cur, prev }: {
   const sign = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '–';
   return (
     <div className="rounded-lg border border-surface-secondary p-3">
-      <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <p className="text-[11px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
       <div className="flex items-baseline gap-2 mt-1">
         <span className="text-xl font-bold" style={{ fontFamily: 'var(--font-data)' }}>{cur.avg.toFixed(digits)}{unit}</span>
         {delta != null && (
@@ -724,7 +724,7 @@ function BodyCompositionTab() {
                 <ComposedChart data={trendChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} width={40} />
+                  <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={40} />
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any, key: any) => key === 'avg' ? [v, '팀 평균'] : [v, key]} />
                   <Area type="monotone" dataKey="min" stackId="band" stroke="none" fill="transparent" />
@@ -788,7 +788,7 @@ function BodyCompositionTab() {
                   <div key={playerId} className={`rounded-lg border p-2.5 ${flagged ? 'border-red-300' : 'border-surface-secondary'}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold">{p.player_name}</span>
-                      {flagged && <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">확인필요</span>}
+                      {flagged && <span className="text-[11px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">확인필요</span>}
                     </div>
                     <div className="flex gap-3 text-[11px] text-text-secondary mt-1">
                       <span>키 <b className="text-[var(--text)]">{fmt(lastHeight)}</b>cm</span>

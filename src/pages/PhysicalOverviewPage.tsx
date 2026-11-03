@@ -157,8 +157,8 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
               <ResponsiveContainer width="100%" height={320}>
                 <ComposedChart data={displayItems} margin={{ bottom: 80 }}>
                   <CartesianGrid stroke={colors.grid} vertical={false} />
-                  <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
-                  <YAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
+                  <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 11 }} />
+                  <YAxis type="number" unit={unit} tick={{ fontSize: 11 }} />
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   <Tooltip formatter={(v: any) => `${Number(v).toFixed(3)}${unit}`} />
                   {threshold?.min_value != null && threshold?.max_value != null && (
@@ -176,8 +176,8 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={displayItems} margin={{ bottom: 80 }}>
               <CartesianGrid stroke={colors.grid} vertical={false} />
-              <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} unit={unit} />
+              <XAxis dataKey="name" interval={0} angle={-60} textAnchor="end" height={70} tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} unit={unit} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Tooltip formatter={(v: any, n: any) => [`${v}${unit}`, n]} />
               {hasLR && <Legend wrapperStyle={{ fontSize: 11 }} />}
@@ -237,7 +237,7 @@ function ValdMetricSection({ metricKey, label, unit, invert, hasLR, note, tiers,
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={top10} layout="vertical" margin={{ left: 20 }}>
             <CartesianGrid stroke={colors.grid} horizontal={false} />
-            <XAxis type="number" unit={unit} tick={{ fontSize: 10 }} />
+            <XAxis type="number" unit={unit} tick={{ fontSize: 11 }} />
             <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Tooltip formatter={(v: any) => `${Number(v).toFixed(2)}${unit}`} />
@@ -342,7 +342,7 @@ function InsightStatCard({ label, count, unit, desc, color }: { label: string; c
   return (
     <div style={{ float: 'left', width: '25%', boxSizing: 'border-box', padding: '0 5px 10px' }}>
       <div className="rounded-lg border border-surface-secondary p-2.5" style={{ borderLeft: `3px solid ${color}` }}>
-        <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+        <p className="text-[11px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
         <p className="text-xl font-bold mt-0.5" style={{ fontFamily: 'var(--font-data)', color }}>{count}<span className="text-xs font-normal text-text-secondary">{unit}</span></p>
         <p className="text-[11px] text-text-secondary mt-0.5 leading-snug">{desc}</p>
       </div>
@@ -533,7 +533,7 @@ function ValdPrescriptionInsightBox({ data, grade, round, sectionRef, selectable
                 <span className="text-[11px] text-text-disabled">{g.players}</span>
               </div>
               <p className="text-[11px] text-text-secondary mb-1.5">{g.reason}</p>
-              <ul className="text-[11.5px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
+              <ul className="text-[11px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
                 {g.exercises.map(ex => <li key={ex.name}><b className="text-[var(--text)]">{ex.name}</b> — {ex.detail}</li>)}
               </ul>
             </div>
@@ -676,7 +676,7 @@ function MaturityInsightBox({ data, players }: { data: MaturityRow[]; players: P
                 <span className="text-xs font-medium">{stage}</span>
                 <span className="text-[11px] text-text-disabled">{s.count}명</span>
               </div>
-              <ul className="text-[11.5px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
+              <ul className="text-[11px] text-text-secondary leading-relaxed pl-3.5" style={{ listStyle: 'disc' }}>
                 {STAGE_TRAINING_FOCUS[stage].map(item => <li key={item}>{item}</li>)}
               </ul>
             </div>
@@ -1126,7 +1126,7 @@ function BodyStat({ label, unit, digits, cur, prev }: {
   const sign = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '–';
   return (
     <div className="rounded-lg border border-surface-secondary p-3">
-      <p className="text-[10px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
+      <p className="text-[11px] text-text-disabled uppercase tracking-[1px]" style={{ fontFamily: 'var(--font-data)' }}>{label}</p>
       <div className="flex items-baseline gap-2 mt-1">
         <span className="text-xl font-bold" style={{ fontFamily: 'var(--font-data)' }}>{cur.avg.toFixed(digits)}{unit}</span>
         {delta != null && (
@@ -1269,7 +1269,7 @@ function BodyCompositionCharts({ rows }: { rows: BodyCompositionRow[] }) {
             <ComposedChart data={trendChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} vertical={false} />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} width={40} />
+              <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={40} />
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} formatter={(v: any, key: any) => key === 'avg' ? [v, '팀 평균'] : [v, key]} />
               <Area type="monotone" dataKey="min" stackId="band" stroke="none" fill="transparent" />
@@ -1343,7 +1343,7 @@ function BodyCompositionCharts({ rows }: { rows: BodyCompositionRow[] }) {
               <div key={playerId} className={`rounded-lg border p-2.5 ${flagged ? 'border-red-300' : 'border-surface-secondary'}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold">{p.player_name}</span>
-                  {flagged && <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">확인필요</span>}
+                  {flagged && <span className="text-[11px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">확인필요</span>}
                 </div>
                 <div className="flex gap-3 text-[11px] text-text-secondary mt-1">
                   <span>키 <b className="text-[var(--text)]">{lastHeight ?? '—'}</b>cm</span>
