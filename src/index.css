@@ -471,3 +471,11 @@ section[id^="sec-"] {
 .pr-rx { border: .5px solid var(--pr-line); border-left: 2.6px solid var(--color-brand); border-radius: 3px; padding: 3.4mm 4mm; margin-bottom: 4mm; }
 .pr-rx h3 { font-size: 12.5px; font-weight: 800; margin-bottom: 1.4mm; }
 .pr-rx-why { font-size: 11px; color: var(--color-text-secondary); line-height: 1.7; margin-bottom: 2.6mm; }
+
+/* ACWR 값 라벨은 차트가 좁아지면 숨긴다.
+   좁은 창에서 이 차트는 137px 까지 줄어드는데 14일치 라벨(각 26px)이 그대로 들어가
+   간격이 1.5px 가 된다 — 글자를 아무리 줄여도 못 읽는다(9px 에서도 겹쳤다).
+   점·축·툴팁은 남으므로 값은 짚어 보면 읽힌다. 420px = 14점 × 30px 여유. */
+@container (max-width: 420px) {
+  .acwr-plot .recharts-label-list text { display: none; }
+}

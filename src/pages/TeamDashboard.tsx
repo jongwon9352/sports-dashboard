@@ -312,7 +312,9 @@ export function AcwrComboChart({ title, data, unit, teamRange, days = 28, fitWid
           </div>
         </div>
         <div ref={scrollRef} className="overflow-x-auto flex-1 min-w-0">
-        <div style={{ width: chartWidth }}>
+        {/* 이 div 의 폭이 곧 차트 폭이다(스크롤 모드는 n*48px, fitWidth 는 카드 폭).
+            좁으면 ACWR 값 라벨을 CSS 로 숨긴다 — 아래 .acwr-plot 규칙. */}
+        <div className="acwr-plot @container" style={{ width: chartWidth }}>
           {/* 상단: Daily 바 + Acute/Chronic EWMA 라인 + 팀 자체 정상범위(Chronic 기준) */}
           <ResponsiveContainer width="100%" height={200}>
             <ComposedChart data={chartData} margin={{ top: 12, right: 20, bottom: 0, left: 54 }}>
