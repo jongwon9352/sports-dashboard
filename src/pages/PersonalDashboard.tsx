@@ -286,7 +286,83 @@ function PersonalCompareChart({ baseMatches, poolMatches, series, compareLabel }
   );
 }
 
-function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
+// 연간 요약 — 리포트 6쪽과 같은 집계(lib/matchAnnual.ts)를 그대로 쓴다.
+// 화면과 리포트가 따로 계산하면 선수에게 숫자가 두 가지로 생긴다.
+function MatchAnnualSummary({ a, season }: { a: MatchAnnual; season: number }) {
+  const posLabel = a.pos ? `${a.pos} 포지션` : '같은 포지션';
+  const num = (v: number, dec: number) =>
+    v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const heads: [string, string][] = [
+    ['경기', `${a.games}경기`],
+    ['총 출전', `${(a.minutes / 60).toFixed(1)}시간`],
+    ['경기당 평균', `${Math.round(a.avgMin)}분`],
+    ['시즌 최고 속도', `${a.peaks[0].v.toFixed(1)} km/h`],
+  ];
+
+  return (
+    <div className="chart-card mb-4">
+      <div className="chart-title !mb-1">{season} 연간 요약</div>
+      <p className="text-[11px] text-text-secondary mb-3">
+        {MATCH_MIN_MINUTES}분 이상 출전한 {a.games}경기 기준 · {posLabel} {a.cohortN}경기와 비교
+        {a.cutGames > 0 && ` · 짧게 뛴 ${a.cutGames}경기(${Math.round(a.cutMinutes)}분)는 제외`}
+      </p>
+
+      <div className="grid grid-cols-4 gap-3 mb-4 stat-grid-4">
+        {heads.map(([k, v]) => (
+          <div key={k} className="rounded-lg bg-gray-50 px-3 py-2">
+            <p className="text-[10px] text-text-secondary mb-0.5">{k}</p>
+            <p className="text-base font-bold" style={{ fontFamily: 'var(--font-data)' }}>{v}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-x-8 gap-y-2.5 md:grid-cols-2">
+        {a.axes.map(ax => {
+          const [p10, p50, p90] = ax.p;
+          const lo = Math.min(p10, ax.me) * 0.94, hi = Math.max(p90, ax.me) * 1.06;
+          const span = hi - lo || 1;
+          const at = (v: number) => `${((v - lo) / span) * 100}%`;
+          return (
+            <div key={ax.key} className="flex items-center gap-2">
+              <span className="text-[11px] text-text-secondary w-20 shrink-0">{ax.ko}</span>
+              <span className="relative h-2 flex-1 rounded-full bg-gray-100">
+                <span className="absolute inset-y-0 rounded-full bg-gray-300"
+                  style={{ left: at(p10), width: `${((p90 - p10) / span) * 100}%` }} />
+                <span className="absolute -top-0.5 w-0.5 h-3 bg-gray-500" style={{ left: at(p50) }} title="한가운데" />
+                <span className="absolute -top-1 w-2.5 h-2.5 rounded-full border-2 border-white"
+                  style={{ left: `calc(${at(ax.me)} - 5px)`, background: '#A42843' }} title="내 평균" />
+              </span>
+              <span className="text-[11px] font-semibold w-20 text-right" style={{ fontFamily: 'var(--font-data)' }}>
+                {num(ax.me, ax.dec)}
+                <span className="text-text-secondary font-normal"> {ax.unit}</span>
+              </span>
+              <span className="text-[10px] text-text-secondary w-16 text-right">백분위 {ax.pct}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[10px] text-text-secondary mt-3">
+        옅은 막대 = {posLabel}의 흔한 범위(하위 10~90%) · 세로선 = 한가운데 · 점 = 내 경기당 평균.
+        최고 속도만 경기별 최고치의 평균입니다(위 시즌 최고 속도와 다릅니다).
+      </p>
+
+      <div className="grid grid-cols-4 gap-3 mt-4 stat-grid-4">
+        {a.peaks.map(pk => (
+          <div key={pk.label} className="rounded-lg border border-surface-secondary px-3 py-2">
+            <p className="text-[10px] text-text-secondary mb-0.5">{pk.label}</p>
+            <p className="text-sm font-bold" style={{ fontFamily: 'var(--font-data)' }}>
+              {num(pk.v, pk.dec)} {pk.unit}
+            </p>
+            <p className="text-[10px] text-text-secondary">{pk.date} {pk.opp}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PersonalMatchTab({ matches, annual, season }: { matches: MatchData[]; annual: MatchAnnual | null; season: number }) {
   const [eventFilter, setEventFilter] = useState('전체');
   const [groupFilter, setGroupFilter] = useState('전체');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -352,6 +428,8 @@ function PersonalMatchTab({ matches }: { matches: MatchData[] }) {
 
   return (
     <>
+      {annual && <MatchAnnualSummary a={annual} season={season} />}
+
       <div className="chart-card mb-4">
         <div className="flex flex-wrap items-center gap-2 mb-2">
           <span className="text-xs font-semibold text-text-secondary w-16">경기 타입</span>
@@ -2891,7 +2969,7 @@ export function PersonalDashboard() {
         {/* 선수를 바꿔도 eventFilter·groupFilter·selectedKey가 이전 선수 값으로 남아 있으면,
             새 선수가 뛴 적 없는 경기 타입이 그대로 걸려 "필터된 0경기"로 표시되는 경우가 있었다.
             key로 selectedId를 넘겨 선수 전환 시 컴포넌트를 새로 마운트해 필터를 초기화한다. */}
-        {tab === 'match' && <PersonalMatchTab key={selectedId} matches={matches} />}
+        {tab === 'match' && <PersonalMatchTab key={selectedId} matches={matches} annual={matchAnnual} season={PR_SEASON} />}
         {player && tab === 'physical' && (
           <PhysicalTabPanel
             matchAnnual={matchAnnual}
