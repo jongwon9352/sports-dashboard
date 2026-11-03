@@ -1,7 +1,7 @@
 // buildMatchAnnual 자체 점검. `bun run src/pages/matchAnnual.check.ts`
 // 30분 필터·주 포지션 선택·백분위 계산이 깨지면 여기서 걸린다.
 import assert from 'node:assert';
-import { buildMatchAnnual, type MatchLike } from '../lib/matchAnnual';
+import { buildMatchAnnual, MATCH_AXES, AXIS_ROW_ORDER, type MatchLike } from '../lib/matchAnnual';
 
 const m = (o: Partial<MatchLike> & { play_time_min: number }): MatchLike => ({
   match_date: '2026-03-01', opponent: '상대', event_type: '연습경기', player_group: 'U14',
@@ -96,5 +96,12 @@ assert.equal(buildMatchAnnual([m({ play_time_min: 5 })], []), null);
   assert.equal(y.peaks[0].v, 29, '2026 만 세면 작년 31 은 빠진다');
   assert.equal(y.peaks[0].date, '2026-04-25');
 }
+
+// 화면 두 칸 배치 순서가 축 목록과 어긋나면 빠진 축이 맨 앞으로 밀려 짝이 깨진다.
+// 축을 더하거나 key 를 바꿀 때 여기서 걸린다.
+assert.deepEqual(
+  [...MATCH_AXES.map(ax => ax.key)].sort(), [...AXIS_ROW_ORDER].sort(),
+  'AXIS_ROW_ORDER 가 MATCH_AXES 와 같은 축을 담아야 한다',
+);
 
 console.log('matchAnnual.check: 통과');

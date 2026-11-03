@@ -35,6 +35,11 @@ export const MATCH_AXES: {
   { key: 'spd', ko: '최고 속도', unit: 'km/h', dec: 1, peak: true, of: m => m.max_speed },
 ];
 
+// 화면(개인 Match 탭)은 두 칸으로 깔리므로 짝지어 읽히는 축을 한 줄에 놓는다.
+// 리포트는 한 칸이라 위 MATCH_AXES 차례 그대로 쓴다. 축을 더하면 여기도 더해야 한다
+// (matchAnnual.check.ts 가 두 목록이 같은지 본다).
+export const AXIS_ROW_ORDER = ['td', 'mpm', 'hsr', 'spd', 'sprd', 'sprc', 'acc', 'dec'];
+
 const longEnough = (m: MatchLike) => m.play_time_min >= MATCH_MIN_MINUTES;
 const avgNum = (a: number[]) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
 // percentile_cont 와 같은 선형보간. 정렬된 배열을 받는다.
