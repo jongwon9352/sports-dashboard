@@ -87,3 +87,25 @@ describe('X3 — 경기 직후 1~2일은 고강도로 처방되지 않는다', (
     expect(d.periodization).toBe('MD-1');
   });
 });
+
+describe('R8 보강 — 표본이 적은 코드는 목표 수치도 내지 않는다', () => {
+  // 프로덕션에서 발견: 가드가 기준점만 막아서 MD+1(n=1·RPE 8.30·TD 7,572)이
+  // 자기 실측으로 93% · 8,329 를 찍었다. 경기 다음날이 주중 최고 부하가 된다.
+  const thin = [...PROFILE, row('MD+1', 8.30, 1, 7572)];
+  // 6/6 과 6/13 이 공식 경기. 6/7 은 MD+1(sincePrev=1, toNext=6 > backward 5).
+  const WEEK = { weekStart: '2026-06-01', matchDates: ['2026-06-06', '2026-06-13'] };
+
+  it('MD+1 자리는 라벨은 붙지만 목표 수치가 비어 있다', () => {
+    const { days } = buildWeeklyPlan({ ...WEEK, mdProfile: thin, topic: 'Aerobic' });
+    const mdPlus1 = days[6]; // 6/7
+    expect(mdPlus1.periodization).toBe('MD+1');
+    expect(mdPlus1.total_distance).toBe('');
+    expect(mdPlus1.hsr_distance).toBe('');
+  });
+
+  it('표본이 충분한 MD-5 는 수치를 갖는다', () => {
+    const { days } = buildWeeklyPlan({ ...WEEK, mdProfile: thin, topic: 'Aerobic' });
+    expect(days[0].periodization).toBe('MD-5');
+    expect(Number(days[0].total_distance)).toBeGreaterThan(0);
+  });
+});

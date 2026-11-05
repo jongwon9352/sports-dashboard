@@ -40,8 +40,14 @@ const MD_META: Record<string, MdMeta> = {
 const REST_META: MdMeta = { focus: 'rest', key: 'REST', intensityPct: 0, minutes: '' };
 /** 경기 직후 며칠까지는 역산 라벨이 무엇이든 회복으로 처방하는가 */
 const RECOVERY_DAYS_AFTER_MATCH = 2;
-/** 강도 100% 기준점으로 삼을 MD 코드의 최소 표본 일수 */
-const MIN_PEAK_SAMPLE_DAYS = 10;
+/**
+ * MD별 실측을 쓰기 위한 최소 표본 일수.
+ * 기준점(peakTrainingRpe)과 목표 수치(measured) 둘 다에 적용한다. 기준점만 막으면
+ * 하루치 코드가 자기 목표 수치로 「경기 다음날이 주중 가장 힘든 날」을 말하게 된다
+ * (프로덕션 실측: MD+1 n=1 · RPE 8.30 · TD 7,572 → 초안에 93% · 8,329 로 찍혔다).
+ * 미달이면 수치를 비워 둔다 — 아래 `if (!measured) return day` 의 기존 원칙과 같다.
+ */
+const MIN_PROFILE_SAMPLE_DAYS = 10;
 
 /** MD 코드 → 강도 라벨. 월간 캘린더와 주기화표가 같은 분류를 쓰도록 여기서 한 번만 정의한다. */
 export function mdIntensityKey(code: string | null): string {
@@ -161,7 +167,7 @@ export function buildWeeklyPlan(inputs: WeeklyPlanInputs): { weekTopic: string; 
   const peakTrainingRpe = Math.max(
     0,
     ...inputs.mdProfile
-      .filter(r => r.code !== 'MD' && r.rpe > 0 && r.n >= MIN_PEAK_SAMPLE_DAYS)
+      .filter(r => r.code !== 'MD' && r.rpe > 0 && r.n >= MIN_PROFILE_SAMPLE_DAYS)
       .map(r => r.rpe),
   ) || null;
 
@@ -180,7 +186,9 @@ export function buildWeeklyPlan(inputs: WeeklyPlanInputs): { weekTopic: string; 
     const day = emptyDayPlan();
     // 수치도 처방 코드에서 가져온다. 역산 코드로 가져오면 처방은 회복인데 목표 TD·HSR 은
     // MD-3 의 고부하가 들어가 가드가 무의미해진다.
-    const measured = prescribed ? inputs.mdProfile.find(r => r.code === prescribed) : undefined;
+    const measured = prescribed
+      ? inputs.mdProfile.find(r => r.code === prescribed && r.n >= MIN_PROFILE_SAMPLE_DAYS)
+      : undefined;
 
     // 표시는 역산 라벨이다. 회복으로 돌린 날은 주기화표처럼 이중으로 적는다.
     day.periodization = inRecovery ? `MD+${since}/${code!.slice(2)}` : code ?? '휴식';
