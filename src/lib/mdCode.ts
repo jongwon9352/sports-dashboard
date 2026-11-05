@@ -33,7 +33,7 @@ const NO_LABEL: MdLabel = { code: null, daysToNextMatch: null, daysSincePrevMatc
 // YYYY-MM-DD를 "일 번호"로 바꾼다. Date.UTC로 통일해 시간대·서머타임을 아예 배제한다.
 // (new Date('2026-07-28')는 UTC 자정으로 파싱돼 KST에서 하루 어긋난다 — 이 프로젝트에서
 //  이미 세 번 겪은 버그다. src/lib/date.ts 주석 참고.)
-function toDayNumber(iso: string): number {
+export function toDayNumber(iso: string): number {
   const [y, m, d] = iso.split('-').map(Number);
   return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
 }
