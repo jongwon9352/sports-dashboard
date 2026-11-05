@@ -2,18 +2,22 @@
 // 주간 주기화(계획) · 훈련일지(기록) · GPS 지표(결과)를 잇는 공통 키다.
 // 순수 함수만 둔다 — 경기일 목록을 인자로 받고, DB나 네트워크를 모른다.
 //
-// 규칙은 첨부된 FC서울 2026 인시즌 주기화표에서 역산했다. 핵심은 두 가지다.
-//   1. 경기 직후 회복일(MD+1, MD+2)은 앞에서 떼어낸다.
-//   2. 나머지는 다음 경기에서 거꾸로 센다(MD-1이 경기 전날).
-// 그래서 "다음 경기까지 며칠"만으로 단순 계산하면 안 된다. 7일 간격에서 경기 다음날은
-// MD-6이 아니라 MD+1이다.
+// 규칙의 출처는 코치의 「2026 U15 주간 주기화」(Keynote)다. 핵심은 두 가지다.
+//   1. 다음 경기에서 1~5를 그대로 거꾸로 센다(MD-1이 경기 전날).
+//   2. 회복일(MD+1, MD+2)은 역산이 닿지 않는 날에만 붙는다 — 역산이 먼저다.
+// 표의 「MD+2/-5」 이중 라벨이 2번의 뜻이다. 한 날이 둘 다일 때 훈련 성격을 정하는 쪽은 역산이고,
+// 회복 맥락이 필요한 곳은 같이 반환하는 daysSincePrevMatch 를 쓴다(periodizationPlan 의 회복 가드).
 //
-// 검증: 3·4·5·7일 간격 네 케이스 모두 FC서울 표와 일치한다 (scripts/selfcheck.ts).
+// 앵커는 공식 경기만이다. 연습경기는 MD-4·MD-3 자리의 고부하 훈련이다 — 표의 6월 4주에서
+// 6/23 연습경기가 MD-4 로 적혀 있다. 이 함수는 날짜 배열만 받으므로 그 필터는 호출부 책임이다
+// (api.fetchMdAnchorDates).
+//
+// 검증: src/lib/mdCode.test.ts — 주기화표 14주차·6월 4주와 7일 간격을 표 그대로 단정한다.
 
-/** 경기 직후 회복일로 떼어낼 최대 일수 (MD+1, MD+2) */
+/** 경기 직후 회복일로 붙일 최대 일수 (MD+1, MD+2) */
 const MAX_FORWARD = 2;
-/** 경기 전 준비일로 거꾸로 채울 최대 일수 (MD-4 ~ MD-1) */
-const MAX_BACKWARD = 4;
+/** 경기 전 준비일로 거꾸로 채울 최대 일수 (MD-5 ~ MD-1) */
+const MAX_BACKWARD = 5;
 
 export interface MdLabel {
   /** 'MD' | 'MD-1'~'MD-4' | 'MD+1'~'MD+2' | null(주기화 구간 밖) */
@@ -77,15 +81,16 @@ export function mdCodeForDays(date: string, matchDays: number[]): MdLabel {
   const toNext = next != null ? next - day : null;
   const base = { daysToNextMatch: toNext, daysSincePrevMatch: sincePrev };
 
-  // 경기 사이 — 앞에서 회복일을 떼고, 남은 자리를 다음 경기에서 거꾸로 채운다.
+  // 경기 사이 — 다음 경기에서 거꾸로 먼저 채우고, 남은 날에만 회복일을 붙인다.
   if (prev != null && next != null) {
     const between = next - prev - 1; // 두 경기 사이의 훈련 가능일 수
-    // MD-1(경기 전날)은 항상 남겨야 하므로 회복일은 between-1을 넘지 못한다.
+    // 역산 범위에서 회복일을 예약하지 않는다. 예약하면(between - forward) 7일 간격에서
+    // backward 가 4로 묶여 경기 이틀 뒤가 영영 MD-5 가 되지 못한다.
+    const backward = Math.min(MAX_BACKWARD, between);
     const forward = Math.max(0, Math.min(MAX_FORWARD, between - 1));
-    const backward = Math.min(MAX_BACKWARD, between - forward);
 
-    if (sincePrev! <= forward) return { ...base, code: `MD+${sincePrev}` };
     if (toNext! <= backward) return { ...base, code: `MD-${toNext}` };
+    if (sincePrev! <= forward) return { ...base, code: `MD+${sincePrev}` };
     return { ...base, code: null }; // 경기 간격이 길어 주기화 구간 밖인 중간 기간
   }
 
@@ -109,7 +114,7 @@ export function mdCodesFor(dates: string[], matchDates: string[]): Map<string, M
   return new Map(dates.map(d => [d, mdCodeForDays(d, days)]));
 }
 
-/** 리포트 표에서 쓸 정렬 순서 — MD-4 … MD-1, MD, MD+1, MD+2 */
+/** 리포트 표에서 쓸 정렬 순서 — MD-5 … MD-1, MD, MD+1, MD+2 */
 export function mdCodeOrder(code: string | null): number {
   if (code == null) return 99;
   if (code === 'MD') return 0;

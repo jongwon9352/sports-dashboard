@@ -2167,16 +2167,39 @@ export async function deleteMatchSchedule(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** MD 코드 계산의 단일 소스 — 이미 치른 경기(match_data) + 예정 경기(match_schedule) */
+/** 연습경기의 event_type. MD 앵커에서는 빼지만 회복 맥락·표시에서는 센다. */
+export const FRIENDLY_EVENT_TYPE = '연습경기';
+
+/**
+ * 모든 경기일 — 이미 치른 경기(match_data) + 예정 경기(match_schedule), 연습경기 포함.
+ *
+ * 회복 맥락과 표시에 쓴다(예: MatchReport 의 앞뒤 경기 간격 — 이틀 전 연습경기도 회복에 영향이 있다).
+ * **MD 라벨 계산에는 쓰지 않는다** — 그쪽은 fetchMdAnchorDates()다.
+ */
 export async function fetchAllMatchDates(): Promise<string[]> {
+  return mergeMatchDateSources(() => true);
+}
+
+/**
+ * MD 앵커 전용 경기일 — 공식 경기만. 연습경기는 MD-4·MD-3 자리의 고부하 훈련이므로 앵커가 아니다
+ * (코치의 2026 U15 주간 주기화표 기준. 6월 4주의 6/23 연습경기가 표에 MD-4 로 적혀 있다).
+ *
+ * 예정 경기를 반드시 포함한다 — buildWeeklyPlan 은 다음 주를 계획하므로 예정 경기가 앵커의 전부다.
+ */
+export async function fetchMdAnchorDates(): Promise<string[]> {
+  return mergeMatchDateSources(et => et !== FRIENDLY_EVENT_TYPE);
+}
+
+/** 두 소스(과거·예정)를 합치고 event_type 으로 걸러 중복 제거·정렬한다. */
+async function mergeMatchDateSources(keep: (eventType: string) => boolean): Promise<string[]> {
   if (!supabase) return [];
   const [past, scheduled] = await Promise.all([
-    selectAllPaged((from, to) => supabase!.from('match_data').select('match_date').order('match_date').range(from, to)),
+    selectAllPaged((from, to) => supabase!.from('match_data').select('match_date, event_type').order('match_date').range(from, to)),
     fetchMatchSchedule().catch(() => [] as MatchScheduleRow[]),
   ]);
   const dates = [
-    ...past.map(r => r.match_date as string),
-    ...scheduled.map(r => r.match_date),
+    ...past.filter(r => keep((r.event_type as string) ?? '')).map(r => r.match_date as string),
+    ...scheduled.filter(r => keep(r.event_type ?? '')).map(r => r.match_date),
   ];
   return [...new Set(dates.filter(Boolean))].sort();
 }
@@ -2312,7 +2335,7 @@ export interface MdProfileRow {
 
 export async function fetchTeamMdProfile(): Promise<MdProfileRow[]> {
   if (!supabase) return [];
-  const matchDates = await fetchAllMatchDates();
+  const matchDates = await fetchMdAnchorDates();
   if (matchDates.length === 0) return [];
   const matchDays = toMatchDays(matchDates);
 

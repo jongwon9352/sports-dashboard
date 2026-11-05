@@ -7,7 +7,7 @@ import { jsPDF } from 'jspdf';
 import { fetchMatchDates, fetchMatchReportData, saveMatchPositions, fetchMatchSessionData, type MatchSessionRow } from '../lib/api';
 import type { MatchReportRow } from '../types';
 import { toMatchDays } from '../lib/mdCode';
-import { useMatchDates } from '../lib/useMatchDates';
+import { useAllMatchDates } from '../lib/useMatchDates';
 
 const POSITIONS = ['GK', 'CB', 'FB', 'MF', 'WF', 'CF'] as const;
 type Position = typeof POSITIONS[number];
@@ -345,7 +345,7 @@ export function MatchReport() {
   }, [assignedRows, positions, posAvgMinTime]);
 
   const selectedMatchInfo = matches.find(m => `${m.date}_${m.opponent}` === selectedMatch);
-  const allMatchDates = useMatchDates();
+  const allMatchDates = useAllMatchDates();
 
   // 경기 당일의 MD 코드는 항상 'MD'라 정보가 없다. 앞뒤 경기와의 간격이 회복 맥락을 준다.
   const matchGap = useMemo(() => {

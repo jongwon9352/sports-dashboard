@@ -6,7 +6,7 @@ import {
   upsertWeeklyPeriodization,
   fetchSavedWeeks,
   fetchWeeklyGpsTotals,
-  fetchAllMatchDates,
+  fetchMdAnchorDates,
   fetchTeamMdProfile,
   emptyDayPlan,
   type DayPlan,
@@ -318,7 +318,7 @@ export function WeeklyPeriodization() {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const [matchDates, mdProfile] = await Promise.all([fetchAllMatchDates(), fetchTeamMdProfile()]);
+      const [matchDates, mdProfile] = await Promise.all([fetchMdAnchorDates(), fetchTeamMdProfile()]);
       if (matchDates.length === 0) {
         alert('경기 일정이 없어 MD 코드를 계산할 수 없습니다.\n월간 주기화 탭에서 예정 경기를 먼저 등록해 주세요.');
         return;

@@ -27,11 +27,21 @@ const MD_META: Record<string, MdMeta> = {
   'MD-2': { focus: 'tactical', key: 'SPEED', intensityPct: 70, minutes: '75' },
   'MD-3': { focus: 'intensity', key: 'ENDURANCE (TD/VHIR)', intensityPct: 90, minutes: '75' },
   'MD-4': { focus: 'volume', key: 'STRENGTH (ACC/SPRINT)', intensityPct: 75, minutes: '75' },
+  // MD-5 는 mdCode 의 MAX_BACKWARD 가 5로 올라가며 처음 생긴 자리다. 성격의 출처는 주기화표다 —
+  // Physical Goal 이 Recovery/Stability 이고 Time 은 70' 로 일정하다. 실측도 가장 낮은 축이다
+  // (RPE 5.91 · TD 6,403 — MD-1 다음으로 낮다).
+  // intensityPct 40 은 폴백일 뿐이다: 주기화표의 MD-5 Intensity 는 주차 성격에 따라 30~100% 를
+  // 오가므로 단일 계획값이 없고, 실측이 있으면 아래 basePct 가 그것을 쓴다.
+  'MD-5': { focus: 'recovery', key: 'RECOVERY', intensityPct: 40, minutes: '70' },
   'MD+1': { focus: 'recovery', key: 'RECOVERY', intensityPct: 25, minutes: '30' },
   'MD+2': { focus: 'recovery', key: 'RECOVERY', intensityPct: 35, minutes: '40' },
 };
-// 주기화 구간 밖(다음 경기까지 5일 이상) — 휴식으로 둔다.
+// 주기화 구간 밖(다음 경기까지 6일 이상) — 휴식으로 둔다.
 const REST_META: MdMeta = { focus: 'rest', key: 'REST', intensityPct: 0, minutes: '' };
+/** 경기 직후 며칠까지는 역산 라벨이 무엇이든 회복으로 처방하는가 */
+const RECOVERY_DAYS_AFTER_MATCH = 2;
+/** 강도 100% 기준점으로 삼을 MD 코드의 최소 표본 일수 */
+const MIN_PEAK_SAMPLE_DAYS = 10;
 
 /** MD 코드 → 강도 라벨. 월간 캘린더와 주기화표가 같은 분류를 쓰도록 여기서 한 번만 정의한다. */
 export function mdIntensityKey(code: string | null): string {
@@ -144,18 +154,36 @@ export function buildWeeklyPlan(inputs: WeeklyPlanInputs): { weekTopic: string; 
   // 강도(%)의 기준을 표준 템플릿이 아니라 우리 팀이 실제 기록한 RPE로 바꾼다.
   // 경기일 RPE는 훈련 강도 기준으로 쓸 수 없으므로(경기는 항상 최고 강도) 제외하고,
   // 훈련일 중 우리 팀이 가장 힘들게 뛴 MD 코드를 100% 기준점으로 삼는다.
+  //
+  // 표본 가드가 필요하다. Math.max 는 표본 수를 보지 않으므로, 하루치만 쌓인 코드가
+  // 기준점을 빼앗아 다른 모든 날의 강도를 끌어내릴 수 있다. MD 정의가 공식 경기 앵커로
+  // 바뀐 뒤 MD+1 이 1일치로 줄면서 실제로 그렇게 될 수 있었다(실측 RPE 8.30).
   const peakTrainingRpe = Math.max(
     0,
-    ...inputs.mdProfile.filter(r => r.code !== 'MD' && r.rpe > 0).map(r => r.rpe),
+    ...inputs.mdProfile
+      .filter(r => r.code !== 'MD' && r.rpe > 0 && r.n >= MIN_PEAK_SAMPLE_DAYS)
+      .map(r => r.rpe),
   ) || null;
 
   const days: DayPlan[] = dates.map(date => {
-    const code = mdCodeForDays(date, matchDays).code;
-    const meta = code ? MD_META[code] ?? REST_META : REST_META;
+    const label = mdCodeForDays(date, matchDays);
+    const code = label.code;
+    // 경기 직후 1~2일은 역산 라벨이 무엇이든 회복으로 처방한다.
+    // 공식 경기 간격이 4일이면 경기 다음날이 역산으로 MD-3 이 되는데, MD-3 은 고강도 지구력이다.
+    // 주기화표가 그 날을 「MD+1/-3」 이중 라벨로 적어 둔 이유가 이것이다 — 일정 분류가 훈련 처방을
+    // 이기면 안 된다. 라벨은 역산 쪽을 그대로 표시하고(집계와 일치), 처방만 회복으로 돌린다.
+    const since = label.daysSincePrevMatch;
+    const inRecovery = code != null && code.startsWith('MD-')
+      && since != null && since >= 1 && since <= RECOVERY_DAYS_AFTER_MATCH;
+    const prescribed = inRecovery ? `MD+${since}` : code;
+    const meta = prescribed ? MD_META[prescribed] ?? REST_META : REST_META;
     const day = emptyDayPlan();
-    const measured = code ? inputs.mdProfile.find(r => r.code === code) : undefined;
+    // 수치도 처방 코드에서 가져온다. 역산 코드로 가져오면 처방은 회복인데 목표 TD·HSR 은
+    // MD-3 의 고부하가 들어가 가드가 무의미해진다.
+    const measured = prescribed ? inputs.mdProfile.find(r => r.code === prescribed) : undefined;
 
-    day.periodization = code ?? '휴식';
+    // 표시는 역산 라벨이다. 회복으로 돌린 날은 주기화표처럼 이중으로 적는다.
+    day.periodization = inRecovery ? `MD+${since}/${code!.slice(2)}` : code ?? '휴식';
     day.perio_code = meta.key;
     day.physical_goal = physicalGoalFor(meta.focus, inputs.topic);
     day.warmup = warmupFor(meta.focus);

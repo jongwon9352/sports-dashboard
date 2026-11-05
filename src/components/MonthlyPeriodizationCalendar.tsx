@@ -11,6 +11,7 @@ import {
   fetchMatchSchedule, fetchCalendarOverrides, fetchMatchDates,
   fetchTrainingDays, fetchPlannedGoals,
   saveCalendarOverride, clearCalendarOverride, insertMatchSchedule, deleteMatchSchedule,
+  FRIENDLY_EVENT_TYPE,
   type MatchScheduleRow, type CalendarDayOverride,
 } from '../lib/api';
 import { mdCodesFor, mergeMatchDates } from '../lib/mdCode';
@@ -93,10 +94,19 @@ export function MonthlyPeriodizationCalendar({ onScheduleChange }: { onScheduleC
   }, [editing]);
 
   const allDates = weeks.flat().map(isoDate);
-  const pastDates = pastMatches.map(m => m.date);
+  // MD 라벨의 앵커는 공식 경기만이다 — 연습경기는 MD-4·MD-3 자리의 고부하 훈련이다.
+  // 경기 표시(pastByDate·fixturesByDate)는 연습경기도 그대로 보여주므로 그쪽은 걸러내지 않는다.
+  const anchorPast = pastMatches.filter(m => m.event_type !== FRIENDLY_EVENT_TYPE).map(m => m.date);
+  const anchorFixtures = fixtures.filter(f => f.event_type !== FRIENDLY_EVENT_TYPE).map(f => f.match_date);
+  // 배열은 매 렌더 새 참조라 그대로 의존성에 넣으면 useMemo 가 매번 다시 돈다. 문자열로 접어 비교한다.
+  // (의존성 배열에는 단순 표현식만 — eslint react-hooks 가 호출식을 거부한다.)
+  const allDatesKey = allDates.join();
+  const anchorPastKey = anchorPast.join();
+  const anchorFixturesKey = anchorFixtures.join();
   const mdLabels = useMemo(
-    () => mdCodesFor(allDates, mergeMatchDates(pastDates, fixtures.map(f => f.match_date))),
-    [allDates.join(), pastDates.join(), fixtures],
+    () => mdCodesFor(allDates, mergeMatchDates(anchorPast, anchorFixtures)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 위 세 키가 세 배열을 대표한다
+    [allDatesKey, anchorPastKey, anchorFixturesKey],
   );
 
   const pastByDate = useMemo(() => {

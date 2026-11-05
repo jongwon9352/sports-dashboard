@@ -6,7 +6,7 @@ import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { fetchSavedWeeks, fetchWeeklyPeriodization, fetchWeeklyGradeAvg, type DayPlan } from '../lib/api';
 import { mdCodeFor } from '../lib/mdCode';
-import { useMatchDates } from '../lib/useMatchDates';
+import { useMdAnchorDates } from '../lib/useMatchDates';
 
 const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 
@@ -160,7 +160,7 @@ export function WeeklyReport() {
   }, [comment, selectedWeek]);
 
   const days = periodization?.days || [];
-  const matchDates = useMatchDates();
+  const matchDates = useMdAnchorDates();
 
   const headerData = useMemo(() => {
     return DAY_LABELS.map((dayLabel, i) => {

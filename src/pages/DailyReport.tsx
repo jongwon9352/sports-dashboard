@@ -11,7 +11,7 @@ import {
 } from '../lib/api';
 import { StatCard } from '../components/StatCard';
 import { mdCodeFor } from '../lib/mdCode';
-import { useMatchDates } from '../lib/useMatchDates';
+import { useMdAnchorDates } from '../lib/useMatchDates';
 import { colors } from '../styles/colors';
 import type { DailyReportRow } from '../types';
 
@@ -239,7 +239,7 @@ export function DailyReport() {
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useState('');
   const [targets, setTargets] = useState<{ td: number; hsr: number; sprint: number } | null>(null);
-  const matchDates = useMatchDates();
+  const matchDates = useMdAnchorDates();
   const mdCode = selectedDate ? mdCodeFor(selectedDate, matchDates).code : null;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();

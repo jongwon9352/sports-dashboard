@@ -21,5 +21,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* 테스트는 bun test 가 돌린다(package.json "test"). 출시 빌드는 출시 코드만 컴파일하므로
+     bun:test 타입을 위해 의존성을 더하지 않는다 — 타입 패키지 하나도 node_modules 추적에 들어간다. */
+  "exclude": ["src/**/*.test.ts"]
 }
