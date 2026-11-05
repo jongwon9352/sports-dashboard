@@ -43,7 +43,8 @@ export const AXIS_ROW_ORDER = ['td', 'mpm', 'hsr', 'spd', 'sprd', 'sprc', 'acc',
 const longEnough = (m: MatchLike) => m.play_time_min >= MATCH_MIN_MINUTES;
 const avgNum = (a: number[]) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
 // percentile_cont 와 같은 선형보간. 정렬된 배열을 받는다.
-function quantile(sorted: number[], q: number): number {
+// rpeScale.ts 도 같은 보간을 써야 SQL 재집계와 숫자가 맞는다 — 복사하지 않고 여기서 가져간다.
+export function quantile(sorted: number[], q: number): number {
   if (sorted.length === 0) return 0;
   const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
   return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
