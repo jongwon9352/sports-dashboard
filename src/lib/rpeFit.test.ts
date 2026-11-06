@@ -8,8 +8,8 @@ const cell = (band: string, md: string, rpeMean: number | null, withRpe: number,
   rpeMean, rpeP25: null, rpeP75: null, suppressed: null, rpeSuppressed: null,
 }) as unknown as ScaleCell;
 
-const row = (band: string, md: string, bins: { lo: number; hi: number; rpeMean: number | null; n: number }[]) => ({
-  band, md, axis: 'td',
+const row = (band: string, md: string, bins: { lo: number; hi: number; rpeMean: number | null; n: number }[], axis = 'td') => ({
+  band, md, axis,
   bins: bins.map(b => ({ ...b, x: (b.lo + b.hi) / 2, rpeP25: null, rpeP75: null })),
   withinPlayerSlope: null, slopePlayers: 0,
 }) as unknown as ResponseRow;
@@ -83,6 +83,19 @@ describe('buildRpeFit', () => {
   it('RPE 가 없는 칸만 있으면 기준 RPE 가 null 이다 — 0 이 아니다', () => {
     const f = buildRpeFit(scale([cell('pre', 'MD-5', null, 0, 0, 0)], []), 'td');
     expect(f.rows.find(r => r.md === 'MD-5')!.referenceRpe).toBeNull();
+  });
+
+  it('요청한 축의 구간만 쓴다 — response 는 네 지표를 모두 담고 있다', () => {
+    const s = scale(
+      [cell('pre', 'MD-3', 8.0, 100, 50, 90)],
+      [
+        row('pre', 'MD-3', [{ lo: 6000, hi: 7000, rpeMean: 8.0, n: 40 }], 'td'),
+        row('pre', 'MD-3', [{ lo: 60, hi: 80, rpeMean: 8.0, n: 40 }], 'hsr'),
+      ],
+    );
+    const c = buildRpeFit(s, 'hsr').rows.find(r => r.md === 'MD-3')!.cells.find(x => x.band === 'pre')!;
+    expect(c.lo).toBe(70); // hsr 구간의 중앙값. td 가 걸리면 6500 이 나온다.
+    expect(c.hi).toBe(70);
   });
 
   it('허용폭은 상수로 노출된다', () => {

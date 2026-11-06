@@ -79,7 +79,10 @@ export function buildRpeFit(scale: RpeScaleResult, axis: LoadAxisKey): RpeFit {
       const actualP25 = grid?.axes[axis].p25 ?? null;
       const actualP75 = grid?.axes[axis].p75 ?? null;
 
-      const bins = (scale.response.find(r => r.md === md && r.band === b.key)?.bins ?? [])
+      // **축으로도 걸러야 한다.** scale.response 는 네 지표 행을 모두 담고 있어서
+      // md·band 만으로 찾으면 언제나 첫 축(td)이 걸린다 — 지표 탭을 바꿔도 범위가
+      // td 값 그대로 나오고, 실제 소화량만 바뀌어 ↓ 가 전부 켜졌다.
+      const bins = (scale.response.find(r => r.md === md && r.band === b.key && r.axis === axis)?.bins ?? [])
         .filter(x => x.rpeMean != null);
 
       if (referenceRpe == null || bins.length === 0) {
