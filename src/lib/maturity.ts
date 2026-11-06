@@ -1,5 +1,9 @@
 // 생리학적 성숙도(PHV 경과 연수) 판정. 선수 도메인 지식만 두고 집계는 모른다(rpeScale.ts).
 //
+// `maturity_offset` 의 **정본은 `player_phv_khamis_roche.mirwald_maturity_offset` 뷰다**
+// (2026-11-06 사용자 결정). `players.maturity_offset` 컬럼에도 값이 있지만 갱신하는 코드가
+// 없고 같은 선수를 두 구간까지 다르게 분류한다 — 집계에 그 컬럼을 쓰지 않는다.
+//
 // 이 저장소에는 성숙도 체계가 둘 있고 **출처가 다르다**. 섞으면 같은 선수가 두 이름을 갖는다.
 //   3단 `players.maturity_status` (Pre/Mid/Post) — 저장 컬럼. 배지(MaturityBadge)로 표시한다.
 //   4단 이 파일 — `maturity_offset` 과 세션 날짜로 매번 계산한다. **평문으로 표시한다**(배지 아님).

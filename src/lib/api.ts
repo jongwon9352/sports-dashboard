@@ -3868,6 +3868,9 @@ export async function fetchRpeMaturityPool(): Promise<{
     selectAllPaged((from, to) => supabase!
       .from('players')
       .select('id, birth_date, baseline_measured_at').range(from, to)),
+    // 성숙도 오프셋의 **정본은 이 뷰다**(2026-11-06 사용자 결정). players.maturity_offset 도
+    // 값이 들어 있지만 갱신하는 코드가 없고(신규 선수에게 0 을 넣는 defaultPlayer 뿐),
+    // 같은 선수를 두 구간까지 다르게 분류한다. 그 컬럼을 집으면 화면과 다른 답이 나온다.
     selectAllPaged((from, to) => supabase!
       .from('player_phv_khamis_roche')
       .select('player_id, mirwald_maturity_offset').range(from, to)),
