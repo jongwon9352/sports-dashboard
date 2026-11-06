@@ -48,7 +48,7 @@ function LoadRpeResponse({ scale, axis, setAxis }: {
 
   return (
     <div className="chart-card mb-5">
-      <h3 className="text-[18px] font-semibold text-text-primary mb-1">부하에 따라 RPE 가 어떻게 나왔나</h3>
+      <h3 className="text-[18px] font-semibold text-text-primary mb-1">부하에 따라 RPE가 어떻게 나왔나</h3>
       <p className="text-[12px] text-text-secondary mb-3">
         가로는 {meta.ko}({meta.unit}) 구간, 세로는 성숙도입니다. 칸의 숫자와 색이 <strong>그 조건에서 나온 평균 RPE</strong>입니다.
         K리그주니어가 있는 주의 훈련만 쓰고 공식 경기일은 뺐습니다.
@@ -207,15 +207,15 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
 
       <ol className="rpe-findings">
         <li>
-          <strong>{meta.ko}가 늘면 RPE 도 오른다.</strong>{' '}
+          <strong>{meta.ko}가 늘면 RPE도 오른다.</strong>{' '}
           {i.load.risingPct != null ? (
             <>
-              성숙도×MD {i.load.cells}칸 가운데 <strong>{i.load.risingPct}%</strong> 에서
-              가장 적은 구간보다 가장 많은 구간의 RPE 가 높았고,
+              성숙도×MD {i.load.cells}칸 가운데 <strong>{i.load.risingPct}%</strong>에서
+              가장 적은 구간보다 가장 많은 구간의 RPE가 높았고,
               그 차이의 중앙값은 <strong>{i.load.medianDelta}점</strong>입니다.
               {i.load.risingPct === 100
                 ? ' 예외가 된 칸이 없습니다.'
-                : ` 나머지 ${100 - i.load.risingPct}% 는 반대로 나온 칸입니다.`}
+                : ` 나머지 ${100 - i.load.risingPct}%는 반대로 나온 칸입니다.`}
             </>
           ) : '표본이 모자라 아직 말할 수 없습니다.'}
         </li>
@@ -230,9 +230,9 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
               같은 부하 구간에서 네 구간을 비교한 {i.maturity.comparisons}번 중 순서가 유지된 건{' '}
               <strong>{i.maturity.monotonic}번({monoPct}%)</strong>뿐입니다.
               {i.maturity.medianTopMinusPre != null && (
-                <> 가장 성숙한 구간은 Pre-PHV 보다 평균 <strong>{Math.abs(i.maturity.medianTopMinusPre)}점{' '}
+                <> 가장 성숙한 구간은 Pre-PHV보다 평균 <strong>{Math.abs(i.maturity.medianTopMinusPre)}점{' '}
                   {i.maturity.medianTopMinusPre < 0 ? '낮았지만' : '높았지만'}</strong>, 중간 두 구간이
-                  그 사이에 순서대로 놓이지 않습니다 — <em>성숙도만으로 RPE 를 예상할 수 없다</em>는 뜻입니다.</>
+                  그 사이에 순서대로 놓이지 않습니다 — <em>성숙도만으로 RPE를 예상할 수 없다</em>는 뜻입니다.</>
               )}</>
           )}
         </li>
@@ -267,9 +267,9 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
 
         {hardest && easiest && hardest.md !== easiest.md && (
           <li>
-            <strong>MD 가 RPE 를 가장 크게 가릅니다.</strong>{' '}
+            <strong>MD가 RPE를 가장 크게 가릅니다.</strong>{' '}
             가장 힘든 날은 <strong>{hardest.md}(평균 {hardest.rpeMean})</strong>,
-            가장 가벼운 날은 <strong>{easiest.md}(평균 {easiest.rpeMean})</strong> 로
+            가장 가벼운 날은 <strong>{easiest.md}(평균 {easiest.rpeMean})</strong>로
             차이가 <strong>{Math.round((hardest.rpeMean! - easiest.rpeMean!) * 100) / 100}점</strong>입니다 —
             성숙도 구간 간 차이보다 큽니다. 주기화 의도대로 요일이 작동하고 있다는 뜻입니다.
           </li>
@@ -287,7 +287,7 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
                   ? '개인차가 성숙도 구간 간 차이보다 큽니다.'
                   : '같은 칸 안에서도 개인차가 있습니다.'}
               </strong>{' '}
-              한 칸 안에서 RPE 중앙 50% 가 <strong>{i.caveats.medianWithinCellSpread}점</strong> 퍼져 있습니다
+              한 칸 안에서 RPE 중앙 50%가 <strong>{i.caveats.medianWithinCellSpread}점</strong> 퍼져 있습니다
               {i.maturity.medianTopMinusPre != null
                 && ` (구간 간 차이는 ${Math.abs(i.maturity.medianTopMinusPre)}점)`}.
               칸의 숫자는 평균이지 개인의 예상값이 아닙니다.
@@ -302,12 +302,12 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
           )}
           {i.caveats.thinnestBand && (
             <li>
-              <strong>{bandLabel(i.caveats.thinnestBand.band)} 는 {i.caveats.thinnestBand.players}명</strong>뿐입니다.
+              <strong>{bandLabel(i.caveats.thinnestBand.band)}는 {i.caveats.thinnestBand.players}명</strong>뿐입니다.
               그 행은 집단의 경향이라기보다 몇 사람의 기록에 가깝습니다.
             </li>
           )}
           <li>
-            연습경기는 훈련으로 세되 <strong>RPE 를 받지 않아</strong> 부하 범위에는 들어가고 RPE 평균에는 빠집니다.
+            연습경기는 훈련으로 세되 <strong>RPE를 받지 않아</strong> 부하 범위에는 들어가고 RPE 평균에는 빠집니다.
           </li>
           {/* 아래 둘은 데이터로 잴 수 없는 한계다 — 세션에 종류·포지션 열이 없고, 그룹 편성은
               애초에 성숙도 기준이 아니다. 계산해서 숨길 수 있는 값이 아니므로 고정 문장으로 둔다. */}
@@ -338,7 +338,7 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
  *
  * **기준 RPE 를 우리가 정하지 않는다.** 한 번 「적정 띠」를 들고 있다가 버린 과제다
  * (달성률). 여기서 기준은 팀이 그 요일에 실제로 낸 세션 가중 평균 RPE 다 — 데이터에서
- * 나온 값이라 처방이 아니라 기술이다. 「이만큼 줘야 한다」가 아니라 「이만큼일 때 그 날의
+ * 나온 값이라 처방이 아니라 기술이다. 「이만큼 줘야 한다」가 아니라 「이만큼일 때 그날의
  * 강도가 나왔다」로 읽어야 한다.
  *
  * 실제 소화량(중앙 50%)을 같은 칸에 적어 둔 건, 맞는 범위만 보여 주면 「그래서 우리가
@@ -354,9 +354,9 @@ function MdFitTable({ fit, axis }: { fit: RpeFit; axis: LoadAxisKey }) {
         그 요일 강도에 맞는 양 — 성숙도별
       </h3>
       <p className="text-[12px] text-text-secondary mb-3">
-        각 MD 의 <strong>기준 강도</strong>는 그 요일에 팀 전체가 낸 평균 RPE(세션 가중)입니다.
-        칸의 범위는 그 구간이 <strong>기준 ±{FIT_TOLERANCE}점의 RPE 를 낸 세션들이 실제로 모여 있던{' '}
-        {meta.ko}({meta.unit})</strong> 이고, 아래 작은 글씨는 그 칸이 실제로 소화한 양의 중앙 50% 입니다.
+        각 MD의 <strong>기준 강도</strong>는 그 요일에 팀 전체가 낸 평균 RPE(세션 가중)입니다.
+        칸의 범위는 그 구간이 <strong>기준 ±{FIT_TOLERANCE}점의 RPE를 낸 세션들이 실제로 모여 있던{' '}
+        {meta.ko}({meta.unit})</strong>이고, 아래 작은 글씨는 그 칸이 실제로 소화한 양의 중앙 50% 입니다.
         목표치가 아니라 관측값입니다.
       </p>
 
