@@ -103,6 +103,14 @@ export function mdCodeForDays(date: string, matchDays: number[]): MdLabel {
   return { ...base, code: toNext! <= MAX_BACKWARD ? `MD-${toNext}` : null };
 }
 
+/**
+ * 월요일 시작 주의 번호. 같은 주면 같은 값이다.
+ * 1970-01-01 이 목요일이므로 +3 해야 월요일에 경계가 떨어진다.
+ */
+export function weekKey(iso: string): number {
+  return Math.floor((toDayNumber(iso) + 3) / 7);
+}
+
 /** 과거·예정 경기일을 합친다. MD 코드는 둘을 구분하지 않는다. */
 export function mergeMatchDates(a: string[], b: string[]): string[] {
   return [...new Set([...a, ...b])].sort();

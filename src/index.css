@@ -615,3 +615,51 @@ section[id^="sec-"] {
 @media (max-width: 900px) {
   .rpe-heat-row { grid-template-columns: 1fr; }
 }
+
+/* RPE 모니터링 — 맨 위 분석 카드 */
+.rpe-findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rpe-findings > li {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  padding-left: 14px;
+  border-left: 3px solid var(--color-surface-secondary);
+  max-width: 78ch;
+}
+.rpe-findings strong { font-weight: 600; }
+.rpe-findings em { font-style: normal; color: var(--color-text-secondary); }
+.rpe-caveats {
+  margin-top: 18px;
+  padding: 12px 14px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+}
+.rpe-caveats-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-neutral);
+  margin-bottom: 6px;
+}
+.rpe-caveats ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rpe-caveats li {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  max-width: 82ch;
+}
+.rpe-caveats strong { color: var(--color-text-primary); font-weight: 600; }
+.font-data { font-family: var(--font-data); }

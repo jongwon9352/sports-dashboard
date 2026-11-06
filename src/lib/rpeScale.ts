@@ -8,7 +8,7 @@
 // 주간 계획에 쓸 숫자는 여기서 나오지 않는다. 그쪽은 periodizationPlan.ts 가 만든다
 // (그 화면은 「계획 초안」, 이 화면은 「관측」 — 용어를 섞지 않는다).
 
-import { mdCodesFor } from './mdCode';
+import { mdCodesFor, weekKey } from './mdCode';
 import { quantile } from './matchAnnual';
 import {
   MATURITY_BANDS, maturityBandFor, yearsFromPhv, isNearBandBoundary,
@@ -148,6 +148,8 @@ export interface ExcludedCounts {
   matchDay: number;
   /** MD-5~MD-1 밖 */
   outsideMd: number;
+  /** 리그 주간 밖 — 대회 기간처럼 주 1경기 리듬이 깨진 주 */
+  outsideLeagueWeek: number;
   /** 구간 경계 ±0.15년 — 제외가 아니라 신뢰도 고지다 */
   nearBoundary: number;
 }
@@ -185,22 +187,39 @@ const AXIS_OF: Record<LoadAxisKey, (r: PoolRow) => number> = {
  * 격자와 반응 곡선을 한 번에 만든다. 축마다 다시 순회하지 않는다 —
  * 지표 탭을 바꿀 때 재집계가 돌면 주간 1회 쓰는 화면이 매번 멈춘다.
  */
+/**
+ * 격자와 반응 곡선을 만든다.
+ *
+ * `leagueWeekMatchDates` 는 **주 1경기 리듬이 성립하는 주**를 고르는 기준이다(2026-11-06 사용자 결정).
+ * 울진대회·소년체전·K리그유스챔피언십처럼 2~3일에 한 번 경기하는 기간은 MD-5~MD-1 주기화가
+ * 아예 성립하지 않는다 — 그 기간의 훈련일에 MD 라벨을 붙이면 라벨이 뜻을 잃는다.
+ * 그래서 K리그주니어 경기가 있는 주(월~일)의 데이터만 쓴다.
+ *
+ * null 이면 주간 필터를 걸지 않는다. 빈 배열은 「해당 주가 0개」라서 전부 제외된다 —
+ * 둘을 구분하지 않으면 목록을 못 받아왔을 때 조용히 전체 집계로 돌아간다.
+ */
 export function buildRpeScale(
   pool: PoolRow[],
   players: PlayerMaturity[],
   officialMatchDates: string[],
+  leagueWeekMatchDates: string[] | null = null,
 ): RpeScaleResult {
+  const leagueWeeks = leagueWeekMatchDates == null
+    ? null
+    : new Set(leagueWeekMatchDates.map(weekKey));
   const byId = new Map(players.map(p => [p.id, p]));
   const dates = [...new Set(pool.map(r => r.date))];
   const mdByDate = mdCodesFor(dates, officialMatchDates);
 
   const excluded: ExcludedCounts = {
     noMaturity: 0, adult: 0, noGroup: 0, otherGroup: 0,
-    matchDay: 0, outsideMd: 0, nearBoundary: 0,
+    matchDay: 0, outsideMd: 0, outsideLeagueWeek: 0, nearBoundary: 0,
   };
 
   const rows: LabelledRow[] = [];
   for (const r of pool) {
+    // 주간 필터가 가장 먼저다. 대회 기간 행은 성숙도·MD 를 따질 것도 없이 이 화면의 모집단이 아니다.
+    if (leagueWeeks != null && !leagueWeeks.has(weekKey(r.date))) { excluded.outsideLeagueWeek++; continue; }
     if (r.group_type == null || r.group_type === '') { excluded.noGroup++; continue; }
     if (!(ALLOWED_GROUP_TYPES as readonly string[]).includes(r.group_type)) { excluded.otherGroup++; continue; }
 

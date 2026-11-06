@@ -1,99 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  BarChart, Bar, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-} from 'recharts';
-import { fetchRpeData, fetchRpeMaturityPool } from '../lib/api';
+import { fetchRpeMaturityPool } from '../lib/api';
 import {
   buildRpeScale, MD_COLUMNS, LOAD_AXES, ANNOTATION_AXIS,
   type RpeScaleResult, type LoadAxisKey, type ResponseBin,
 } from '../lib/rpeScale';
+import { buildRpeInsights, type RpeInsights } from '../lib/rpeInsights';
 import { MATURITY_BANDS, bandLabel, type MaturityBandKey } from '../lib/maturity';
-import { chartColors, colors } from '../styles/colors';
-import type { TeamDailyAggregate } from '../types';
-
-function rpeColor(v: number): string {
-  if (v <= 4) return colors.safe;
-  if (v <= 6) return colors.warning;
-  if (v <= 8) return colors.navy;
-  return colors.danger;
-}
 
 const fmtM = (v: number) => Math.round(v).toLocaleString();
-
-/**
- * 블록② 성숙도 × MD 격자. 칸마다 세 줄이다 — 소화한 부하 범위 / 그 칸의 평균 RPE / 표본 수.
- * 표본 미달은 빈칸이 아니라 「표본 부족」으로 **왜 비었는지**를 적는다(D2).
- * 지표는 TD 고정이다 — 지표 탭은 U7 이 미결이라 아직 넣지 않는다.
- */
-function MaturityMdGrid({ scale }: { scale: RpeScaleResult }) {
-  const axis = ANNOTATION_AXIS;
-  const playersInBand = new Map(
-    MATURITY_BANDS.map(b => [b.key, new Set(scale.rows.filter(r => r.band === b.key).map(r => r.player_id)).size]),
-  );
-
-  return (
-    <div className="chart-card mb-5">
-      <h3 className="text-[18px] font-semibold text-text-primary mb-1">성숙도 × MD 요약</h3>
-      <p className="text-[12px] text-text-secondary mb-3">
-        훈련만 · 공식 경기일 제외 · 지표는 달린 거리(m). 윗줄은 <strong>소화한 거리의 중앙 50%</strong>,
-        아랫줄은 <strong>그때 나온 평균 RPE</strong>입니다.
-      </p>
-      <div className="rpe-grid">
-        <div className="rpe-grid-head" style={{ textAlign: 'left' }}>성숙도</div>
-        {MD_COLUMNS.map(md => (
-          <div key={md} className="rpe-grid-head">
-            {md}
-          </div>
-        ))}
-
-        {MATURITY_BANDS.map(b => {
-          const cells = MD_COLUMNS.map(md => scale.grid.find(c => c.band === b.key && c.md === md)!);
-          const allSuppressed = cells.every(c => c.suppressed != null && c.rpeSuppressed != null);
-          const label = (
-            <div key={`${b.key}-label`} className="rpe-grid-rowlabel">
-              <span>{bandLabel(b.key)}</span>
-              <span className="sub">{playersInBand.get(b.key) ?? 0}명</span>
-            </div>
-          );
-          // 한 행이 통째로 가려지면 같은 문안을 다섯 번 쓰지 않고 한 칸으로 합친다(D-T3).
-          if (allSuppressed) {
-            const total = cells.reduce((a, c) => a + c.total, 0);
-            return [label, (
-              <div key={`${b.key}-merged`} className="rpe-grid-cell rpe-grid-merged">
-                선수 {playersInBand.get(b.key) ?? 0}명 · 세션 {total}건 — 선수가 3명 미만이라 다섯 칸 모두 숫자를 내지 않습니다.
-              </div>
-            )];
-          }
-          return [label, ...cells.map(c => (
-            <div key={`${b.key}-${c.md}`} className="rpe-grid-cell">
-              {c.suppressed ? (
-                <span className="range muted">표본 부족</span>
-              ) : (
-                <span className="range">{fmtM(c.axes[axis].p25!)}~{fmtM(c.axes[axis].p75!)}</span>
-              )}
-              {c.rpeSuppressed ? (
-                <span className="hit muted">—</span>
-              ) : (
-                <span className="hit" title={`RPE 중앙 50% ${c.rpeP25}~${c.rpeP75}`}>RPE {c.rpeMean}</span>
-              )}
-              <span className="n">
-                n {c.total}{c.friendly > 0 ? ` (연습경기 ${c.friendly})` : ''}
-              </span>
-            </div>
-          ))];
-        })}
-      </div>
-      {scale.measuredAt && (
-        <p className="text-[11px] text-neutral mt-2">
-          성숙도는 {scale.measuredAt.from} ~ {scale.measuredAt.to} 측정값을 세션 날짜로 민 추정입니다
-          {scale.excluded.nearBoundary > 0 && ` · 구간 경계 ±0.15년에 ${scale.excluded.nearBoundary}건이 걸쳐 있습니다`}.
-        </p>
-      )}
-    </div>
-  );
-}
 
 /**
  * 블록① 부하 → RPE 히트맵. **이 화면의 본문이다.**
@@ -110,8 +24,11 @@ function MaturityMdGrid({ scale }: { scale: RpeScaleResult }) {
  * MD 를 다섯 판으로 나눈 건 MD 자체가 부하의 성격을 바꾸기 때문이다 — 합치면
  * MD-1 의 가벼운 7km 와 MD-3 의 7km 가 한 칸으로 뭉개진다.
  */
-function LoadRpeResponse({ scale }: { scale: RpeScaleResult }) {
-  const [axis, setAxis] = useState<LoadAxisKey>(ANNOTATION_AXIS);
+function LoadRpeResponse({ scale, axis, setAxis }: {
+  scale: RpeScaleResult;
+  axis: LoadAxisKey;
+  setAxis: (a: LoadAxisKey) => void;
+}) {
   const meta = LOAD_AXES.find(a => a.key === axis)!;
 
   const panels = MD_COLUMNS.map(md => ({
@@ -133,7 +50,7 @@ function LoadRpeResponse({ scale }: { scale: RpeScaleResult }) {
       <h3 className="text-[18px] font-semibold text-text-primary mb-1">부하에 따라 RPE 가 어떻게 나왔나</h3>
       <p className="text-[12px] text-text-secondary mb-3">
         가로는 {meta.ko}({meta.unit}) 구간, 세로는 성숙도입니다. 칸의 숫자와 색이 <strong>그 조건에서 나온 평균 RPE</strong>입니다.
-        훈련만 쓰고 공식 경기일은 뺐습니다.
+        K리그주니어가 있는 주의 훈련만 쓰고 공식 경기일은 뺐습니다.
       </p>
 
       <div className="flex gap-1.5 mb-3" role="tablist" aria-label="지표">
@@ -253,131 +170,261 @@ function MdHeatPanel({ md, rows, lo, hi, unit }: {
   );
 }
 
+/**
+ * 맨 위 분석 카드. **문장을 하드코딩하지 않는다** — 숫자가 바뀌면 문장도 바뀌어야 한다.
+ * 방향을 단정하는 문장은 `monotonic` 비율을 보고 세기를 바꾼다(rpeInsights 참조).
+ */
+function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxisKey }) {
+  const i = insights;
+  const meta = LOAD_AXES.find(a => a.key === axis)!;
+
+  const mds = i.byMd.filter(m => m.rpeMean != null);
+  const hardest = mds.length ? mds.reduce((a, b) => (b.rpeMean! > a.rpeMean! ? b : a)) : null;
+  const easiest = mds.length ? mds.reduce((a, b) => (b.rpeMean! < a.rpeMean! ? b : a)) : null;
+
+  // 네 구간이 한 방향으로 정렬된 비교의 비율. 이 값이 문장의 세기를 정한다.
+  const monoPct = i.maturity.comparisons > 0
+    ? Math.round((i.maturity.monotonic / i.maturity.comparisons) * 100) : null;
+  const ordered = monoPct != null && monoPct >= 60;
+
+  const sens = i.sensitivity.filter(s => s.slope != null);
+  const sensRising = sens.length >= 2 && sens.every((s, k) => k === 0 || s.slope! >= sens[k - 1].slope!);
+
+  return (
+    <div className="chart-card mb-5 rpe-analysis">
+      <h3 className="text-[18px] font-semibold text-text-primary mb-1">
+        성숙도에 따른 {meta.ko} 스케일별 RPE 분포
+      </h3>
+      <p className="text-[12px] text-neutral mb-4">
+        U15·U14·U13 {i.players}명 · <strong>K리그주니어가 있는 {i.weeks}개 주</strong>의 훈련{' '}
+        {i.sessions.toLocaleString()}세션 · {i.from} ~ {i.to} · 공식 경기일 제외 · MD-5~MD-1
+        {i.excludedOutsideLeagueWeek > 0 && (
+          <> · 울진대회·소년체전·유스챔피언십처럼 2~3일에 한 번 경기한 주는 뺐습니다
+            ({i.excludedOutsideLeagueWeek.toLocaleString()}세션)</>
+        )}
+      </p>
+
+      <ol className="rpe-findings">
+        <li>
+          <strong>{meta.ko}가 늘면 RPE 도 오른다.</strong>{' '}
+          {i.load.risingPct != null ? (
+            <>
+              성숙도×MD {i.load.cells}칸 가운데 <strong>{i.load.risingPct}%</strong> 에서
+              가장 적은 구간보다 가장 많은 구간의 RPE 가 높았고,
+              그 차이의 중앙값은 <strong>{i.load.medianDelta}점</strong>입니다.
+              {i.load.risingPct === 100
+                ? ' 예외가 된 칸이 없습니다.'
+                : ` 나머지 ${100 - i.load.risingPct}% 는 반대로 나온 칸입니다.`}
+            </>
+          ) : '표본이 모자라 아직 말할 수 없습니다.'}
+        </li>
+
+        <li>
+          {ordered ? (
+            <><strong>성숙도가 높을수록 같은 부하를 {i.maturity.medianTopMinusPre! > 0 ? '더' : '덜'} 힘들어했습니다.</strong>{' '}
+              같은 부하 구간 {i.maturity.comparisons}번의 비교 중 <strong>{i.maturity.monotonic}번</strong>에서
+              네 구간이 성숙도 순서대로 정렬됐습니다.</>
+          ) : (
+            <><strong>성숙도 자체의 효과는 순서대로 나타나지 않습니다.</strong>{' '}
+              같은 부하 구간에서 네 구간을 비교한 {i.maturity.comparisons}번 중 순서가 유지된 건{' '}
+              <strong>{i.maturity.monotonic}번({monoPct}%)</strong>뿐입니다.
+              {i.maturity.medianTopMinusPre != null && (
+                <> 가장 성숙한 구간은 Pre-PHV 보다 평균 <strong>{Math.abs(i.maturity.medianTopMinusPre)}점{' '}
+                  {i.maturity.medianTopMinusPre < 0 ? '낮았지만' : '높았지만'}</strong>, 중간 두 구간이
+                  그 사이에 순서대로 놓이지 않습니다 — <em>성숙도만으로 RPE 를 예상할 수 없다</em>는 뜻입니다.</>
+              )}</>
+          )}
+        </li>
+
+        <li>
+          {sens.length < 2 ? (
+            <>
+              <strong>부하에 대한 민감도는 이 범위에서 잴 수 없습니다.</strong>{' '}
+              같은 선수 안에서 재려면 한 칸에 선수당 세션이 충분해야 하는데, 대회 주간을 빼고 나니
+              그 조건을 넘는 칸이 {sens.length}개뿐입니다. 성숙도 효과를 선수 구성과 분리해 말하려면
+              이 값이 필요합니다 — <em>지금은 구간 간 평균 차이만 있고, 그건 선수 구성이 섞인 비교입니다.</em>
+            </>
+          ) : (
+          <>
+            <strong>
+              {sensRising
+                ? '다만 부하에 대한 민감도는 성숙도 순으로 커집니다.'
+                : '부하에 대한 민감도는 구간마다 다르지만 성숙도 순은 아닙니다.'}
+            </strong>{' '}
+            같은 선수 안에서 많이 뛴 날과 적게 뛴 날의 RPE 차이를 재면{' '}
+            {sens.map((s, k) => (
+              <span key={s.band}>
+                {k > 0 && ' → '}
+                {bandLabel(s.band)} <strong>{s.slope!.toFixed(2)}점</strong>
+              </span>
+            ))}
+            {' '}입니다. 구간끼리의 평균 비교와 달리 <em>선수 구성이 섞이지 않는 비교</em>라서,
+            성숙도 효과를 말하려면 이쪽을 봐야 합니다.
+          </>
+          )}
+        </li>
+
+        {hardest && easiest && hardest.md !== easiest.md && (
+          <li>
+            <strong>MD 가 RPE 를 가장 크게 가릅니다.</strong>{' '}
+            가장 힘든 날은 <strong>{hardest.md}(평균 {hardest.rpeMean})</strong>,
+            가장 가벼운 날은 <strong>{easiest.md}(평균 {easiest.rpeMean})</strong> 로
+            차이가 <strong>{Math.round((hardest.rpeMean! - easiest.rpeMean!) * 100) / 100}점</strong>입니다 —
+            성숙도 구간 간 차이보다 큽니다. 주기화 의도대로 요일이 작동하고 있다는 뜻입니다.
+          </li>
+        )}
+      </ol>
+
+      <div className="rpe-caveats">
+        <div className="rpe-caveats-title">이 해석을 약하게 만드는 것</div>
+        <ul>
+          {i.caveats.medianWithinCellSpread != null && (
+            <li>
+              <strong>
+                {i.maturity.medianTopMinusPre != null
+                  && i.caveats.medianWithinCellSpread > Math.abs(i.maturity.medianTopMinusPre)
+                  ? '개인차가 성숙도 구간 간 차이보다 큽니다.'
+                  : '같은 칸 안에서도 개인차가 있습니다.'}
+              </strong>{' '}
+              한 칸 안에서 RPE 중앙 50% 가 <strong>{i.caveats.medianWithinCellSpread}점</strong> 퍼져 있습니다
+              {i.maturity.medianTopMinusPre != null
+                && ` (구간 간 차이는 ${Math.abs(i.maturity.medianTopMinusPre)}점)`}.
+              칸의 숫자는 평균이지 개인의 예상값이 아닙니다.
+            </li>
+          )}
+          {i.caveats.measuredFrom && (
+            <li>
+              <strong>성숙도는 {i.caveats.measuredFrom} ~ {i.caveats.measuredTo} 한 번 측정한 값</strong>을
+              세션 날짜로 민 추정입니다. 구간 경계 ±0.15년에 {i.caveats.nearBoundary.toLocaleString()}건이 걸쳐 있어,
+              그만큼은 옆 구간일 수도 있습니다.
+            </li>
+          )}
+          {i.caveats.thinnestBand && (
+            <li>
+              <strong>{bandLabel(i.caveats.thinnestBand.band)} 는 {i.caveats.thinnestBand.players}명</strong>뿐입니다.
+              그 행은 집단의 경향이라기보다 몇 사람의 기록에 가깝습니다.
+            </li>
+          )}
+          <li>
+            연습경기는 훈련으로 세되 <strong>RPE 를 받지 않아</strong> 부하 범위에는 들어가고 RPE 평균에는 빠집니다.
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 블록② 성숙도 × MD 격자. 칸마다 세 줄이다 — 소화한 부하 범위 / 그 칸의 평균 RPE / 표본 수.
+ * 표본 미달은 빈칸이 아니라 「표본 부족」으로 **왜 비었는지**를 적는다(D2).
+ * 지표는 위 히트맵의 탭을 따른다.
+ */
+function MaturityMdGrid({ scale, axis }: { scale: RpeScaleResult; axis: LoadAxisKey }) {
+  const meta = LOAD_AXES.find(a => a.key === axis)!;
+  const playersInBand = new Map(
+    MATURITY_BANDS.map(b => [b.key, new Set(scale.rows.filter(r => r.band === b.key).map(r => r.player_id)).size]),
+  );
+
+  return (
+    <div className="chart-card mb-5">
+      <h3 className="text-[18px] font-semibold text-text-primary mb-1">성숙도 × MD 요약</h3>
+      <p className="text-[12px] text-text-secondary mb-3">
+        K리그주니어 주간의 훈련만 · 공식 경기일 제외 · 지표는 {meta.ko}({meta.unit}). 윗줄은 <strong>소화한 양의 중앙 50%</strong>,
+        아랫줄은 <strong>그때 나온 평균 RPE</strong>입니다.
+      </p>
+      <div className="rpe-grid">
+        <div className="rpe-grid-head" style={{ textAlign: 'left' }}>성숙도</div>
+        {MD_COLUMNS.map(md => (
+          <div key={md} className="rpe-grid-head">
+            {md}
+          </div>
+        ))}
+
+        {MATURITY_BANDS.map(b => {
+          const cells = MD_COLUMNS.map(md => scale.grid.find(c => c.band === b.key && c.md === md)!);
+          const allSuppressed = cells.every(c => c.suppressed != null && c.rpeSuppressed != null);
+          const label = (
+            <div key={`${b.key}-label`} className="rpe-grid-rowlabel">
+              <span>{bandLabel(b.key)}</span>
+              <span className="sub">{playersInBand.get(b.key) ?? 0}명</span>
+            </div>
+          );
+          // 한 행이 통째로 가려지면 같은 문안을 다섯 번 쓰지 않고 한 칸으로 합친다(D-T3).
+          if (allSuppressed) {
+            const total = cells.reduce((a, c) => a + c.total, 0);
+            return [label, (
+              <div key={`${b.key}-merged`} className="rpe-grid-cell rpe-grid-merged">
+                선수 {playersInBand.get(b.key) ?? 0}명 · 세션 {total}건 — 선수가 3명 미만이라 다섯 칸 모두 숫자를 내지 않습니다.
+              </div>
+            )];
+          }
+          return [label, ...cells.map(c => (
+            <div key={`${b.key}-${c.md}`} className="rpe-grid-cell">
+              {c.suppressed ? (
+                <span className="range muted">표본 부족</span>
+              ) : (
+                <span className="range">{fmtM(c.axes[axis].p25!)}~{fmtM(c.axes[axis].p75!)}</span>
+              )}
+              {c.rpeSuppressed ? (
+                <span className="hit muted">—</span>
+              ) : (
+                <span className="hit" title={`RPE 중앙 50% ${c.rpeP25}~${c.rpeP75}`}>RPE {c.rpeMean}</span>
+              )}
+              <span className="n">
+                n {c.total}{c.friendly > 0 ? ` (연습경기 ${c.friendly})` : ''}
+              </span>
+            </div>
+          ))];
+        })}
+      </div>
+      {scale.measuredAt && (
+        <p className="text-[11px] text-neutral mt-2">
+          성숙도는 {scale.measuredAt.from} ~ {scale.measuredAt.to} 측정값을 세션 날짜로 민 추정입니다
+          {scale.excluded.nearBoundary > 0 && ` · 구간 경계 ±0.15년에 ${scale.excluded.nearBoundary}건이 걸쳐 있습니다`}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function RpePage() {
-  const [teamTrend, setTeamTrend] = useState<TeamDailyAggregate[]>([]);
-  const [playerAvgs, setPlayerAvgs] = useState<{ name: string; avg_rpe: number; sessions: number; player_id: string }[]>([]);
-  const [distribution, setDistribution] = useState<number[]>([]);
   const [scale, setScale] = useState<RpeScaleResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const [axis, setAxis] = useState<LoadAxisKey>(ANNOTATION_AXIS);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchRpeData().then(d => {
-      setTeamTrend(d.teamTrend);
-      setPlayerAvgs(d.playerAvgs);
-      setDistribution(d.distribution);
-      setLoading(false);
-    });
     fetchRpeMaturityPool()
-      .then(d => setScale(buildRpeScale(d.pool, d.players, d.officialMatchDates)))
-      .catch(() => setScale(null));
+      .then(d => setScale(buildRpeScale(d.pool, d.players, d.officialMatchDates, d.leagueMatchDates)))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  if (loading) {
-    return <div className="p-8 text-text-secondary text-center">로딩 중...</div>;
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="sec-title">RPE 모니터링</div>
+        <div className="chart-card text-[13px] text-text-secondary">
+          데이터를 불러오지 못했습니다. 조용히 빈 화면을 보여주지 않으려고 원인을 그대로 적습니다 —
+          <span className="font-data"> {error}</span>
+        </div>
+      </div>
+    );
   }
 
-  const trendChart = teamTrend.slice(-30).map(d => ({
-    date: d.date.slice(5),
-    rpe: +d.rpe_mean.toFixed(1),
-  }));
-
-  const distChart = distribution.map((count, i) => ({
-    label: String(i + 1),
-    count,
-    color: i < 4 ? 'rgba(0, 140, 126, 0.42)' : i < 6 ? 'rgba(255, 217, 0, 0.50)' : i < 8 ? 'rgba(21, 62, 111, 0.34)' : 'rgba(164, 40, 67, 0.34)',
-  }));
-
-  const playerChart = playerAvgs.filter(p => p.avg_rpe > 0).slice(0, 25);
+  if (!scale) {
+    return (
+      <div className="p-6">
+        <div className="sec-title">RPE 모니터링</div>
+        <div className="p-8 text-text-secondary text-center">로딩 중...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
       <div className="sec-title">RPE 모니터링</div>
-
-      {scale && <LoadRpeResponse scale={scale} />}
-      {scale && <MaturityMdGrid scale={scale} />}
-
-      <div className="grid grid-cols-2 gap-4 mb-5 chart-grid-2">
-        <div className="chart-card">
-          <div className="chart-title">팀 평균 RPE 추이</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={trendChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
-              <YAxis domain={[0, 10]} tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
-              <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-              <Area type="monotone" dataKey="rpe" stroke={chartColors.warning} fill="rgba(255, 217, 0, 0.18)" strokeWidth={2} name="평균 RPE" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="chart-card">
-          <div className="chart-title">RPE 분포 (전체 기간)</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={distChart}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
-              <YAxis tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
-              <Tooltip
-                formatter={(v) => [`${v}건`, 'RPE']}
-                contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }}
-              />
-              <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                {distChart.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="chart-card mb-5">
-        <div className="chart-title">선수별 평균 RPE</div>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={playerChart}>
-            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11 }}
-              interval={0}
-              angle={-45}
-              textAnchor="end"
-              height={60}
-            />
-            <YAxis domain={[0, 10]} tick={{ fontSize: 11, fontFamily: 'DM Mono' }} />
-            <Tooltip contentStyle={{ fontFamily: 'DM Mono', fontSize: 11 }} />
-            <Bar dataKey="avg_rpe" radius={[3, 3, 0, 0]} name="평균 RPE">
-              {playerChart.map((entry, i) => (
-                <Cell key={i} fill={`${rpeColor(entry.avg_rpe)}80`} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="chart-card">
-        <div className="chart-title">선수별 RPE 상세</div>
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>선수</th>
-                <th className="right">평균 RPE</th>
-                <th className="right">세션수</th>
-              </tr>
-            </thead>
-            <tbody>
-              {playerAvgs.filter(p => p.avg_rpe > 0).map(p => (
-                <tr key={p.player_id} onClick={() => navigate(`/player/${p.player_id}`)}>
-                  <td className="name">{p.name}</td>
-                  <td className="num" style={{ color: rpeColor(p.avg_rpe) }}>{p.avg_rpe}</td>
-                  <td className="num">{p.sessions}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <RpeAnalysis insights={buildRpeInsights(scale, axis)} axis={axis} />
+      <LoadRpeResponse scale={scale} axis={axis} setAxis={setAxis} />
+      <MaturityMdGrid scale={scale} axis={axis} />
     </div>
   );
 }

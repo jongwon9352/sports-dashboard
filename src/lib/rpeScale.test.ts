@@ -259,3 +259,46 @@ describe('X2 — 선수 내부 기울기', () => {
     expect(resp.withinPlayerSlope).toBeNull();
   });
 });
+
+describe('리그 주간 필터 — 대회 기간은 MD 주기화가 성립하지 않는다', () => {
+  // 2026-06-01(월)~06-07(일) 이 리그 주간. 6/06 이 K리그주니어 경기다.
+  // 2026-06-08~14 주는 리그 경기가 없는 주로 둔다.
+  const LEAGUE = ['2026-06-06'];
+  const inWeek = '2026-06-01';   // 월 — MD-5
+  const outWeek = '2026-06-08';  // 다음 주 월 — 리그 경기 없는 주
+
+  const pool = [...cohort(3, 10, inWeek, 5.0), ...cohort(3, 10, outWeek, 9.0)];
+  const ps = cohortPlayers(3);
+
+  it('리그 주간 밖 행이 빠지고 따로 세어진다', () => {
+    const r = buildRpeScale(pool, ps, ANCHORS, LEAGUE);
+    expect(r.included).toBe(30);
+    expect(r.excluded.outsideLeagueWeek).toBe(30);
+  });
+
+  it('주는 월요일에 끊긴다 — 토요일 경기의 월~금이 같은 주다', () => {
+    const r = buildRpeScale(
+      [...cohort(3, 10, '2026-06-01', 5.0), ...cohort(3, 10, '2026-06-05', 5.0)],
+      ps, ANCHORS, LEAGUE,
+    );
+    expect(r.included).toBe(60);           // 월·금 둘 다 같은 주
+    expect(r.excluded.outsideLeagueWeek).toBe(0);
+  });
+
+  it('일요일은 그 주에 남고 그다음 월요일은 빠진다', () => {
+    const r = buildRpeScale(
+      [...cohort(3, 10, '2026-06-07', 5.0), ...cohort(3, 10, '2026-06-08', 5.0)],
+      ps, ANCHORS, LEAGUE,
+    );
+    expect(r.excluded.outsideLeagueWeek).toBe(30); // 6/08(월)만 빠진다
+  });
+
+  it('null 이면 필터를 걸지 않는다 — 빈 배열과 다르다', () => {
+    expect(buildRpeScale(pool, ps, ANCHORS, null).excluded.outsideLeagueWeek).toBe(0);
+    expect(buildRpeScale(pool, ps, ANCHORS, []).included).toBe(0);
+  });
+
+  it('기본값은 필터 없음이다 — 기존 호출부가 조용히 바뀌지 않는다', () => {
+    expect(buildRpeScale(pool, ps, ANCHORS).included).toBe(buildRpeScale(pool, ps, ANCHORS, null).included);
+  });
+});

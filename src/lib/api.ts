@@ -2170,6 +2170,11 @@ export async function deleteMatchSchedule(id: string): Promise<void> {
 
 /** 연습경기의 event_type. MD 앵커에서는 빼지만 회복 맥락·표시에서는 센다. */
 export const FRIENDLY_EVENT_TYPE = '연습경기';
+/**
+ * 주 1경기 리듬을 만드는 정규 리그. RPE 모니터링은 이 경기가 있는 주만 쓴다 —
+ * 울진대회·소년체전·K리그유스챔피언십처럼 2~3일에 한 번 경기하는 기간은 MD 주기화가 성립하지 않는다.
+ */
+export const LEAGUE_EVENT_TYPE = 'K리그주니어';
 
 /**
  * 모든 경기일 — 이미 치른 경기(match_data) + 예정 경기(match_schedule), 연습경기 포함.
@@ -3843,10 +3848,12 @@ export async function fetchRpeMaturityPool(): Promise<{
   pool: PoolRow[];
   players: PlayerMaturity[];
   officialMatchDates: string[];
+  /** K리그주니어 경기일 — 쓸 주(월~일)를 고르는 기준 */
+  leagueMatchDates: string[];
 }> {
-  if (!supabase) return { pool: [], players: [], officialMatchDates: [] };
+  if (!supabase) return { pool: [], players: [], officialMatchDates: [], leagueMatchDates: [] };
 
-  const [trainingRows, friendlyRows, playerRows, phvRows, officialMatchDates] = await Promise.all([
+  const [trainingRows, friendlyRows, playerRows, phvRows, officialMatchDates, leagueRows] = await Promise.all([
     selectAllPaged((from, to) => supabase!
       .from('training_daily')
       .select('player_id, training_date, rpe, group_type, total_distance, hsr_distance, sprint_distance, acc_count, dec_count')
@@ -3865,7 +3872,14 @@ export async function fetchRpeMaturityPool(): Promise<{
       .from('player_phv_khamis_roche')
       .select('player_id, mirwald_maturity_offset').range(from, to)),
     fetchMdAnchorDates(),
+    selectAllPaged((from, to) => supabase!
+      .from('match_data')
+      .select('match_date')
+      .eq('event_type', LEAGUE_EVENT_TYPE)
+      .order('match_date').range(from, to)),
   ]);
+
+  const leagueMatchDates = [...new Set(leagueRows.map(r => r.match_date as string))].sort();
 
   const num = (v: unknown) => (v != null ? Number(v) : 0);
   const pool: PoolRow[] = trainingRows.map(r => ({
@@ -3911,5 +3925,5 @@ export async function fetchRpeMaturityPool(): Promise<{
     maturity_offset: offsetById.get(p.id as string) ?? null,
   }));
 
-  return { pool, players, officialMatchDates };
+  return { pool, players, officialMatchDates, leagueMatchDates };
 }
