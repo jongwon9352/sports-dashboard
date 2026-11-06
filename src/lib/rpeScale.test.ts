@@ -1,14 +1,14 @@
 // 성숙도 × MD 격자 집계의 회귀 보호.
 //
 // 가장 중요한 두 가지.
-//   D2/U6 — 표본 미달 칸이 숫자를 만들지 않는다. 그리고 범위와 달성률의 임계가 **다르다**.
-//   D1b   — 연습경기는 total 에 들고 달성률 모집단(withRpe)에는 들지 않는다.
+//   D2/U6 — 표본 미달 칸이 숫자를 만들지 않는다. 그리고 부하 범위와 RPE 의 임계가 **다르다**.
+//   D1b   — 연습경기는 total 에 들고 RPE 모집단(withRpe)에는 들지 않는다.
 //
 // 「0 이 아니라 null」이 핵심이다. 빈 집계가 0 을 내면 화면이 「적정 범위 0~0」을 그린다.
 
 import { describe, it, expect } from 'bun:test';
 import {
-  buildRpeScale, hitRateNear, MD_RPE_TARGET, MD_COLUMNS, LOAD_AXES,
+  buildRpeScale, rpeNear, MD_COLUMNS, LOAD_AXES,
   MIN_CELL_SESSIONS, MIN_CELL_PLAYERS, MIN_CELL_WITH_RPE,
   type PoolRow, type PlayerMaturity,
 } from './rpeScale';
@@ -67,7 +67,7 @@ describe('D2 — 표본 미달 칸은 숫자를 만들지 않는다 (0 이 아�
   });
 });
 
-describe('U6 — 범위와 달성률의 임계가 다르다', () => {
+describe('U6 — 부하 범위와 RPE 의 임계가 다르다', () => {
   // 연습경기 30개(RPE 없음) + 훈련 5개(RPE 있음) = total 35, withRpe 5
   const pool = [
     ...cohort(3, 10, MD5, null, 6000).map(r => ({ ...r, source: 'friendly' as const })),
@@ -81,37 +81,59 @@ describe('U6 — 범위와 달성률의 임계가 다르다', () => {
     expect(cell.friendly).toBe(30);
   });
 
-  it('연습경기가 달성률 모집단에는 들어가지 않는다', () => {
+  it('연습경기가 RPE 모집단에는 들어가지 않는다 — RPE 를 받지 않기 때문이다', () => {
     expect(cell.withRpe).toBe(5);
   });
 
-  it('범위는 생기고 달성률은 가려지는 혼합 상태가 가능하다', () => {
+  it('부하 범위는 생기고 RPE 는 가려지는 혼합 상태가 가능하다', () => {
     expect(cell.suppressed).toBeNull();          // total 35 >= 30
     expect(cell.axes.td.p25).toBeGreaterThan(0);
-    expect(cell.hitSuppressed).toBe('sample');   // withRpe 5 < 30
-    expect(cell.hitRate).toBeNull();
+    expect(cell.rpeSuppressed).toBe('sample');   // withRpe 5 < 30
+    expect(cell.rpeMean).toBeNull();
   });
 });
 
-describe('X1 — 1열은 칸 전체의 관측 범위다 (목표 밴드로 거르지 않는다)', () => {
-  // MD-5 목표 밴드는 4.0~6.0. 밴드 밖(RPE 9)인 고부하 세션도 범위에 들어가야 한다.
+describe('칸 요약은 부하 전 구간과 RPE 전 구간을 담는다 (어느 쪽도 거르지 않는다)', () => {
   const pool = [
-    ...cohort(3, 10, MD5, 5.0, 4000),   // 밴드 안, 저부하
-    ...cohort(3, 10, MD5, 9.0, 9000).map(r => ({ ...r, player_id: r.player_id })), // 밴드 밖, 고부하
+    ...cohort(3, 10, MD5, 4.0, 4000),   // 저부하·저RPE
+    ...cohort(3, 10, MD5, 8.0, 9000),   // 고부하·고RPE
   ];
   const r = buildRpeScale(pool, cohortPlayers(3), ANCHORS);
   const cell = r.grid.find(c => c.band === 'pre' && c.md === 'MD-5')!;
 
-  it('밴드 밖 세션의 부하도 범위에 반영된다', () => {
+  it('높은 RPE 쪽 세션의 부하도 범위에 반영된다', () => {
     expect(cell.total).toBe(60);
     expect(cell.withRpe).toBe(60);
-    expect(cell.inBand).toBe(30);
-    // 밴드로 걸렀다면 p75 가 4,000대에 머문다. 걸르지 않으면 9,000대까지 올라간다.
+    // 한쪽만 담았다면 p75 가 4,000대에 머문다.
     expect(cell.axes.td.p75!).toBeGreaterThan(8000);
   });
 
-  it('달성률은 밴드에 든 비율이다', () => {
-    expect(cell.hitRate).toBe(50);
+  it('평균 RPE 는 둘의 가운데고, 퍼짐을 같이 돌려준다', () => {
+    expect(cell.rpeMean).toBe(6);
+    expect(cell.rpeP25).toBe(4);
+    expect(cell.rpeP75).toBe(8);
+  });
+});
+
+describe('반응 곡선 — 부하 구간별 평균 RPE', () => {
+  // 부하가 오르면 RPE 가 오르는 집단. 선이 우상향해야 한다.
+  const pool = Array.from({ length: 120 }, (_, i) => {
+    const td = 3000 + (i % 40) * 150;              // 3,000~8,850
+    return row(`p${i % 4}`, MD5, 3 + (td - 3000) / 1000, td);
+  });
+  const r = buildRpeScale(pool, cohortPlayers(4), ANCHORS);
+  const resp = r.response.find(x => x.band === 'pre' && x.md === 'MD-5' && x.axis === 'td')!;
+
+  it('구간마다 평균 RPE 가 나오고 부하 순으로 오른다', () => {
+    const got = resp.bins.filter(b => b.rpeMean != null).map(b => b.rpeMean as number);
+    expect(got.length).toBeGreaterThanOrEqual(3);
+    for (let i = 1; i < got.length; i++) expect(got[i]).toBeGreaterThan(got[i - 1]);
+  });
+
+  it('표본이 없는 구간은 null 이다 — 선을 억지로 잇지 않는다', () => {
+    const empty = buildRpeScale(cohort(3, 10, MD5, 5.0, 6000), cohortPlayers(3), ANCHORS)
+      .response.find(x => x.band === 'y2p' && x.md === 'MD-5' && x.axis === 'td')!;
+    expect(empty.bins.every(b => b.rpeMean === null)).toBe(true);
   });
 });
 
@@ -174,23 +196,15 @@ describe('격자 모양', () => {
     expect(MD_COLUMNS).toEqual(['MD-5', 'MD-4', 'MD-3', 'MD-2', 'MD-1']);
   });
 
-  it('목표 밴드가 다섯 MD 에 모두 있고 하한 < 상한이다', () => {
-    for (const md of MD_COLUMNS) {
-      const t = MD_RPE_TARGET[md];
-      expect(t).toBeDefined();
-      expect(t[0]).toBeLessThan(t[1]);
-    }
-  });
-
   it('성숙도 측정일 범위를 돌려준다 (측정 1회 고지용)', () => {
     const r = buildRpeScale(cohort(3, 10, MD5, 5.0), cohortPlayers(3), ANCHORS);
     expect(r.measuredAt).toEqual({ from: '2026-07-02', to: '2026-07-02' });
   });
 });
 
-describe('U1/D21 — 계획값 근처 달성률 (주간 시트 주석 행)', () => {
-  // 7,000 근처에 RPE 7.5(MD-3 밴드 안) 20개 + RPE 9.0(밖) 20개 → 50%
-  // 4,000 근처에는 밴드 안만 둔다 → 조건을 걸면 값이 달라진다.
+describe('U1/D21 — 계획값 근처에서 나온 RPE (주간 시트 주석 행)', () => {
+  // 7,000 근처는 RPE 7.5 가 20개 + 9.0 이 20개 → 평균 8.25.
+  // 4,000 근처는 7.5 뿐 → 조건을 걸면 칸 평균과 다른 답이 나온다.
   const pool = [
     ...cohort(4, 5, MD3, 7.5, 7000),
     ...cohort(4, 5, MD3, 9.0, 7100),
@@ -198,26 +212,27 @@ describe('U1/D21 — 계획값 근처 달성률 (주간 시트 주석 행)', () 
   ];
   const r = buildRpeScale(pool, cohortPlayers(4), ANCHORS);
 
-  it('7,000 ±500 에서는 50% 다', () => {
-    const got = hitRateNear(r.rows, 'pre', 'MD-3', 7000);
+  it('7,000 ±500 의 평균 RPE', () => {
+    const got = rpeNear(r.rows, 'pre', 'MD-3', 7000);
     expect(got.n).toBe(40);
-    expect(got.hitRate).toBe(50);
+    expect(got.rpeMean).toBe(8.25);
   });
 
-  it('4,000 ±500 에서는 100% 다 — 조건을 걸면 칸 전체와 다른 답이 나온다', () => {
-    const got = hitRateNear(r.rows, 'pre', 'MD-3', 4000);
+  it('4,000 ±500 은 다른 값이다 — 조건을 걸면 칸 평균과 다른 답이 나온다', () => {
+    const got = rpeNear(r.rows, 'pre', 'MD-3', 4000);
     expect(got.n).toBe(32);
-    expect(got.hitRate).toBe(100);
+    expect(got.rpeMean).toBe(7.5);
   });
 
-  it('칸 전체 달성률은 두 값 사이다 — 모든 부하를 뭉갠 결과다', () => {
+  it('칸 전체 평균은 두 값 사이다 — 모든 부하를 뭉갠 결과다', () => {
     const cell = r.grid.find(c => c.band === 'pre' && c.md === 'MD-3')!;
-    expect(cell.hitRate).toBe(72); // (20 + 32) / 72
+    expect(cell.rpeMean!).toBeGreaterThan(7.5);
+    expect(cell.rpeMean!).toBeLessThan(8.25);
   });
 
   it('근처 표본이 미달이면 null 이다', () => {
-    const got = hitRateNear(r.rows, 'pre', 'MD-3', 20000);
-    expect(got.hitRate).toBeNull();
+    const got = rpeNear(r.rows, 'pre', 'MD-3', 20000);
+    expect(got.rpeMean).toBeNull();
     expect(got.n).toBe(0);
   });
 });

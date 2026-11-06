@@ -1,14 +1,12 @@
-// 성숙도 × MD 격자의 집계. 부하 분포와 목표 RPE 달성률을 만든다.
+// 성숙도 × MD 격자의 집계. **소화한 부하에 RPE 가 어떻게 나오는지**를 만든다.
 //
-// **이 화면은 처방이 아니라 관측이다.** 「이 성숙도엔 얼마가 적정」을 말하지 않는다 —
-// 목표 RPE 밴드에 든 세션만 골라 그 부하의 중앙 50%를 적정이라 부르면 조건이 뒤집힌다.
-// 계산되는 것은 `P(부하 | RPE 달성)` 인데 처방에 필요한 것은 `P(RPE 달성 | 부하)` 다.
-// 그래서 1열은 **칸 전체의 관측 범위**(밴드 필터 없음)이고, 2열이 **달성률**이다.
-// 근거: Pre-PHV MD-1 에서 밴드에 든 세션은 438 중 119(27%)뿐이고, 그 구간의 실제
-// 달성률은 42% 였다. 더 낮은 거리가 44% 로 오히려 높았다.
+// 묻는 것은 하나다 — `RPE = f(부하 | 성숙도, MD)`. 부하를 x, 그날 RPE 를 y 로 두고
+// 성숙도 구간마다 따로 본다. 목표 RPE 밴드나 달성률 같은 **평가 기준은 두지 않는다**
+// (2026-11-06 사용자 결정: 달성률은 필요한 통계가 아니다). 잘했다/못했다를 말하는 화면이
+// 아니라, 같은 거리를 뛰어도 성숙도에 따라 RPE 가 다르게 나오는지를 보는 화면이다.
 //
 // 주간 계획에 쓸 숫자는 여기서 나오지 않는다. 그쪽은 periodizationPlan.ts 가 만든다
-// (그 화면은 「계획 초안」, 이 화면은 「관측 범위」 — 용어를 섞지 않는다).
+// (그 화면은 「계획 초안」, 이 화면은 「관측」 — 용어를 섞지 않는다).
 
 import { mdCodesFor } from './mdCode';
 import { quantile } from './matchAnnual';
@@ -20,28 +18,15 @@ import {
 // ── 지정값 ──────────────────────────────────────────────────────────────
 // 아래 네 묶음이 이 모듈의 유일한 「사람이 정한 숫자」다. 나머지는 데이터에서 나온다.
 
-/**
- * MD별 목표 RPE 밴드. 주기화표 Intensity% 의 상대 서열(MD-3 최고 → MD-1 최저)을 따랐다.
- * 실측 평균은 다섯 다 이 밴드의 상한 위였다 — 평가 PPT 의 「오버됨」과 일치한다.
- * 달성률의 기준으로만 쓴다. 이 값으로 부하를 거르지 않는다.
- */
-export const MD_RPE_TARGET: Readonly<Record<string, readonly [number, number]>> = {
-  'MD-5': [4.0, 6.0],
-  'MD-4': [6.0, 7.0],
-  'MD-3': [7.0, 8.0],
-  'MD-2': [5.0, 6.5],
-  'MD-1': [4.0, 5.5],
-};
-
 /** 격자의 열 순서 — 주기화표와 같다(경기에서 먼 날이 왼쪽). */
 export const MD_COLUMNS = ['MD-5', 'MD-4', 'MD-3', 'MD-2', 'MD-1'] as const;
 
 /**
  * 칸에 숫자를 쓸 최소 표본. 두 임계가 **다르다**(U6).
- *   관측 범위 — 칸 전체 세션으로 재므로 total 과 players 를 본다.
- *   달성률   — RPE 가 있는 세션으로만 재므로 withRpe 를 본다.
- * 연습경기는 total 에 들고 withRpe 에 안 들어가므로, 한 칸이 「범위는 있고 달성률은 가려짐」이
- * 될 수 있다. 현재 데이터의 상위 3구간은 withRpe 81~433 이라 발생하지 않지만 구조적으로 가능하다.
+ *   부하 범위 — 칸 전체 세션으로 재므로 total 과 players 를 본다.
+ *   RPE      — RPE 가 있는 세션으로만 재므로 withRpe 를 본다.
+ * 연습경기는 total 에 들고 withRpe 에 안 들어가므로, 한 칸이 「부하는 있고 RPE 는 가려짐」이
+ * 될 수 있다.
  */
 export const MIN_CELL_SESSIONS = 30;
 export const MIN_CELL_PLAYERS = 3;
@@ -105,27 +90,35 @@ export interface ScaleCell {
   friendly: number;
   /** RPE 가 있는 세션 */
   withRpe: number;
-  /** 목표 밴드에 든 세션 — 달성률의 분자 */
-  inBand: number;
   players: number;
   axes: Record<LoadAxisKey, AxisStats>;
-  /** 목표 RPE 달성률(%). 표본 미달이면 null */
-  hitRate: number | null;
-  /** 관측 범위를 가린 이유 */
+  /** 그 칸의 평균 RPE. 표본 미달이면 null */
+  rpeMean: number | null;
+  /** RPE 의 중앙 50% — 평균 하나로 퍼짐을 감추지 않는다 */
+  rpeP25: number | null;
+  rpeP75: number | null;
+  /** 부하 범위를 가린 이유 */
   suppressed: 'sample' | null;
-  /** 달성률을 가린 이유 — 임계가 범위와 다르다(U6) */
-  hitSuppressed: 'sample' | null;
+  /** RPE 를 가린 이유 — 임계가 부하 범위와 다르다(U6) */
+  rpeSuppressed: 'sample' | null;
 }
 
 export interface ResponseBin {
   /** 구간 경계 [lo, hi) */
   lo: number;
   hi: number;
+  /**
+   * 점을 찍을 가로 위치 — 구간의 **실제 부하 중앙값**이다. 경계 중점을 쓰면 마지막 구간처럼
+   * 꼬리가 긴 칸에서 점이 오른쪽 허공에 찍힌다(8,575~19,186 의 중점은 13,880 인데 실제
+   * 세션 대부분은 9,000대다).
+   */
+  x: number;
   n: number;
   /** 그 구간의 평균 RPE */
   rpeMean: number | null;
-  /** 그 구간의 목표 RPE 달성률(%) */
-  hitRate: number | null;
+  /** 그 구간 RPE 의 중앙 50% */
+  rpeP25: number | null;
+  rpeP75: number | null;
 }
 
 export interface ResponseRow {
@@ -168,7 +161,7 @@ export interface RpeScaleResult {
   /** 격자에 들어간 세션 총수 */
   included: number;
   /**
-   * 라벨(성숙도 구간·MD)이 붙은 행. 주간 시트 주석 행(hitRateNear)이 이것을 그대로 쓴다 —
+   * 라벨(성숙도 구간·MD)이 붙은 행. 주간 시트 주석 행(rpeNear)이 이것을 그대로 쓴다 —
    * 라벨링을 두 번 구현하면 두 화면이 다른 날을 같은 MD 라 부르게 된다.
    */
   rows: LabelledRow[];
@@ -187,11 +180,6 @@ const AXIS_OF: Record<LoadAxisKey, (r: PoolRow) => number> = {
   sprint: r => r.sprint,
   action: r => r.action,
 };
-
-function inTargetBand(md: string, rpe: number): boolean {
-  const t = MD_RPE_TARGET[md];
-  return t != null && rpe >= t[0] && rpe <= t[1];
-}
 
 /**
  * 격자와 반응 곡선을 한 번에 만든다. 축마다 다시 순회하지 않는다 —
@@ -255,12 +243,11 @@ function buildGrid(rows: LabelledRow[]): ScaleCell[] {
   for (const b of MATURITY_BANDS) {
     for (const md of MD_COLUMNS) {
       const cell = rows.filter(r => r.band === b.key && r.md === md);
-      const withRpe = cell.filter(r => r.rpe != null);
-      const inBand = withRpe.filter(r => inTargetBand(md, r.rpe as number));
+      const rpes = cell.map(r => r.rpe).filter((v): v is number => v != null).sort((x, y) => x - y);
       const players = new Set(cell.map(r => r.player_id)).size;
 
       const enoughRange = cell.length >= MIN_CELL_SESSIONS && players >= MIN_CELL_PLAYERS;
-      const enoughHit = withRpe.length >= MIN_CELL_WITH_RPE && players >= MIN_CELL_PLAYERS;
+      const enoughRpe = rpes.length >= MIN_CELL_WITH_RPE && players >= MIN_CELL_PLAYERS;
 
       const axes = {} as Record<LoadAxisKey, AxisStats>;
       for (const ax of LOAD_AXES) {
@@ -273,28 +260,45 @@ function buildGrid(rows: LabelledRow[]): ScaleCell[] {
         band: b.key, md,
         total: cell.length,
         friendly: cell.filter(r => r.source === 'friendly').length,
-        withRpe: withRpe.length,
-        inBand: inBand.length,
+        withRpe: rpes.length,
         players,
         axes,
-        hitRate: enoughHit ? Math.round((inBand.length / withRpe.length) * 100) : null,
+        rpeMean: enoughRpe ? round2(mean(rpes)) : null,
+        rpeP25: enoughRpe ? round2(quantile(rpes, 0.25)) : null,
+        rpeP75: enoughRpe ? round2(quantile(rpes, 0.75)) : null,
         suppressed: enoughRange ? null : 'sample',
-        hitSuppressed: enoughHit ? null : 'sample',
+        rpeSuppressed: enoughRpe ? null : 'sample',
       });
     }
   }
   return cells;
 }
 
-/** 부하 구간 경계. 축마다 규모가 달라 고정 상수를 두지 않고 분포에서 뽑는다. */
-function binEdges(values: number[], count = 4): number[] {
+/** 반응 곡선의 한 점을 찍을 최소 세션. 칸 임계(30)보다 낮다 — 구간이 넷으로 쪼개지기 때문이다. */
+const MIN_BIN_SESSIONS = 8;
+/** 부하 구간 수. 6 에서 20선 중 19선이 4점 이상을 유지했다(2026-11-06 실측). */
+const BIN_COUNT = 6;
+
+const mean = (xs: number[]) => xs.reduce((a, c) => a + c, 0) / xs.length;
+const round2 = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * 부하 구간 경계. 축마다 규모가 달라 고정 상수를 두지 않고 **분위수**로 자른다.
+ * 등간격으로 자르면 Sprint·Action 처럼 0 쪽에 쏠린 축에서 한 구간에 거의 다 몰리고
+ * 나머지 구간이 비어 선이 끊긴다(TD 는 6구간이 다 살아도 Sprint 는 1~2개만 남았다).
+ * 분위수면 구간마다 표본 수가 비슷해진다 — 대신 구간 폭이 일정하지 않으니
+ * 화면은 구간 중앙값을 x 로 찍는다.
+ */
+function binEdges(values: number[], count = BIN_COUNT): number[] {
   if (values.length === 0) return [];
   const sorted = [...values].sort((a, b) => a - b);
-  const lo = quantile(sorted, 0.05);
-  const hi = quantile(sorted, 0.95);
-  if (!(hi > lo)) return [];
-  const step = (hi - lo) / count;
-  return Array.from({ length: count + 1 }, (_, i) => Math.round(lo + step * i));
+  const edges: number[] = [];
+  for (let i = 0; i <= count; i++) {
+    const e = Math.round(quantile(sorted, i / count));
+    // 같은 값이 많으면 경계가 겹친다. 겹친 구간은 버린다 — 폭 0 짜리 빈을 만들지 않는다.
+    if (edges.length === 0 || e > edges[edges.length - 1]) edges.push(e);
+  }
+  return edges.length >= 2 ? edges : [];
 }
 
 function buildResponse(rows: LabelledRow[]): ResponseRow[] {
@@ -312,12 +316,15 @@ function buildResponse(rows: LabelledRow[]): ResponseRow[] {
             const v = AXIS_OF[ax.key](r);
             return v >= lo && (last ? true : v < hi);
           });
-          const rpes = inBin.map(r => r.rpe).filter((v): v is number => v != null);
-          const hits = rpes.filter(v => inTargetBand(md, v)).length;
+          const loads = inBin.map(AXIS_OF[ax.key]).sort((x, y) => x - y);
+          const rpes = inBin.map(r => r.rpe).filter((v): v is number => v != null).sort((x, y) => x - y);
+          // 구간 하나에 임계를 다 요구하면 선이 끊긴다. 평균은 완화하고(>=8) 퍼짐은 더 요구한다.
           bins.push({
             lo, hi, n: inBin.length,
-            rpeMean: rpes.length ? Math.round((rpes.reduce((a, c) => a + c, 0) / rpes.length) * 100) / 100 : null,
-            hitRate: rpes.length >= MIN_CELL_WITH_RPE ? Math.round((hits / rpes.length) * 100) : null,
+            x: loads.length ? Math.round(quantile(loads, 0.5)) : Math.round((lo + hi) / 2),
+            rpeMean: rpes.length >= MIN_BIN_SESSIONS ? round2(mean(rpes)) : null,
+            rpeP25: rpes.length >= MIN_CELL_WITH_RPE ? round2(quantile(rpes, 0.25)) : null,
+            rpeP75: rpes.length >= MIN_CELL_WITH_RPE ? round2(quantile(rpes, 0.75)) : null,
           });
         }
         const slope = withinPlayerSlope(cell, ax.key);
@@ -356,27 +363,26 @@ function withinPlayerSlope(
 }
 
 /**
- * 주간 시트 주석 행(U1/D21) — 계획값 근처에서 목표 RPE 를 맞춘 비율.
+ * 주간 시트 주석 행(U1/D21) — **계획한 부하에서 실제로 나온 RPE**.
  *
- * 칸 전체 달성률이 아니라 **코치가 쓰려는 값 ±window** 로 조건을 건다. 칸 전체로 재면
- * 모든 부하가 뭉개져 13~48% 가 되지만, 특정 부하로 조건을 걸면 47~62% 가 나온다.
- * 사전 계산한 고정 빈을 쓰지 않는다 — 6,999 와 7,001 이 다른 빈에 떨어지는 경계 불안정이 있다.
+ * 칸 평균이 아니라 **코치가 쓰려는 값 ±window** 로 조건을 건다. 칸 전체로 재면 모든 부하가
+ * 한 평균으로 뭉개진다. 사전 계산한 고정 빈을 쓰지 않는다 — 6,999 와 7,001 이 다른 빈에
+ * 떨어지는 경계 불안정이 있다.
  */
-export function hitRateNear(
+export function rpeNear(
   rows: readonly LabelledRow[],
   band: MaturityBandKey,
   md: string,
   value: number,
   axis: LoadAxisKey = ANNOTATION_AXIS,
   window = ANNOTATION_WINDOW,
-): { hitRate: number | null; n: number; players: number } {
+): { rpeMean: number | null; n: number; players: number } {
   const near = rows.filter(r =>
     r.band === band && r.md === md && r.rpe != null
     && Math.abs(AXIS_OF[axis](r) - value) <= window);
   const players = new Set(near.map(r => r.player_id)).size;
   if (near.length < MIN_CELL_WITH_RPE || players < MIN_CELL_PLAYERS) {
-    return { hitRate: null, n: near.length, players };
+    return { rpeMean: null, n: near.length, players };
   }
-  const hits = near.filter(r => inTargetBand(md, r.rpe as number)).length;
-  return { hitRate: Math.round((hits / near.length) * 100), n: near.length, players };
+  return { rpeMean: round2(mean(near.map(r => r.rpe as number))), n: near.length, players };
 }

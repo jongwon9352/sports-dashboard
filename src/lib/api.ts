@@ -14,6 +14,7 @@ import type { ParsedDailyRow, ParsedSessionRow, ParsedMatchSessionRow, ParsedPhy
 import { parseMaturitySheetCsv, parseSheetTimestampToDate, parseDailyCsv, parseBodySheetCsv } from '../utils/csvParser';
 import { parseMatchFilename, parseMatchSessionFilename } from '../utils/csvParser';
 import { mdCodeForDays, toMatchDays, mdCodeOrder } from './mdCode';
+import type { PoolRow, PlayerMaturity } from './rpeScale';
 
 const GOOGLE_SHEET_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRAl_Jr193NUoZilorIYC7VWfazt4r_CTFRyHycEOWz3DFu_YEUhNGhaIqW2_5R81WrSg1J42WlntRm/pub?gid=179117944&single=true&output=csv';
 const GOOGLE_SHEET_MATURITY_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqPvqKWf2mgJBub7W6ZlU4RInG4GeYF37brcZmCiO0bT7wnF3JEPp2GekynyxTARrl1IYbNJpLJ3Iy/pub?gid=1965396254&single=true&output=csv';
@@ -3832,4 +3833,83 @@ export async function importSmartspeedCsvRows(rows: SmartspeedRow[], seasonYear:
   const { error } = await client.from('physical_report').upsert(physicalRows, { onConflict: 'player_id,test_date' });
   if (error) throw error;
   return physicalRows.length;
+}
+
+// ── RPE 모니터링: 성숙도 × MD 격자의 풀 ─────────────────────────────────
+// 집계는 하지 않는다 — 순수 함수(rpeScale.buildRpeScale)에 넘길 원자료만 모은다.
+// 지표 컬럼은 다른 화면과 같은 관례를 쓴다: TD=total_distance · HSR=hsr_distance ·
+// Sprint=sprint_distance · Action=acc_count+dec_count (MatchReport·DailyReport 와 동일).
+export async function fetchRpeMaturityPool(): Promise<{
+  pool: PoolRow[];
+  players: PlayerMaturity[];
+  officialMatchDates: string[];
+}> {
+  if (!supabase) return { pool: [], players: [], officialMatchDates: [] };
+
+  const [trainingRows, friendlyRows, playerRows, phvRows, officialMatchDates] = await Promise.all([
+    selectAllPaged((from, to) => supabase!
+      .from('training_daily')
+      .select('player_id, training_date, rpe, group_type, total_distance, hsr_distance, sprint_distance, acc_count, dec_count')
+      .order('training_date').range(from, to)),
+    // 연습경기는 훈련으로 센다(코치 주기화표). RPE 는 읽지 않는다 — match_data.rpe 는 상수다.
+    // match_data 의 그룹 컬럼 이름은 player_group 이다(training_daily 는 group_type) — 값 어휘는 같다.
+    selectAllPaged((from, to) => supabase!
+      .from('match_data')
+      .select('player_id, match_date, event_type, group_type:player_group, total_distance, hsr_distance, sprint_distance, acc_count, dec_count')
+      .eq('event_type', FRIENDLY_EVENT_TYPE)
+      .order('match_date').range(from, to)),
+    selectAllPaged((from, to) => supabase!
+      .from('players')
+      .select('id, birth_date, baseline_measured_at').range(from, to)),
+    selectAllPaged((from, to) => supabase!
+      .from('player_phv_khamis_roche')
+      .select('player_id, mirwald_maturity_offset').range(from, to)),
+    fetchMdAnchorDates(),
+  ]);
+
+  const num = (v: unknown) => (v != null ? Number(v) : 0);
+  const pool: PoolRow[] = trainingRows.map(r => ({
+    player_id: r.player_id as string,
+    date: r.training_date as string,
+    rpe: r.rpe != null && Number(r.rpe) > 0 ? Number(r.rpe) : null,
+    td: num(r.total_distance),
+    hsr: num(r.hsr_distance),
+    sprint: num(r.sprint_distance),
+    action: num(r.acc_count) + num(r.dec_count),
+    group_type: (r.group_type as string) ?? null,
+    source: 'training',
+  }));
+
+  // 같은 날 training_daily 에 이미 있는 선수는 연습경기를 더하지 않는다 — 업로드 경로에 따라
+  // 두 테이블에 같은 세션이 들어가 있을 수 있고, 그러면 한 세션이 두 번 세어진다.
+  const seen = new Set(pool.map(r => `${r.player_id}|${r.date}`));
+  for (const r of friendlyRows) {
+    const key = `${r.player_id}|${r.match_date}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pool.push({
+      player_id: r.player_id as string,
+      date: r.match_date as string,
+      rpe: null,
+      td: num(r.total_distance),
+      hsr: num(r.hsr_distance),
+      sprint: num(r.sprint_distance),
+      action: num(r.acc_count) + num(r.dec_count),
+      group_type: (r.group_type as string) ?? null,
+      source: 'friendly',
+    });
+  }
+
+  const offsetById = new Map(phvRows.map(r => [
+    r.player_id as string,
+    r.mirwald_maturity_offset != null ? Number(r.mirwald_maturity_offset) : null,
+  ]));
+  const players: PlayerMaturity[] = playerRows.map(p => ({
+    id: p.id as string,
+    birth_date: (p.birth_date as string) ?? null,
+    baseline_measured_at: (p.baseline_measured_at as string) ?? null,
+    maturity_offset: offsetById.get(p.id as string) ?? null,
+  }));
+
+  return { pool, players, officialMatchDates };
 }
