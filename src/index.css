@@ -663,3 +663,27 @@ section[id^="sec-"] {
 }
 .rpe-caveats strong { color: var(--color-text-primary); font-weight: 600; }
 .font-data { font-family: var(--font-data); }
+
+/* 「그 요일 강도에 맞는 양」 표 — 범위 / 표본 / 실제 소화량 세 줄.
+   ↓↑ 에 색을 쓰지 않는다. 적게 준 것이 잘못이라는 뜻이 아니고, 색을 쓰면 평가로 읽힌다. */
+.rpe-fit-range {
+  font-size: 13px;
+  font-family: var(--font-data);
+  color: var(--color-text-primary);
+}
+.rpe-fit-sub {
+  font-size: 11px;
+  font-family: var(--font-data);
+  color: var(--color-neutral);
+}
+.rpe-fit-actual {
+  font-size: 11px;
+  font-family: var(--font-data);
+  color: var(--color-text-secondary);
+}
+.rpe-fit-none {
+  color: var(--color-text-disabled);
+}
+.rpe-fit-dash {
+  font-size: 12px;
+}

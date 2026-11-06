@@ -5,6 +5,7 @@ import {
   type RpeScaleResult, type LoadAxisKey, type ResponseBin,
 } from '../lib/rpeScale';
 import { buildRpeInsights, type RpeInsights } from '../lib/rpeInsights';
+import { buildRpeFit, FIT_TOLERANCE, type RpeFit } from '../lib/rpeFit';
 import { MATURITY_BANDS, bandLabel, type MaturityBandKey } from '../lib/maturity';
 
 const fmtM = (v: number) => Math.round(v).toLocaleString();
@@ -308,6 +309,17 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
           <li>
             연습경기는 훈련으로 세되 <strong>RPE 를 받지 않아</strong> 부하 범위에는 들어가고 RPE 평균에는 빠집니다.
           </li>
+          {/* 아래 둘은 데이터로 잴 수 없는 한계다 — 세션에 종류·포지션 열이 없고, 그룹 편성은
+              애초에 성숙도 기준이 아니다. 계산해서 숨길 수 있는 값이 아니므로 고정 문장으로 둔다. */}
+          <li>
+            <strong>훈련의 성격과 포지션을 구분하지 않았습니다.</strong> 전술 훈련과 피지컬 훈련은 같은
+            거리를 뛰어도 요구가 다르고, 측면과 중앙도 다릅니다. 「같은 7km」 안에 성격이 다른 세션이 섞여 있습니다.
+          </li>
+          <li>
+            <strong>훈련 그룹은 성숙도로 짜이지 않았습니다.</strong> 선수들은 연령·실력 기준 그룹에서 같은 메뉴를
+            소화했습니다. 그래서 이 화면은 「성숙도별로 다른 훈련을 준 결과」가 아니라
+            <strong> 같은 훈련을 줬을 때 성숙도별로 다르게 느낀 정도</strong>입니다.
+          </li>
         </ul>
       </div>
     </div>
@@ -319,6 +331,90 @@ function RpeAnalysis({ insights, axis }: { insights: RpeInsights; axis: LoadAxis
  * 표본 미달은 빈칸이 아니라 「표본 부족」으로 **왜 비었는지**를 적는다(D2).
  * 지표는 위 히트맵의 탭을 따른다.
  */
+/**
+ * 블록③ 「그 요일 강도에 맞는 양」.
+ *
+ * 묻는 것: MD 별 주기화 의도대로 강도가 나오려면 성숙도 구간마다 얼마가 필요했나.
+ *
+ * **기준 RPE 를 우리가 정하지 않는다.** 한 번 「적정 띠」를 들고 있다가 버린 과제다
+ * (달성률). 여기서 기준은 팀이 그 요일에 실제로 낸 세션 가중 평균 RPE 다 — 데이터에서
+ * 나온 값이라 처방이 아니라 기술이다. 「이만큼 줘야 한다」가 아니라 「이만큼일 때 그 날의
+ * 강도가 나왔다」로 읽어야 한다.
+ *
+ * 실제 소화량(중앙 50%)을 같은 칸에 적어 둔 건, 맞는 범위만 보여 주면 「그래서 우리가
+ * 적게 줬나 많이 줬나」를 읽는 사람이 손으로 비교해야 하기 때문이다.
+ */
+function MdFitTable({ fit, axis }: { fit: RpeFit; axis: LoadAxisKey }) {
+  const meta = LOAD_AXES.find(a => a.key === axis)!;
+  const fmt = (v: number) => (axis === 'action' ? Math.round(v).toLocaleString() : fmtM(v));
+
+  return (
+    <div className="chart-card mb-5">
+      <h3 className="text-[18px] font-semibold text-text-primary mb-1">
+        그 요일 강도에 맞는 양 — 성숙도별
+      </h3>
+      <p className="text-[12px] text-text-secondary mb-3">
+        각 MD 의 <strong>기준 강도</strong>는 그 요일에 팀 전체가 낸 평균 RPE(세션 가중)입니다.
+        칸의 범위는 그 구간이 <strong>기준 ±{FIT_TOLERANCE}점의 RPE 를 낸 세션들이 실제로 모여 있던{' '}
+        {meta.ko}({meta.unit})</strong> 이고, 아래 작은 글씨는 그 칸이 실제로 소화한 양의 중앙 50% 입니다.
+        목표치가 아니라 관측값입니다.
+      </p>
+
+      <div className="rpe-grid">
+        <div className="rpe-grid-head" style={{ textAlign: 'left' }}>성숙도</div>
+        {fit.rows.map(r => (
+          <div key={r.md} className="rpe-grid-head">
+            {r.md}
+            <span className="block text-[11px] font-normal text-text-secondary">
+              {r.referenceRpe != null ? `기준 RPE ${r.referenceRpe}` : '기준 없음'}
+            </span>
+          </div>
+        ))}
+
+        {MATURITY_BANDS.map(b => [
+          <div key={`${b.key}-label`} className="rpe-grid-rowlabel">
+            <span>{bandLabel(b.key)}</span>
+          </div>,
+          ...fit.rows.map(r => {
+            const c = r.cells.find(x => x.band === b.key)!;
+            if (c.lo == null || c.hi == null) {
+              return (
+                <div key={`${b.key}-${r.md}`} className="rpe-grid-cell rpe-fit-none">
+                  <span className="rpe-fit-dash">맞는 구간 없음</span>
+                  {c.nearestRpe != null && (
+                    <span className="rpe-fit-sub">가장 가까운 구간 RPE {c.nearestRpe}</span>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <div key={`${b.key}-${r.md}`} className="rpe-grid-cell">
+                <span className="rpe-fit-range">
+                  {c.lo === c.hi ? fmt(c.lo) : `${fmt(c.lo)}~${fmt(c.hi)}`}
+                </span>
+                <span className="rpe-fit-sub">n {c.n}</span>
+                {c.actualP25 != null && c.actualP75 != null && (
+                  <span className={`rpe-fit-actual rpe-fit-${c.verdict ?? 'na'}`}>
+                    실제 {fmt(c.actualP25)}~{fmt(c.actualP75)}
+                    {c.verdict === 'below' && ' ↓'}
+                    {c.verdict === 'above' && ' ↑'}
+                  </span>
+                )}
+              </div>
+            );
+          }),
+        ])}
+      </div>
+
+      <p className="text-[11px] text-text-secondary mt-3">
+        20칸 가운데 {fit.matched}칸에서 기준 강도에 해당하는 범위를 찾았습니다.
+        ↓ 는 실제 소화량이 그 범위보다 적었다는 뜻, ↑ 는 많았다는 뜻입니다 —
+        적게 주고도 그 강도가 나왔다면 그 구간은 같은 양을 더 힘들게 느낀 것입니다.
+      </p>
+    </div>
+  );
+}
+
 function MaturityMdGrid({ scale, axis }: { scale: RpeScaleResult; axis: LoadAxisKey }) {
   const meta = LOAD_AXES.find(a => a.key === axis)!;
   const playersInBand = new Map(
@@ -424,6 +520,7 @@ export function RpePage() {
       <div className="sec-title">RPE 모니터링</div>
       <RpeAnalysis insights={buildRpeInsights(scale, axis)} axis={axis} />
       <LoadRpeResponse scale={scale} axis={axis} setAxis={setAxis} />
+      <MdFitTable fit={buildRpeFit(scale, axis)} axis={axis} />
       <MaturityMdGrid scale={scale} axis={axis} />
     </div>
   );
