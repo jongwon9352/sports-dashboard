@@ -115,6 +115,37 @@ ACWR 존 색상. 정의 위치는 `src/pages/TeamDashboard.tsx`의 `ZONE_COLOR`�
 
 ---
 
+## Maturity (PHV)
+
+생리학적 성숙도 4단(PHV 경과 연수)을 차트에서 구분하는 램프다. 성숙도는 **서열**이므로
+범주형 색상환이 아니라 **한 색조의 명도 램프**를 쓴다 — 명도만으로 순서가 읽히기 때문에
+색각 이상에서도 서열이 유지된다. 좋고 나쁨이 없는 중립 척도라 blue-grey 무채색 계열이고,
+`--color-brand`(선택·CTA) · `--color-green`(긍정) · `--color-recovery`(회복) ·
+`--color-load-*`(부하 등급)이 선점한 의미와 겹치지 않는다.
+
+| 단 | 값 | 토큰 | 흰 배경 대비 | 선 모양 |
+|---|---|---|---|---|
+| Pre-PHV | `#7E8C99` | `--color-phv-pre` | 3.44:1 | 실선 |
+| PHV+0~1년 | `#5A6773` | `--color-phv-y01` | 5.80:1 | `4 2` |
+| PHV+1~2년 | `#3A4752` | `--color-phv-y12` | 9.53:1 | `2 2` |
+| PHV+2년~ | `#1C2630` | `--color-phv-y2p` | 15.34:1 | `6 2 2 2` |
+
+**차트 마크 전용 — 글자에 쓰지 않는다.** 네 단 모두 그래픽 대비(WCAG 1.4.11, 3:1)는 통과하지만
+가장 밝은 `--color-phv-pre` 가 본문 대비 3.44:1 로 AA(4.5:1)에 미달한다. 선·점·범례 견본에만 쓰고,
+글자는 `--color-text-primary` 나 `--color-neutral` 을 쓴다.
+
+**선 모양을 함께 쓴다.** 같은 색조 4선은 교차 지점에서 구분이 약해지므로 위 표의
+`strokeDasharray` 를 중복 인코딩으로 건다. 명도와 선 모양 두 축으로 구분된다.
+
+라벨·구간·색·선 모양의 단일 출처는 `src/lib/maturity.ts` 의 `MATURITY_BANDS` 다 —
+값을 다른 곳에 복사하지 않는다. 이 4단은 `players.maturity_status` 3단(Pre/Mid/Post)과
+**다른 체계**이고, 3단은 배지(`MaturityBadge`)로 4단은 평문으로 표시해 형태로 구분한다.
+
+사용처
+* RPE 모니터링 블록② 부하-RPE 반응 곡선 4선과 그 범례
+
+---
+
 ## Surface
 
 ### Background
