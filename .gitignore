@@ -7,3 +7,7 @@ dist/
 
 # .claude: launch.json 은 팀이 같이 쓰는 dev 서버 설정, settings.local.json 은 내 기계의 권한 허용 목록이다
 .claude/settings.local.json
+
+# 리포트 PDF 는 커밋하지 않는다 — 1MB 넘는 바이너리가 리포트를 고칠 때마다 통째로
+# 다시 들어간다. `bun run scripts/md2pdf.ts <리포트.md>` 로 언제든 다시 뽑는다.
+docs/reports/*.pdf
