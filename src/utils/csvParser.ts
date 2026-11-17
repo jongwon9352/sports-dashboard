@@ -367,24 +367,38 @@ function parseHeightWeightFreeText(raw: string): { height: number | null; weight
   const cmMatches = [...raw.matchAll(/(\d+\.?\d*)\s*cm/gi)];
   let height = cmMatches.length > 0 ? parseFloat(cmMatches[0][1]) : null;
   if (height == null) {
-    const allNums = [...raw.matchAll(/\d+\.?\d*/g)].map(m => parseFloat(m[0]));
-    if (allNums.length >= 2) height = allNums[0];
+    // 단위 없이 적힌 키를 집는다. **kg 로 읽은 부분을 먼저 지운다** — 「75kg 183.9」처럼 몸무게를
+    // 먼저 쓰면 맨 앞 숫자가 몸무게라, 지우지 않으면 키가 75cm 로 들어간다(2026-11-17 실제 발생).
+    const rest = raw.replace(/\d+\.?\d*\s*kg/gi, ' ');
+    const nums = [...rest.matchAll(/\d+\.?\d*/g)].map(m => parseFloat(m[0]));
+    if (nums.length > 0) height = nums[0];
   }
   return { height: height != null && !isNaN(height) ? height : null, weight: weight != null && !isNaN(weight) ? weight : null };
 }
 
 export interface BodySheetMonthEntry {
-  month: number;
+  /** 열 머리글이 가리키는 달. 소급 입력 행에서만 쓴다(parseBodySheetCsv 주석 참고). */
+  headerMonth: number;
   height: number | null;
   weight: number | null;
 }
 export interface BodySheetRow {
   timestamp: string;
   player_name: string;
+  /** 여러 달을 한 번에 채운 소급 입력 행. false 면 제출 시각의 달로 기록한다. */
+  backfill: boolean;
   entries: BodySheetMonthEntry[];
 }
 
-// 구글 시트(월별 신장/체중 자동 기록): 타임스탬프,이름,1월,2월,3월,... — 열이 늘어날 때마다 새 월이 추가됨
+// 구글 시트(월별 신장/체중 자동 기록): 타임스탬프,이름,1월,2월,3월,...
+//
+// **열 머리글의 달을 그대로 믿으면 안 된다.** 이 시트의 첫 월 열은 구글 폼 질문 하나를 달마다
+// 이름만 바꿔 쓰는 자리다(2026-11-17 기준 「11월」). 9월·10월·11월에 들어온 응답 85건이 전부
+// 그 한 열에 쌓여 있어서, 머리글로 달을 정하면 세 달치가 모두 11월로 들어간다.
+// 그래서 **채워진 칸이 하나뿐인 행은 제출 시각의 달**로 본다(= 그달의 정기 입력).
+// 여러 칸을 한꺼번에 채운 행만 소급 입력으로 보고 머리글의 달을 쓴다(2026-07 의 2~7월 일괄 입력).
+//
+// 채워진 칸만 돌려준다 — 빈 칸을 월 엔트리로 만들면 호출부가 매번 걸러야 한다.
 export function parseBodySheetCsv(csvText: string): BodySheetRow[] {
   const result = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: true });
   const rows = result.data;
@@ -397,11 +411,18 @@ export function parseBodySheetCsv(csvText: string): BodySheetRow[] {
     if (m) monthCols.push({ index: i, month: parseInt(m[1]) });
   }
 
-  return rows.slice(1).map(row => ({
-    timestamp: row[0] || '',
-    player_name: row[1] || '',
-    entries: monthCols.map(({ index, month }) => ({ month, ...parseHeightWeightFreeText(row[index] || '') })),
-  })).filter(r => r.player_name);
+  return rows.slice(1).map(row => {
+    const filled = monthCols
+      .map(({ index, month }) => ({ headerMonth: month, ...parseHeightWeightFreeText(row[index] || '') }))
+      .filter(e => e.height != null || e.weight != null);
+    return {
+      timestamp: row[0] || '',
+      player_name: row[1] || '',
+      // 한 칸짜리 행은 머리글을 믿지 않는다(위 주석).
+      backfill: filled.length > 1,
+      entries: filled,
+    };
+  }).filter(r => r.player_name && r.entries.length > 0);
 }
 
 // ── VALD 계측기 CSV 파서 (ForceDecks / NordBord / ForceFrame / SmartSpeed) ──

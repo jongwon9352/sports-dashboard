@@ -3156,7 +3156,8 @@ export async function syncMaturityFromGoogleSheet(): Promise<MaturitySyncResult>
 }
 
 // 구글 시트(월별 신장·체중 자동 기록)에서 growth_tracking으로 동기화한다.
-// 시트 헤더의 "N월" 열은 올해(진행 연도) 기록으로 간주한다.
+// **달은 열 머리글이 아니라 각 응답의 제출 시각으로 정한다** — 이유는 parseBodySheetCsv 주석 참고.
+// 응답을 하나도 버리지 않는다(예전에는 선수당 최신 1건만 써서 나머지 달이 통째로 사라졌다).
 export interface BodySyncResult {
   updatedCount: number;
   unmatchedNames: string[];
@@ -3169,38 +3170,42 @@ export async function syncBodyCompositionFromGoogleSheet(): Promise<BodySyncResu
   const rows = parseBodySheetCsv(text);
   if (rows.length === 0) return { updatedCount: 0, unmatchedNames: [] };
 
-  // 같은 선수가 여러 번 응답했다면 최신 타임스탬프만 사용 (중복 시 동일 (player_id,year,month)를 한 배치에
-  // 두 번 upsert하게 되어 "ON CONFLICT DO UPDATE cannot affect row a second time" 오류가 발생하기 때문)
-  const latestByName = new Map<string, typeof rows[number]>();
-  for (const row of rows) {
-    const name = normalizeName(row.player_name);
-    const prev = latestByName.get(name);
-    if (!prev || (parseSheetTimestampToDate(row.timestamp) ?? '') > (parseSheetTimestampToDate(prev.timestamp) ?? '')) {
-      latestByName.set(name, row);
-    }
-  }
-
   const client = requireSupabase();
   const { data: players, error } = await client.from('players').select('id, name');
   if (error) throw error;
   const playerMap = new Map(((players as R[]) ?? []).map(p => [normalizeName(p.name as string), p.id as string]));
 
-  const year = new Date().getFullYear();
-  const growthRows: { player_id: string; year: number; month: number; height: number | null; weight: number | null }[] = [];
+  type GrowthRow = { player_id: string; year: number; month: number; height: number | null; weight: number | null };
+  // (선수,연,월) 하나에 한 행만 남긴다. 같은 달에 두 번 응답하면 **늦게 낸 것**이 이긴다.
+  // 한 배치에 같은 키가 두 번 들어가면 "ON CONFLICT DO UPDATE cannot affect row a second time" 가 난다.
+  const byKey = new Map<string, { date: string; row: GrowthRow }>();
   const unmatchedNames: string[] = [];
 
-  for (const [name, row] of latestByName) {
-    const playerId = playerMap.get(name);
+  for (const row of rows) {
+    const playerId = playerMap.get(normalizeName(row.player_name));
     if (!playerId) {
-      unmatchedNames.push(row.player_name);
+      if (!unmatchedNames.includes(row.player_name)) unmatchedNames.push(row.player_name);
       continue;
     }
+    const date = parseSheetTimestampToDate(row.timestamp);
+    if (!date) continue; // 타임스탬프가 없으면 어느 달인지 정할 수 없다 — 지어내지 않는다
+    const [tsYear, tsMonth] = date.split('-').map(Number);
+
     for (const entry of row.entries) {
-      if (entry.height == null && entry.weight == null) continue;
-      growthRows.push({ player_id: playerId, year, month: entry.month, height: entry.height, weight: entry.weight });
+      // 한 칸짜리 행 = 그달의 정기 입력. 열 머리글은 폼 질문 이름일 뿐이라 쓰지 않는다.
+      // 여러 칸을 채운 행 = 소급 입력이라 머리글의 달을 쓰고, 그 달이 제출 달보다 뒤면 지난해로 본다
+      // (11월 열을 이듬해 2월에 채우는 시즌 경계).
+      const month = row.backfill ? entry.headerMonth : tsMonth;
+      const year = row.backfill && entry.headerMonth > tsMonth ? tsYear - 1 : tsYear;
+
+      const key = `${playerId}|${year}|${month}`;
+      const prev = byKey.get(key);
+      if (prev && prev.date >= date) continue;
+      byKey.set(key, { date, row: { player_id: playerId, year, month, height: entry.height, weight: entry.weight } });
     }
   }
 
+  const growthRows = [...byKey.values()].map(v => v.row);
   if (growthRows.length === 0) return { updatedCount: 0, unmatchedNames };
 
   const { error: upsertError } = await client
