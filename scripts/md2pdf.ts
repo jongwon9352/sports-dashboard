@@ -32,7 +32,12 @@ const md = readFileSync(src, 'utf8').replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</
 
 // GFM 은 물결 하나도 취소선으로 본다. 이 문서는 ~ 를 범위 기호로 쓰므로(5,362~8,129)
 // 되돌린다 — <del>A</del>B 는 원래 ~A~B 였다.
-const body = (marked.parse(md, { async: false, gfm: true }) as string).replace(/<\/?del>/g, '~');
+const body = (marked.parse(md, { async: false, gfm: true }) as string).replace(/<\/?del>/g, '~')
+  // 크롬은 제목의 break-after:avoid 를 자주 무시한다 — 제목과 바로 뒤 덩어리를 한 상자로 묶어 같이 넘긴다.
+  // 「**MD-4**」처럼 표 바로 앞의 짧은 한 줄(200자 이하)은 표의 이름표다 — 같이 넘긴다.
+  .replace(/(<p>(?:(?!<\/p>)[\s\S]){0,200}<\/p>)\s*(<table[\s\S]*?<\/table>)/g, '<div class="keep">$1$2</div>')
+  .replace(/(<h[2-4][^>]*>[\s\S]*?<\/h[2-4]>)\s*(<(p|table|blockquote|div)[\s>][\s\S]*?<\/\3>)/g,
+    '<div class="keep">$1$2</div>');
 
 const css = `
 @page { size: A4; margin: 11mm 12mm 13mm; }
@@ -44,6 +49,7 @@ body { margin:0; color:var(--ink);
   font-size:9.6pt; line-height:1.55; word-break:keep-all; overflow-wrap:anywhere; }
 /* 제목이 쪽 끝에 홀로 남지 않게 한다 */
 h1,h2,h3,h4 { line-height:1.3; break-after:avoid; page-break-after:avoid; }
+.keep { break-inside:avoid; page-break-inside:avoid; }
 h1 { font-size:17pt; margin:0 0 2mm; letter-spacing:-.02em; }
 h2 { font-size:12.5pt; margin:7mm 0 2.5mm; padding-bottom:1.4mm;
      border-bottom:1.6px solid var(--ink); letter-spacing:-.01em; }
